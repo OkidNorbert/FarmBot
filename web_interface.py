@@ -546,9 +546,9 @@ def detect_tomatoes_in_frame(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     
     # Define red color range for tomatoes
-    lower_red1 = np.array([0, 30, 30])
+    lower_red1 = np.array([0, 50, 50])
     upper_red1 = np.array([15, 255, 255])
-    lower_red2 = np.array([165, 30, 30])
+    lower_red2 = np.array([165, 50, 50])
     upper_red2 = np.array([180, 255, 255])
     
     # Create masks for red colors
@@ -557,12 +557,12 @@ def detect_tomatoes_in_frame(frame):
     red_mask = mask1 + mask2
     
     # Add green color range for unripe tomatoes
-    lower_green = np.array([35, 30, 30])
+    lower_green = np.array([35, 50, 50])
     upper_green = np.array([85, 255, 255])
     green_mask = cv2.inRange(hsv, lower_green, upper_green)
     
     # Add orange/yellow range for overripe tomatoes
-    lower_orange = np.array([10, 30, 30])
+    lower_orange = np.array([10, 50, 50])
     upper_orange = np.array([25, 255, 255])
     orange_mask = cv2.inRange(hsv, lower_orange, upper_orange)
     
@@ -577,16 +577,21 @@ def detect_tomatoes_in_frame(frame):
     # Find contours
     contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    # Check if any contours look like tomatoes
+    # Check if any contours look like tomatoes with stricter criteria
     tomato_count = 0
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area > 500:  # Minimum area threshold
+        if area > 2000:  # Increased minimum area threshold
             x, y, w, h = cv2.boundingRect(contour)
-            # Check if it's roughly circular (tomato-like)
+            # Stricter shape analysis
             aspect_ratio = w / h
-            if 0.5 < aspect_ratio < 2.0 and w > 20 and h > 20:
-                tomato_count += 1
+            if 0.6 < aspect_ratio < 1.6 and w > 40 and h > 40:  # More circular and larger
+                # Additional circularity check
+                perimeter = cv2.arcLength(contour, True)
+                if perimeter > 0:
+                    circularity = 4 * np.pi * area / (perimeter * perimeter)
+                    if circularity > 0.3:  # Must be reasonably circular
+                        tomato_count += 1
     
     return tomato_count > 0
 
@@ -599,9 +604,9 @@ def detect_tomatoes_with_boxes(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     
     # Define red color range for tomatoes
-    lower_red1 = np.array([0, 30, 30])
+    lower_red1 = np.array([0, 50, 50])
     upper_red1 = np.array([15, 255, 255])
-    lower_red2 = np.array([165, 30, 30])
+    lower_red2 = np.array([165, 50, 50])
     upper_red2 = np.array([180, 255, 255])
     
     # Create masks for red colors
@@ -610,12 +615,12 @@ def detect_tomatoes_with_boxes(frame):
     red_mask = mask1 + mask2
     
     # Add green color range for unripe tomatoes
-    lower_green = np.array([35, 30, 30])
+    lower_green = np.array([35, 50, 50])
     upper_green = np.array([85, 255, 255])
     green_mask = cv2.inRange(hsv, lower_green, upper_green)
     
     # Add orange/yellow range for overripe tomatoes
-    lower_orange = np.array([10, 30, 30])
+    lower_orange = np.array([10, 50, 50])
     upper_orange = np.array([25, 255, 255])
     orange_mask = cv2.inRange(hsv, lower_orange, upper_orange)
     
@@ -630,19 +635,33 @@ def detect_tomatoes_with_boxes(frame):
     # Find contours
     contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    # Extract bounding boxes for tomatoes
+    # Extract bounding boxes for tomatoes with stricter criteria
     tomato_boxes = []
     tomato_count = 0
     
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area > 500:  # Minimum area threshold
+        if area > 2000:  # Increased minimum area threshold (was 500)
             x, y, w, h = cv2.boundingRect(contour)
-            # Check if it's roughly circular (tomato-like)
+            
+            # Stricter shape analysis
             aspect_ratio = w / h
-            if 0.5 < aspect_ratio < 2.0 and w > 20 and h > 20:
-                tomato_boxes.append((x, y, w, h))
-                tomato_count += 1
+            if 0.6 < aspect_ratio < 1.6:  # More circular requirement (was 0.5-2.0)
+                # Additional circularity check
+                perimeter = cv2.arcLength(contour, True)
+                if perimeter > 0:
+                    circularity = 4 * np.pi * area / (perimeter * perimeter)
+                    if circularity > 0.3:  # Must be reasonably circular
+                        # Size requirements
+                        if w > 40 and h > 40:  # Increased minimum size (was 20x20)
+                            # Color intensity check - tomatoes should have good color saturation
+                            roi = frame[y:y+h, x:x+w]
+                            if roi.size > 0:
+                                hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+                                mean_saturation = np.mean(hsv_roi[:, :, 1])
+                                if mean_saturation > 50:  # Must have good color saturation
+                                    tomato_boxes.append((x, y, w, h))
+                                    tomato_count += 1
     
     return tomato_count > 0, tomato_count, tomato_boxes
 
@@ -716,9 +735,9 @@ def count_tomatoes_in_frame(frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     
     # Define red color range for tomatoes
-    lower_red1 = np.array([0, 30, 30])
+    lower_red1 = np.array([0, 50, 50])
     upper_red1 = np.array([15, 255, 255])
-    lower_red2 = np.array([165, 30, 30])
+    lower_red2 = np.array([165, 50, 50])
     upper_red2 = np.array([180, 255, 255])
     
     # Create masks for red colors
@@ -727,12 +746,12 @@ def count_tomatoes_in_frame(frame):
     red_mask = mask1 + mask2
     
     # Add green color range for unripe tomatoes
-    lower_green = np.array([35, 30, 30])
+    lower_green = np.array([35, 50, 50])
     upper_green = np.array([85, 255, 255])
     green_mask = cv2.inRange(hsv, lower_green, upper_green)
     
     # Add orange/yellow range for overripe tomatoes
-    lower_orange = np.array([10, 30, 30])
+    lower_orange = np.array([10, 50, 50])
     upper_orange = np.array([25, 255, 255])
     orange_mask = cv2.inRange(hsv, lower_orange, upper_orange)
     
