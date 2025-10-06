@@ -1,0 +1,311 @@
+{% extends "base.html" %}
+
+{% block title %}{{ dataset_name }} - Dataset Management{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active">{{ dataset_name }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-folder"></i> {{ dataset_name }} Dataset
+        </h1>
+    </div>
+</div>
+
+<!-- Dataset Overview -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-bar"></i> Dataset Overview
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for class_info in classes %}
+                    <div class="col-md-3 mb-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h6 class="card-title">{{ class_info.name }}</h6>
+                                <h4 class="text-primary">{{ class_info.image_count }}</h4>
+                                <small class="text-muted">images</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i>
+                            <strong>Total Images:</strong> {{ classes|sum(attribute='image_count') }} |
+                            <strong>Classes:</strong> {{ classes|length }} |
+                            <strong>Status:</strong> 
+                            {% if classes|sum(attribute='image_count') > 0 %}
+                                <span class="text-success">Ready for training</span>
+                            {% else %}
+                                <span class="text-warning">No images uploaded yet</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Class Management -->
+<div class="row">
+    {% for class_info in classes %}
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="fas fa-tag"></i> {{ class_info.name }}
+                </h6>
+                <span class="badge bg-primary">{{ class_info.image_count }} images</span>
+            </div>
+            <div class="card-body">
+                <!-- Upload Area -->
+                <div class="upload-area" id="upload-area-{{ class_info.name }}" 
+                     ondrop="dropHandler(event, '{{ class_info.name }}')" 
+                     ondragover="dragOverHandler(event)" 
+                     ondragleave="dragLeaveHandler(event)">
+                    <i class="fas fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
+                    <p class="mb-2">Drag & drop images here or click to browse</p>
+                    <input type="file" id="file-input-{{ class_info.name }}" 
+                           class="d-none" multiple accept="image/*" 
+                           onchange="handleFileSelect(event, '{{ class_info.name }}')">
+                    <button type="button" class="btn btn-outline-primary btn-sm" 
+                            onclick="document.getElementById('file-input-{{ class_info.name }}').click()">
+                        <i class="fas fa-plus"></i> Add Images
+                    </button>
+                </div>
+                
+                <!-- Upload Progress -->
+                <div id="upload-progress-{{ class_info.name }}" class="mt-3" style="display: none;">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <small class="text-muted">Uploading images...</small>
+                </div>
+                
+                <!-- Image Grid -->
+                <div id="image-grid-{{ class_info.name }}" class="mt-3">
+                    <!-- Images will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Actions -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-cogs"></i> Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <button class="btn btn-success btn-lg w-100" 
+                                onclick="startTraining('{{ dataset_name }}')"
+                                {% if classes|sum(attribute='image_count') == 0 %}disabled{% endif %}>
+                            <i class="fas fa-play"></i><br>
+                            Start Training
+                        </button>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <button class="btn btn-info btn-lg w-100" onclick="refreshImages()">
+                            <i class="fas fa-sync"></i><br>
+                            Refresh Images
+                        </button>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-lg w-100">
+                            <i class="fas fa-arrow-left"></i><br>
+                            Back to Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Training Modal -->
+<div class="modal fade" id="trainingModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Start Training: {{ dataset_name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="trainingForm">
+                    <div class="mb-3">
+                        <label for="epochs" class="form-label">Epochs</label>
+                        <input type="number" class="form-control" id="epochs" name="epochs" value="30" min="1" max="200">
+                        <div class="form-text">Number of training iterations (more = better but slower)</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="batch_size" class="form-label">Batch Size</label>
+                        <input type="number" class="form-control" id="batch_size" name="batch_size" value="32" min="1" max="128">
+                        <div class="form-text">Images processed at once (larger = faster but needs more memory)</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="learning_rate" class="form-label">Learning Rate</label>
+                        <input type="number" class="form-control" id="learning_rate" name="learning_rate" value="0.001" step="0.0001" min="0.0001" max="0.1">
+                        <div class="form-text">How fast the model learns (smaller = more stable)</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmTraining()">Start Training</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentDataset = '{{ dataset_name }}';
+
+// Load images for each class
+function loadImages() {
+    {% for class_info in classes %}
+    loadClassImages('{{ class_info.name }}');
+    {% endfor %}
+}
+
+function loadClassImages(className) {
+    // This would typically make an AJAX call to get images
+    // For now, we'll show a placeholder
+    const container = document.getElementById(`image-grid-${className}`);
+    container.innerHTML = '<p class="text-muted">Images will appear here after upload</p>';
+}
+
+// File upload handling
+function handleFileSelect(event, className) {
+    const files = event.target.files;
+    uploadFiles(files, className);
+}
+
+function uploadFiles(files, className) {
+    if (files.length === 0) return;
+    
+    const formData = new FormData();
+    for (let file of files) {
+        formData.append('files', file);
+    }
+    
+    // Show progress
+    const progressContainer = document.getElementById(`upload-progress-${className}`);
+    const progressBar = progressContainer.querySelector('.progress-bar');
+    progressContainer.style.display = 'block';
+    
+    fetch(`/upload_images/${currentDataset}/${className}`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        progressContainer.style.display = 'none';
+        if (data.success) {
+            alert(`Successfully uploaded ${data.uploaded_count} images to ${className}`);
+            location.reload();
+        } else {
+            alert('Upload failed: ' + data.errors.join(', '));
+        }
+    })
+    .catch(error => {
+        progressContainer.style.display = 'none';
+        console.error('Error:', error);
+        alert('Upload failed');
+    });
+}
+
+// Drag and drop handling
+function dragOverHandler(ev) {
+    ev.preventDefault();
+    ev.currentTarget.classList.add('dragover');
+}
+
+function dragLeaveHandler(ev) {
+    ev.currentTarget.classList.remove('dragover');
+}
+
+function dropHandler(ev, className) {
+    ev.preventDefault();
+    ev.currentTarget.classList.remove('dragover');
+    
+    const files = ev.dataTransfer.files;
+    uploadFiles(files, className);
+}
+
+// Training functions
+function startTraining(datasetName) {
+    const totalImages = {{ classes|sum(attribute='image_count') }};
+    if (totalImages === 0) {
+        alert('Please upload some images before training!');
+        return;
+    }
+    
+    currentDataset = datasetName;
+    const modal = new bootstrap.Modal(document.getElementById('trainingModal'));
+    modal.show();
+}
+
+function confirmTraining() {
+    if (!currentDataset) return;
+    
+    const form = document.getElementById('trainingForm');
+    const formData = new FormData(form);
+    
+    fetch(`/start_training/${currentDataset}`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('trainingModal')).hide();
+            window.location.href = '/';
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error starting training');
+    });
+}
+
+function refreshImages() {
+    location.reload();
+}
+
+// Initialize page
+document.addEventListener('DOMContentLoaded', function() {
+    loadImages();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,15 @@
+{
+  "crop_name": "tomato",
+  "dataset_path": "./tomato_dataset",
+  "num_classes": 3,
+  "class_names": ["not_ready", "ready", "spoilt"],
+  "training_samples": 328,
+  "validation_samples": 41,
+  "epochs": 50,
+  "batch_size": 32,
+  "learning_rate": 0.001,
+  "best_val_accuracy": 99.85,
+  "final_val_accuracy": 99.85,
+  "training_date": "2024-10-05T19:30:00",
+  "device": "cpu"
+}

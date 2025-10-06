@@ -1,0 +1,8 @@
+names:
+  0: not_ready
+  1: ready
+  2: spoilt
+nc: 3
+path: /home/okidi6/Documents/GitHub/emebeded/tomato_dataset
+train: train
+val: val
