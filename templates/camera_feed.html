@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+
+{% block title %}Live Camera Feed{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">
+                        <i class="fas fa-video"></i> Live Camera Feed
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="camera-container">
+                                <img src="{{ url_for('video_feed') }}" 
+                                     class="img-fluid" 
+                                     id="camera-feed"
+                                     style="max-width: 100%; height: auto; border: 2px solid #007bff; border-radius: 8px;">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">Camera Controls</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <button class="btn btn-primary btn-sm" onclick="startCamera()">
+                                            <i class="fas fa-play"></i> Start Camera
+                                        </button>
+                                        <button class="btn btn-secondary btn-sm" onclick="stopCamera()">
+                                            <i class="fas fa-stop"></i> Stop Camera
+                                        </button>
+                                        <button class="btn btn-info btn-sm" onclick="checkCameraStatus()">
+                                            <i class="fas fa-info-circle"></i> Check Status
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <div id="camera-status" class="alert alert-info">
+                                            <strong>Camera Status:</strong> Checking...
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Camera Settings</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="showOverlay">
+                                            <label class="form-check-label" for="showOverlay">
+                                                Show Detection Overlay
+                                            </label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="autoCapture">
+                                            <label class="form-check-label" for="autoCapture">
+                                                Auto Capture on Detection
+                                            </label>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="captureInterval" class="form-label">Capture Interval (seconds)</label>
+                                        <input type="number" class="form-control" id="captureInterval" value="5" min="1" max="60">
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <button class="btn btn-success btn-sm" onclick="captureImage()">
+                                            <i class="fas fa-camera"></i> Capture Image
+                                        </button>
+                                        <button class="btn btn-info btn-sm" onclick="classifyImage()">
+                                            <i class="fas fa-brain"></i> Classify Current
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card mt-3">
+                                <div class="card-header">
+                                    <h6 class="mb-0">Tomato Detection Status</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div id="tomato-detection" class="alert alert-info">
+                                        <strong>Tomato Status:</strong> Checking...
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <button class="btn btn-warning btn-sm" onclick="checkTomatoDetection()">
+                                            <i class="fas fa-search"></i> Check for Tomatoes
+                                        </button>
+                                        <button class="btn btn-success btn-sm" onclick="startTomatoMonitoring()">
+                                            <i class="fas fa-play"></i> Start Monitoring
+                                        </button>
+                                        <button class="btn btn-secondary btn-sm" onclick="stopTomatoMonitoring()">
+                                            <i class="fas fa-stop"></i> Stop Monitoring
+                                        </button>
+                                    </div>
+                                    
+                                    <div id="classification-results" style="display: none;">
+                                        <h6>Latest Classification:</h6>
+                                        <div id="prediction-details"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let cameraInterval;
+let isCameraRunning = false;
+let tomatoMonitoringInterval;
+let isTomatoMonitoring = false;
+
+function startCamera() {
+    if (!isCameraRunning) {
+        // Reload the camera feed
+        document.getElementById('camera-feed').src = "{{ url_for('video_feed') }}?" + new Date().getTime();
+        isCameraRunning = true;
+        
+        // Start auto-capture if enabled
+        if (document.getElementById('autoCapture').checked) {
+            const interval = parseInt(document.getElementById('captureInterval').value) * 1000;
+            cameraInterval = setInterval(captureAndClassify, interval);
+        }
+        
+        updateStatus('Camera started', 'success');
+    }
+}
+
+function stopCamera() {
+    if (isCameraRunning) {
+        // Stop the camera feed
+        document.getElementById('camera-feed').src = '';
+        isCameraRunning = false;
+        
+        // Stop auto-capture
+        if (cameraInterval) {
+            clearInterval(cameraInterval);
+            cameraInterval = null;
+        }
+        
+        updateStatus('Camera stopped', 'warning');
+    }
+}
+
+function captureImage() {
+    // Create a canvas to capture the current frame
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = document.getElementById('camera-feed');
+    
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    
+    ctx.drawImage(img, 0, 0);
+    
+    // Convert to blob and send to server
+    canvas.toBlob(function(blob) {
+        const formData = new FormData();
+        formData.append('image', blob, 'captured_image.jpg');
+        
+        fetch('/capture_image', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateStatus('Image captured successfully', 'success');
+            } else {
+                updateStatus('Capture failed: ' + data.error, 'danger');
+            }
+        })
+        .catch(error => {
+            updateStatus('Capture error: ' + error, 'danger');
+        });
+    }, 'image/jpeg');
+}
+
+function classifyImage() {
+    updateStatus('Classifying image...', 'info');
+    
+    // Capture and classify
+    captureAndClassify();
+}
+
+function captureAndClassify() {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = document.getElementById('camera-feed');
+    
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    
+    ctx.drawImage(img, 0, 0);
+    
+    canvas.toBlob(function(blob) {
+        const formData = new FormData();
+        formData.append('image', blob, 'live_classification.jpg');
+        
+        fetch('/test_model/tomato', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayClassification(data);
+                updateStatus('Classification complete', 'success');
+            } else {
+                updateStatus('Classification failed: ' + data.error, 'danger');
+            }
+        })
+        .catch(error => {
+            updateStatus('Classification error: ' + error, 'danger');
+        });
+    }, 'image/jpeg');
+}
+
+function displayClassification(data) {
+    const resultsDiv = document.getElementById('classification-results');
+    const detailsDiv = document.getElementById('prediction-details');
+    
+    detailsDiv.innerHTML = `
+        <div class="alert alert-${getClassColor(data.prediction)}">
+            <strong>Class:</strong> ${data.prediction}<br>
+            <strong>Confidence:</strong> ${(data.confidence * 100).toFixed(1)}%
+        </div>
+    `;
+    
+    resultsDiv.style.display = 'block';
+}
+
+function getClassColor(prediction) {
+    switch(prediction.toLowerCase()) {
+        case 'ready': return 'success';
+        case 'not_ready': return 'warning';
+        case 'spoilt': return 'danger';
+        default: return 'info';
+    }
+}
+
+function updateStatus(message, type) {
+    const statusDiv = document.getElementById('live-prediction');
+    statusDiv.className = `alert alert-${type}`;
+    statusDiv.innerHTML = `<strong>Status:</strong> ${message}`;
+}
+
+function checkCameraStatus() {
+    fetch('/camera_status')
+        .then(response => response.json())
+        .then(data => {
+            const statusDiv = document.getElementById('camera-status');
+            if (data.available) {
+                statusDiv.className = 'alert alert-success';
+                statusDiv.innerHTML = `<strong>Camera Status:</strong> ${data.message}`;
+            } else {
+                statusDiv.className = 'alert alert-warning';
+                let suggestions = '';
+                if (data.suggestions) {
+                    suggestions = '<br><strong>Suggestions:</strong><ul>';
+                    data.suggestions.forEach(suggestion => {
+                        suggestions += `<li>${suggestion}</li>`;
+                    });
+                    suggestions += '</ul>';
+                }
+                statusDiv.innerHTML = `<strong>Camera Status:</strong> ${data.message}${suggestions}`;
+            }
+        })
+        .catch(error => {
+            const statusDiv = document.getElementById('camera-status');
+            statusDiv.className = 'alert alert-danger';
+            statusDiv.innerHTML = `<strong>Camera Status:</strong> Error checking camera: ${error}`;
+        });
+}
+
+function checkTomatoDetection() {
+    fetch('/tomato_detection_status')
+        .then(response => response.json())
+        .then(data => {
+            const detectionDiv = document.getElementById('tomato-detection');
+            if (data.detected) {
+                detectionDiv.className = 'alert alert-success';
+                detectionDiv.innerHTML = `
+                    <strong>Tomato Status:</strong> ${data.message}<br>
+                    <strong>Count:</strong> ${data.tomato_count} tomatoes detected<br>
+                    <strong>Time:</strong> ${new Date(data.timestamp).toLocaleTimeString()}
+                `;
+            } else {
+                detectionDiv.className = 'alert alert-warning';
+                detectionDiv.innerHTML = `
+                    <strong>Tomato Status:</strong> ${data.message}<br>
+                    <strong>Count:</strong> ${data.tomato_count} tomatoes detected<br>
+                    <strong>Time:</strong> ${new Date(data.timestamp).toLocaleTimeString()}
+                `;
+            }
+        })
+        .catch(error => {
+            const detectionDiv = document.getElementById('tomato-detection');
+            detectionDiv.className = 'alert alert-danger';
+            detectionDiv.innerHTML = `<strong>Tomato Status:</strong> Error checking for tomatoes: ${error}`;
+        });
+}
+
+function startTomatoMonitoring() {
+    if (!isTomatoMonitoring) {
+        isTomatoMonitoring = true;
+        tomatoMonitoringInterval = setInterval(checkTomatoDetection, 2000); // Check every 2 seconds
+        updateTomatoStatus('Tomato monitoring started', 'success');
+    }
+}
+
+function stopTomatoMonitoring() {
+    if (isTomatoMonitoring) {
+        isTomatoMonitoring = false;
+        if (tomatoMonitoringInterval) {
+            clearInterval(tomatoMonitoringInterval);
+            tomatoMonitoringInterval = null;
+        }
+        updateTomatoStatus('Tomato monitoring stopped', 'warning');
+    }
+}
+
+function updateTomatoStatus(message, type) {
+    const statusDiv = document.getElementById('tomato-detection');
+    statusDiv.className = `alert alert-${type}`;
+    statusDiv.innerHTML = `<strong>Tomato Status:</strong> ${message}`;
+}
+
+// Auto-start camera when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    checkCameraStatus();
+    startCamera();
+    checkTomatoDetection(); // Check for tomatoes on page load
+});
+
+// Handle auto-capture toggle
+document.getElementById('autoCapture').addEventListener('change', function() {
+    if (this.checked && isCameraRunning) {
+        const interval = parseInt(document.getElementById('captureInterval').value) * 1000;
+        cameraInterval = setInterval(captureAndClassify, interval);
+    } else if (cameraInterval) {
+        clearInterval(cameraInterval);
+        cameraInterval = null;
+    }
+});
+
+// Handle interval change
+document.getElementById('captureInterval').addEventListener('change', function() {
+    if (document.getElementById('autoCapture').checked && cameraInterval) {
+        clearInterval(cameraInterval);
+        const interval = parseInt(this.value) * 1000;
+        cameraInterval = setInterval(captureAndClassify, interval);
+    }
+});
+</script>
+
+<style>
+.camera-container {
+    position: relative;
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 10px;
+    min-height: 400px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#camera-feed {
+    max-height: 500px;
+    object-fit: contain;
+}
+
+.card {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.btn {
+    margin: 2px;
+}
+</style>
+{% endblock %}
