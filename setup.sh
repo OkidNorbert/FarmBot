@@ -66,8 +66,6 @@ sudo apt install -y \
     libavformat-dev \
     libswscale-dev \
     libgtk2.0-dev \
-    libcanberra-gtk-module \
-    libv4l-dev \
     v4l-utils \
     v4l2loopback-dkms \
     ffmpeg \
@@ -77,6 +75,7 @@ sudo apt install -y \
     libglib2.0-0
 
 print_status "Essential packages installed"
+print_warning "Skipped: libcanberra-gtk-module (not available on this system)"
 
 # Step 3: Create virtual environment
 print_info "Creating Python virtual environment..."
@@ -97,6 +96,20 @@ print_status "Virtual environment activated"
 print_info "Upgrading pip..."
 pip install --upgrade pip setuptools wheel
 print_status "Pip upgraded"
+
+# Step 5.5: Check available disk space before installing Python dependencies
+MIN_SPACE_GB=5
+AVAILABLE_GB_ROOT=$(df --output=avail . | tail -1)
+AVAILABLE_GB_ROOT=$((AVAILABLE_GB_ROOT / 1024 / 1024))
+AVAILABLE_GB_TMP=$(df --output=avail /tmp | tail -1)
+AVAILABLE_GB_TMP=$((AVAILABLE_GB_TMP / 1024 / 1024))
+if [ "$AVAILABLE_GB_ROOT" -lt "$MIN_SPACE_GB" ]; then
+    print_warning "Low disk space on root: ${AVAILABLE_GB_ROOT}GB available. At least ${MIN_SPACE_GB}GB is recommended for installing large packages like torch."
+fi
+if [ "$AVAILABLE_GB_TMP" -lt "$MIN_SPACE_GB" ]; then
+    print_warning "Low disk space on /tmp: ${AVAILABLE_GB_TMP}GB available. At least ${MIN_SPACE_GB}GB is recommended for pip downloads."
+    print_info "Tip: You can free up /tmp with 'sudo rm -rf /tmp/*' if safe, or set TMPDIR to a larger location before running pip."
+fi
 
 # Step 6: Install Python dependencies
 print_info "Installing Python dependencies..."
