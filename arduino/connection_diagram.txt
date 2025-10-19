@@ -1,0 +1,189 @@
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           ARDUINO CONNECTION DIAGRAM                            │
+│                        AI Tomato Sorter - Robotic Arm                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────┐    USB Cable    ┌─────────────────┐    Jumper Wires    ┌─────────────────┐
+│   Raspberry Pi  │◄──────────────►│    Arduino      │◄──────────────────►│  Robotic Arm    │
+│                 │                 │                 │                    │                 │
+│  ┌───────────┐  │                 │  ┌───────────┐  │                    │  ┌───────────┐  │
+│  │   Camera  │  │                 │  │   USB     │  │                    │  │  Servo 1  │  │
+│  │  (AI)     │  │                 │  │  Serial   │  │                    │  │  (Base)   │  │
+│  └───────────┘  │                 │  └───────────┘  │                    │  └───────────┘  │
+│                 │                 │                 │                    │        │        │
+│  ┌───────────┐  │                 │  ┌───────────┐  │                    │        │        │
+│  │   Web     │  │                 │  │  Digital  │  │                    │        ▼        │
+│  │Interface  │  │                 │  │   Pins    │  │                    │  ┌───────────┐  │
+│  └───────────┘  │                 │  └───────────┘  │                    │  │  Servo 2  │  │
+└─────────────────┘                 └─────────────────┘                    │  │  (Arm)    │  │
+                                                                          │  └───────────┘  │
+                                                                          │        │        │
+                                                                          │        │        │
+                                                                          │        ▼        │
+                                                                          │  ┌───────────┐  │
+                                                                          │  │  Servo 3  │  │
+                                                                          │  │(Gripper)  │  │
+                                                                          │  └───────────┘  │
+                                                                          └─────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              DETAILED WIRING                                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+                    Arduino Uno/Nano
+                   ┌─────────────────┐
+                   │                 │
+    Servo 1 ──────►│ Pin 3 (PWM)     │◄── Base Rotation
+    (Base)         │                 │
+                   │                 │
+    Servo 2 ──────►│ Pin 5 (PWM)     │◄── Arm Joint
+    (Arm)          │                 │
+                   │                 │
+    Servo 3 ──────►│ Pin 6 (PWM)     │◄── Gripper
+    (Gripper)      │                 │
+                   │                 │
+    Power + ──────►│ 5V              │◄── External Power Supply
+                   │                 │
+    Power - ──────►│ GND             │◄── Common Ground
+                   │                 │
+    Raspberry Pi──►│ USB             │◄── Serial Communication
+                   └─────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              SERVO CONNECTIONS                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+    Servo Motor (SG90)
+    ┌─────────────┐
+    │             │
+    │  ┌───────┐  │
+    │  │ Signal│  │◄── Arduino Pin (3, 5, or 6)
+    │  └───────┘  │
+    │             │
+    │  ┌───────┐  │
+    │  │  VCC  │  │◄── 5V Power Supply
+    │  └───────┘  │
+    │             │
+    │  ┌───────┐  │
+    │  │  GND  │  │◄── Ground
+    │  └───────┘  │
+    └─────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              POWER SUPPLY SETUP                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+    External Power Supply (5V, 2A+)
+    ┌─────────────┐
+    │             │
+    │  ┌───────┐  │
+    │  │  +5V  │  │◄── To Arduino 5V pin
+    │  └───────┘  │    and all servo VCC
+    │             │
+    │  ┌───────┐  │
+    │  │  GND  │  │◄── To Arduino GND pin
+    │  └───────┘  │    and all servo GND
+    └─────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              COMMUNICATION FLOW                                │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+    Raspberry Pi                    Arduino                    Robotic Arm
+    ┌─────────────┐                ┌─────────────┐            ┌─────────────┐
+    │             │                │             │            │             │
+    │  AI Camera  │                │  Serial     │            │  Servo 1    │
+    │  Detection  │                │  Commands   │            │  (Base)     │
+    │             │                │             │            │             │
+    │      │      │                │      │      │            │      │      │
+    │      ▼      │                │      ▼      │            │      ▼      │
+    │             │                │             │            │             │
+    │  Coordinate │                │  Movement   │            │  Servo 2    │
+    │  Mapping    │                │  Control    │            │  (Arm)      │
+    │             │                │             │            │             │
+    │      │      │                │      │      │            │      │      │
+    │      ▼      │                │      ▼      │            │      ▼      │
+    │             │                │             │            │             │
+    │  Serial     │◄──────────────►│  Servo      │◄──────────►│  Servo 3    │
+    │  Commands   │                │  Control    │            │ (Gripper)   │
+    └─────────────┘                └─────────────┘            └─────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              COMMAND EXAMPLES                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+    Pi → Arduino Commands:
+    
+    MOVE 100 150 1        // Move to (100,150) and sort as class 1 (Ready)
+    ANGLE 90 45 0         // Set servos to 90°, 45°, 0°
+    GRIP CLOSE            // Close gripper
+    GRIP OPEN             // Open gripper
+    HOME                  // Return to home position (90°, 90°, 90°)
+    STOP                  // Emergency stop
+    STATUS                // Get system status
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              SORTING BINS                                      │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+    Bin Layout (Top View):
+    
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                                                                 │
+    │                    Robotic Arm Base                             │
+    │                         (Home)                                  │
+    │                                                                 │
+    │  Bin 1 (Not Ready)    Bin 2 (Ready)    Bin 3 (Spoilt)         │
+    │      (0°, 45°)           (90°, 45°)        (180°, 45°)          │
+    │                                                                 │
+    │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐        │
+    │  │             │    │             │    │             │        │
+    │  │   Not       │    │    Ready    │    │   Spoilt    │        │
+    │  │   Ready     │    │   Tomatoes  │    │  Tomatoes   │        │
+    │  │ Tomatoes    │    │             │    │             │        │
+    │  │             │    │             │    │             │        │
+    │  └─────────────┘    └─────────────┘    └─────────────┘        │
+    │                                                                 │
+    └─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              SAFETY FEATURES                                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+    • Emergency Stop: STOP command halts all movement
+    • Angle Limits: All servos constrained to 0-180°
+    • Smooth Movement: Prevents jerky motion
+    • Speed Limiting: Prevents damage to servos
+    • Home Position: Safe default position (90°, 90°, 90°)
+    • Error Handling: Invalid commands are rejected
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              TROUBLESHOOTING                                   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+    Problem                    Solution
+    ──────────────────────────────────────────────────────────────────────────────
+    Servos not moving          Check power supply (5V, 2A minimum)
+    Jittery movement          Check connections, reduce movement speed
+    Serial communication fails Check USB cable, baud rate (115200)
+    Servos move to wrong pos   Calibrate servo mounting and limits
+    Arduino not responding     Check power, reset Arduino
+    Emergency stop active      Send HOME command to reset
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              SYSTEM INTEGRATION                                │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+    Complete System Flow:
+    
+    1. Camera detects tomato → 2. AI classifies tomato → 3. Pi calculates coordinates
+           ↓                           ↓                           ↓
+    4. Pi sends MOVE command → 5. Arduino moves to position → 6. Arduino picks tomato
+           ↓                           ↓                           ↓
+    7. Arduino sorts by class → 8. Arduino drops in bin → 9. Arduino returns home
+           ↓                           ↓                           ↓
+    10. System ready for next tomato ← 11. Process repeats ← 12. Status reported to Pi
+
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              END OF DIAGRAM                                    │
+└─────────────────────────────────────────────────────────────────────────────────┘
