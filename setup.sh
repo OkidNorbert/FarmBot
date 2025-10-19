@@ -1,10 +1,10 @@
 #!/bin/bash
-# AI Tomato Sorter - Automated Setup Script
-# For fresh installation on any Linux system
+# AI Tomato Sorter - Improved Setup Script
+# Handles PyTorch installation issues and preserves existing environments
 
 set -e  # Exit on any error
 
-echo "🌐 AI Tomato Sorter - Automated Setup"
+echo "🌐 AI Tomato Sorter - Improved Setup"
 echo "===================================="
 
 # Colors for output
@@ -41,51 +41,51 @@ fi
 PROJECT_DIR=$(pwd)
 print_info "Project directory: $PROJECT_DIR"
 
-# Step 1: Update system packages
-print_info "Updating system packages..."
-sudo apt update && sudo apt upgrade -y
-print_status "System packages updated"
-
-# Step 2: Install essential packages
-print_info "Installing essential packages..."
-sudo apt install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    python3-dev \
-    git \
-    curl \
-    wget \
-    build-essential \
-    cmake \
-    pkg-config \
-    libjpeg-dev \
-    libtiff5-dev \
-    libpng-dev \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
-    libgtk2.0-dev \
-    v4l-utils \
-    v4l2loopback-dkms \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
-    libxrender-dev \
-    libglib2.0-0
-
-print_status "Essential packages installed"
-print_warning "Skipped: libcanberra-gtk-module (not available on this system)"
-
-# Step 3: Create virtual environment
-print_info "Creating Python virtual environment..."
-if [ -d "tomato_sorter_env" ]; then
-    print_warning "Virtual environment already exists, removing..."
-    rm -rf tomato_sorter_env
+# Step 1: Update system packages (only if not already updated recently)
+print_info "Checking system packages..."
+if [ ! -f ".setup_completed" ] || [ $(find .setup_completed -mtime +1 2>/dev/null | wc -l) -gt 0 ]; then
+    print_info "Updating system packages..."
+    sudo apt update && sudo apt upgrade -y
+    print_status "System packages updated"
+else
+    print_info "System packages recently updated, skipping..."
 fi
 
-python3 -m venv tomato_sorter_env
-print_status "Virtual environment created"
+# Step 2: Install essential packages (only if not already installed)
+print_info "Checking essential packages..."
+missing_packages=()
+packages=(
+    "python3" "python3-pip" "python3-venv" "python3-dev" "git" "curl" "wget"
+    "build-essential" "cmake" "pkg-config" "libjpeg-dev" "libtiff5-dev"
+    "libpng-dev" "libavcodec-dev" "libavformat-dev" "libswscale-dev"
+    "libgtk2.0-dev" "v4l-utils" "v4l2loopback-dkms" "ffmpeg" "libsm6"
+    "libxext6" "libxrender-dev" "libglib2.0-0"
+)
+
+for package in "${packages[@]}"; do
+    if ! dpkg -l | grep -q "^ii  $package "; then
+        missing_packages+=("$package")
+    fi
+done
+
+if [ ${#missing_packages[@]} -gt 0 ]; then
+    print_info "Installing missing packages: ${missing_packages[*]}"
+    sudo apt install -y "${missing_packages[@]}"
+    print_status "Essential packages installed"
+else
+    print_info "All essential packages already installed"
+fi
+
+# Step 3: Create or preserve virtual environment
+print_info "Setting up Python virtual environment..."
+if [ -d "tomato_sorter_env" ]; then
+    print_warning "Virtual environment already exists, preserving it..."
+    print_info "To recreate environment, delete tomato_sorter_env folder first"
+else
+    print_info "Creating new virtual environment..."
+    python3 -m venv tomato_sorter_env
+    print_status "Virtual environment created"
+fi
 
 # Step 4: Activate virtual environment
 print_info "Activating virtual environment..."
@@ -97,64 +97,101 @@ print_info "Upgrading pip..."
 pip install --upgrade pip setuptools wheel
 print_status "Pip upgraded"
 
-# Step 5.5: Check available disk space before installing Python dependencies
+# Step 6: Check disk space and set up pip cache
+print_info "Setting up pip cache directory..."
+mkdir -p ~/.pip-cache
+export PIP_CACHE_DIR=~/.pip-cache
+print_status "Pip cache directory set to ~/.pip-cache"
+
+# Check available disk space
 MIN_SPACE_GB=5
 AVAILABLE_GB_ROOT=$(df --output=avail . | tail -1)
 AVAILABLE_GB_ROOT=$((AVAILABLE_GB_ROOT / 1024 / 1024))
 AVAILABLE_GB_TMP=$(df --output=avail /tmp | tail -1)
 AVAILABLE_GB_TMP=$((AVAILABLE_GB_TMP / 1024 / 1024))
+
 if [ "$AVAILABLE_GB_ROOT" -lt "$MIN_SPACE_GB" ]; then
-    print_warning "Low disk space on root: ${AVAILABLE_GB_ROOT}GB available. At least ${MIN_SPACE_GB}GB is recommended for installing large packages like torch."
+    print_warning "Low disk space on root: ${AVAILABLE_GB_ROOT}GB available. At least ${MIN_SPACE_GB}GB is recommended."
 fi
 if [ "$AVAILABLE_GB_TMP" -lt "$MIN_SPACE_GB" ]; then
-    print_warning "Low disk space on /tmp: ${AVAILABLE_GB_TMP}GB available. At least ${MIN_SPACE_GB}GB is recommended for pip downloads."
-    print_info "Tip: You can free up /tmp with 'sudo rm -rf /tmp/*' if safe, or set TMPDIR to a larger location before running pip."
+    print_warning "Low disk space on /tmp: ${AVAILABLE_GB_TMP}GB available. At least ${MIN_SPACE_GB}GB is recommended."
+    print_info "Tip: You can free up /tmp with 'sudo rm -rf /tmp/*' if safe, or set TMPDIR to a larger location."
 fi
 
-# Step 6: Install Python dependencies
-print_info "Installing Python dependencies..."
-if [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt
-    print_status "Dependencies installed from requirements.txt"
+# Step 7: Install PyTorch with CPU-only version to avoid CUDA issues
+print_info "Installing PyTorch (CPU-only version to avoid CUDA issues)..."
+if ! python -c "import torch" 2>/dev/null; then
+    print_info "Installing PyTorch CPU-only version..."
+    pip install --cache-dir ~/.pip-cache torch torchvision --index-url https://download.pytorch.org/whl/cpu
+    print_status "PyTorch CPU-only version installed"
 else
-    print_warning "requirements.txt not found, installing core packages..."
-    pip install torch torchvision
-    pip install opencv-python
-    pip install Flask
-    pip install numpy pandas
-    pip install Pillow matplotlib
-    pip install scikit-learn
-    pip install pyserial
-    pip install python-dotenv
-    pip install loguru
-    print_status "Core dependencies installed"
+    print_info "PyTorch already installed, checking version..."
+    python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
 fi
 
-# Step 7: Create directory structure
-print_info "Creating project directory structure..."
-mkdir -p datasets/tomato/{train,val}/{ripe,unripe,old,damaged}
-mkdir -p models/tomato
-mkdir -p temp
-mkdir -p learning_data
-mkdir -p templates
-mkdir -p static/{css,js,images}
-mkdir -p arduino
-mkdir -p docs
-mkdir -p logs
-print_status "Directory structure created"
+# Step 8: Install core dependencies
+print_info "Installing core dependencies..."
+core_packages=(
+    "numpy" "opencv-python" "Pillow" "Flask" "Werkzeug" "pandas" 
+    "scikit-learn" "matplotlib" "seaborn" "psutil" "python-dateutil"
+    "pyyaml" "pyserial" "python-dotenv" "loguru" "pathlib2" "watchdog"
+    "flask-restx" "pytest" "pytest-flask" "memory-profiler"
+)
 
-# Step 8: Set permissions
+for package in "${core_packages[@]}"; do
+    if ! python -c "import ${package//-/_}" 2>/dev/null; then
+        print_info "Installing $package..."
+        pip install --cache-dir ~/.pip-cache "$package"
+    else
+        print_info "$package already installed"
+    fi
+done
+
+# Install optional development packages
+print_info "Installing optional development packages..."
+optional_packages=("jupyter" "ipython" "gunicorn" "waitress" "imutils" "scipy")
+for package in "${optional_packages[@]}"; do
+    if ! python -c "import ${package//-/_}" 2>/dev/null; then
+        print_info "Installing optional package: $package..."
+        pip install --cache-dir ~/.pip-cache "$package" || print_warning "Failed to install $package (optional)"
+    fi
+done
+
+print_status "Core dependencies installed"
+
+# Step 9: Create directory structure (only if not exists)
+print_info "Creating project directory structure..."
+directories=(
+    "datasets/tomato/train/ripe" "datasets/tomato/train/unripe" "datasets/tomato/train/old" "datasets/tomato/train/damaged"
+    "datasets/tomato/val/ripe" "datasets/tomato/val/unripe" "datasets/tomato/val/old" "datasets/tomato/val/damaged"
+    "models/tomato" "temp" "learning_data" "templates" "static/css" "static/js" "static/images"
+    "arduino" "docs" "logs"
+)
+
+for dir in "${directories[@]}"; do
+    if [ ! -d "$dir" ]; then
+        mkdir -p "$dir"
+        print_info "Created directory: $dir"
+    else
+        print_info "Directory already exists: $dir"
+    fi
+done
+
+print_status "Directory structure ready"
+
+# Step 10: Set permissions
 print_info "Setting permissions..."
 chmod +x *.py 2>/dev/null || true
 chmod +x *.sh 2>/dev/null || true
-chmod 755 datasets models temp learning_data templates static
+chmod 755 datasets models temp learning_data templates static 2>/dev/null || true
 print_status "Permissions set"
 
-# Step 9: Create configuration files
+# Step 11: Create or update configuration files
 print_info "Creating configuration files..."
 
-# Create .env file
-cat > .env << EOF
+# Create .env file if it doesn't exist
+if [ ! -f ".env" ]; then
+    cat > .env << EOF
 # AI Tomato Sorter Configuration
 FLASK_ENV=production
 FLASK_DEBUG=False
@@ -178,8 +215,12 @@ ARDUINO_BAUD=9600
 WEB_HOST=0.0.0.0
 WEB_PORT=5001
 EOF
+    print_status "Created .env file"
+else
+    print_info ".env file already exists, preserving it"
+fi
 
-# Create startup script
+# Create or update startup script
 cat > start.sh << 'EOF'
 #!/bin/bash
 # AI Tomato Sorter Startup Script
@@ -203,7 +244,7 @@ python --version
 
 # Check required packages
 echo "🔍 Checking dependencies..."
-python -c "import torch, cv2, flask; print('✅ All dependencies available')" || {
+python -c "import torch, cv2, flask, yaml; print('✅ All dependencies available')" || {
     echo "❌ Missing dependencies, please run setup.sh again"
     exit 1
 }
@@ -214,9 +255,52 @@ python web_interface.py
 EOF
 
 chmod +x start.sh
+print_status "Startup script created/updated"
 
-# Create systemd service
-cat > tomato-sorter.service << EOF
+# Step 12: Test installation
+print_info "Testing installation..."
+
+# Test Python imports
+python -c "
+import sys
+sys.path.append('.')
+try:
+    import torch, cv2, flask, yaml, numpy, pandas
+    print('✅ All core packages imported successfully')
+except Exception as e:
+    print(f'❌ Import failed: {e}')
+    sys.exit(1)
+"
+
+# Test web interface import
+python -c "
+import sys
+sys.path.append('.')
+try:
+    from web_interface import app
+    print('✅ Web interface imported successfully')
+except Exception as e:
+    print(f'❌ Web interface import failed: {e}')
+    sys.exit(1)
+"
+
+# Test camera (optional)
+python -c "
+import cv2
+cap = cv2.VideoCapture(0)
+if cap.isOpened():
+    print('✅ Camera available')
+    cap.release()
+else:
+    print('⚠️  Camera not available (this is normal if no camera is connected)')
+"
+
+print_status "Installation test completed"
+
+# Step 13: Create systemd service (optional)
+print_info "Setting up system service..."
+if command -v systemctl &> /dev/null; then
+    cat > tomato-sorter.service << EOF
 [Unit]
 Description=AI Tomato Sorter
 After=network.target
@@ -234,54 +318,21 @@ Environment=PATH=$PROJECT_DIR/tomato_sorter_env/bin
 WantedBy=multi-user.target
 EOF
 
-print_status "Configuration files created"
-
-# Step 10: Test installation
-print_info "Testing installation..."
-
-# Test Python imports
-python -c "
-import sys
-sys.path.append('.')
-try:
-    from web_interface import app
-    print('✅ Web interface imported successfully')
-except Exception as e:
-    print(f'❌ Web interface import failed: {e}')
-    sys.exit(1)
-"
-
-# Test camera
-python -c "
-import cv2
-cap = cv2.VideoCapture(0)
-if cap.isOpened():
-    print('✅ Camera available')
-    cap.release()
-else:
-    print('⚠️  Camera not available (this is normal if no camera is connected)')
-"
-
-print_status "Installation test completed"
-
-# Step 11: Create systemd service (optional)
-print_info "Setting up system service..."
-if command -v systemctl &> /dev/null; then
-    sudo cp tomato-sorter.service /etc/systemd/system/
-    sudo systemctl daemon-reload
-    sudo systemctl enable tomato-sorter
-    print_status "System service created and enabled"
+    sudo cp tomato-sorter.service /etc/systemd/system/ 2>/dev/null || print_warning "Could not copy service file (may need sudo)"
+    sudo systemctl daemon-reload 2>/dev/null || print_warning "Could not reload systemd (may need sudo)"
+    sudo systemctl enable tomato-sorter 2>/dev/null || print_warning "Could not enable service (may need sudo)"
+    print_status "System service created"
     print_info "To start service: sudo systemctl start tomato-sorter"
     print_info "To check status: sudo systemctl status tomato-sorter"
 else
     print_warning "systemctl not available, skipping service setup"
 fi
 
-# Step 12: Final verification
+# Step 14: Final verification
 print_info "Final verification..."
 
 # Check if all required files exist
-required_files=("web_interface.py" "requirements.txt" "start.sh")
+required_files=("web_interface.py" "start.sh")
 for file in "${required_files[@]}"; do
     if [ -f "$file" ]; then
         print_status "Found $file"
@@ -298,15 +349,17 @@ else
 fi
 
 # Check Python packages
-source tomato_sorter_env/bin/activate
 python -c "
-import torch, cv2, flask, numpy, pandas
+import torch, cv2, flask, yaml, numpy, pandas
 print('✅ All core packages available')
 "
 
 print_status "Final verification completed"
 
-# Step 13: Display completion message
+# Create setup completion marker
+touch .setup_completed
+
+# Step 15: Display completion message
 echo ""
 echo "🎉 AI Tomato Sorter Setup Complete!"
 echo "=================================="
@@ -327,7 +380,6 @@ echo ""
 echo "📚 Documentation:"
 echo "   - README.md"
 echo "   - FRESH_INSTALL_GUIDE.md"
-echo "   - API_DOCUMENTATION.md"
 echo ""
 echo "🎯 Next steps:"
 echo "   1. Add your tomato dataset to datasets/tomato/"

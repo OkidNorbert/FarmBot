@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/your-repo/ai-tomato-sorter/main/set
 chmod +x setup.sh
 ./setup.sh
 ```
-
+source tomato_sorter_env/bin/activate && pip install --no-deps torch torchvision
 ### **Start the System:**
 ```bash
 # Activate environment and start
