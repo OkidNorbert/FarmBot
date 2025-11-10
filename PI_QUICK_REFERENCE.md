@@ -161,16 +161,17 @@ curl http://<PI_IP>:5000/pi/status
 # Send commands to Arduino
 echo "STATUS" | sudo tee /dev/ttyUSB0
 echo "HOME" | sudo tee /dev/ttyUSB0
-echo "ANGLE 90 90 90" | sudo tee /dev/ttyUSB0
+echo "ANGLE 90 90 90 90 30" | sudo tee /dev/ttyUSB0
 ```
 
 ### **Arduino Commands**
 - `STATUS` - Get system status
 - `HOME` - Move to home position
-- `ANGLE 90 90 90` - Set servo angles
+- `ANGLE 90 90 90 90 30` - Set servo angles (base, shoulder, elbow, wrist, gripper)
 - `GRIP OPEN` - Open gripper
 - `GRIP CLOSE` - Close gripper
 - `MOVE 100 150 1` - Move and sort
+- `MOVE` commands trigger the full pick → distance adjust → bin drop sequence autonomously on the Arduino
 
 ## 📊 **System Monitoring**
 

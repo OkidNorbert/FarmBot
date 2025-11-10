@@ -64,11 +64,11 @@ class PiController:
             'camera': {'index': 0, 'width': 640, 'height': 480, 'fps': 30},
             'arduino': {'port': '/dev/ttyUSB0', 'baudrate': 115200},
             'arm': {
-                'home_position': [90, 90, 90],
+                'home_position': [90, 90, 90, 90, 30],
                 'bin_positions': {
-                    'not_ready': [0, 45, 90],
-                    'ready': [90, 45, 90],
-                    'spoilt': [180, 45, 90]
+                    'not_ready': [20, 55, 120, 80, 150],
+                    'ready': [100, 50, 110, 80, 150],
+                    'spoilt': [160, 60, 115, 80, 150]
                 },
                 'arm_length_1': 100.0,
                 'arm_length_2': 80.0,
@@ -277,37 +277,13 @@ class PiController:
             
             self.logger.info(f"Picking tomato at ({pick_x:.1f}, {pick_y:.1f}, {pick_z:.1f}) - Class: {class_id}")
             
-            # Move to pick position
+            # Trigger autonomous pick-and-sort sequence on Arduino
             self.send_arduino_command(f"MOVE {pick_x:.1f} {pick_y:.1f} {class_id}")
             
-            # Wait for movement to complete
-            time.sleep(2)
+            # Allow Arduino time to complete the sequence
+            time.sleep(6)
             
-            # Close gripper
-            self.send_arduino_command("GRIP CLOSE")
-            time.sleep(1)
-            
-            # Move to appropriate bin
-            bin_positions = self.config['arm']['bin_positions']
-            if class_id == 0:  # Not ready
-                bin_pos = bin_positions['not_ready']
-            elif class_id == 1:  # Ready
-                bin_pos = bin_positions['ready']
-            else:  # Spoilt
-                bin_pos = bin_positions['spoilt']
-            
-            self.send_arduino_command(f"ANGLE {bin_pos[0]} {bin_pos[1]} {bin_pos[2]}")
-            time.sleep(2)
-            
-            # Open gripper to drop tomato
-            self.send_arduino_command("GRIP OPEN")
-            time.sleep(1)
-            
-            # Return to home position
-            self.send_arduino_command("HOME")
-            time.sleep(2)
-            
-            self.logger.info(f"Tomato sorted successfully - Class: {class_id}")
+            self.logger.info(f"Tomato sorted (Arduino autonomous) - Class: {class_id}")
             return True
             
         except Exception as e:

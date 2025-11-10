@@ -187,9 +187,13 @@ print('TFLite model loaded successfully')
 ```
 Arduino Pin Layout:
 - Pin 3:  Servo 1 (Base rotation)
-- Pin 5:  Servo 2 (Arm joint)
-- Pin 6:  Servo 3 (Gripper)
-- GND:    Common ground
+- Pin 5:  Servo 2 (Shoulder joint)
+- Pin 6:  Servo 3 (Elbow joint)
+- Pin 9:  Servo 4 (Wrist pitch)
+- Pin 10: Servo 5 (Gripper)
+- Pin 11: Ultrasonic TRIG
+- Pin 12: Ultrasonic ECHO
+- GND:    Common ground (tie external 5V ground to Arduino GND)
 - 5V:     Power supply (if servos need external power)
 ```
 
@@ -258,7 +262,7 @@ python pi/inference_pi.py \
 python -c "
 import serial
 ser = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
-ser.write(b'ANGLE 90 45 120\n')
+ser.write(b'ANGLE 90 60 120 95 150\n')
 print('Command sent to Arduino')
 "
 ```

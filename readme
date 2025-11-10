@@ -239,7 +239,7 @@ Example:
 
 C. Inverse Kinematics (brief)
 
-For a 3-DOF planar arm, use 2D IK (x,y -> theta1, theta2) using analytical IK formulas. Use existing libs (TinyIK, ikpy) or code simple 2-link trigonometric solver.
+For a 5-DOF arm, use planar IK for shoulder & elbow (x,y -> theta1, theta2), base yaw from atan2(x,y), wrist alignment to keep end-effector level, and a dedicated gripper servo. Use existing libs (TinyIK, ikpy) or code simple 2-link trigonometric solver for the planar joints.
 
 Send joint angles to Arduino; Arduino interpolates to move servos smoothly.
 
@@ -377,7 +377,7 @@ Log inference outputs to CSV for later analysis (timestamp, class, bbox, confide
 
 Use this prompt to ask Cyusor (or similar assistant) for a step-by-step code + training + deployment pipeline. It’s explicit so the AI can produce code, scripts and files you can run.
 
-You are an expert embedded vision/robotics engineer. I need a complete, runnable pipeline for a final-year project: an AI tomato sorter (classes: "not_ready", "ready", "spoilt"). I will train on my Linux laptop (or Colab), deploy on a Raspberry Pi 5 (no Hailo Hat), and control an Arduino-driven 3-DOF robotic arm that sorts tomatoes into 3 bins.
+You are an expert embedded vision/robotics engineer. I need a complete, runnable pipeline for a final-year project: an AI tomato sorter (classes: "not_ready", "ready", "spoilt"). I will train on my Linux laptop (or Colab), deploy on a Raspberry Pi 5 (no Hailo Hat), and control an Arduino-driven 5-DOF robotic arm (base, shoulder, elbow, wrist, gripper) that sorts tomatoes into 3 bins with distance-aware placement.
 
 Please produce the following, with exact commands and runnable code:
 
@@ -405,7 +405,7 @@ Please produce the following, with exact commands and runnable code:
   - Example calibration images and how to compute the transform matrix.
 
 6) Arduino integration:
-  - Arduino firmware (C++) that accepts serial commands from the Pi (e.g., `"ANGLE 90 45 120"` or `"MOVE X Y CLASS"`) and drives three servos smoothly with interpolation and safety checks.
+  - Arduino firmware (C++) that accepts serial commands from the Pi (e.g., `"ANGLE 90 60 120 95 150"` or `"MOVE X Y CLASS"`) and drives five servos (base, shoulder, elbow, wrist, gripper) smoothly with interpolation, distance sensing, and safety checks.
   - Example Pi-side function that converts detection bbox → world XY → IK joint angles → serial commands.
 
 7) Testing & evaluation:

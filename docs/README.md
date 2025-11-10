@@ -7,7 +7,7 @@ A complete AI-powered tomato sorting system that uses computer vision and roboti
 This project implements an end-to-end tomato sorting system using:
 - **Computer Vision**: YOLOv8 object detection and classification
 - **Edge Computing**: Raspberry Pi 5 for real-time inference
-- **Robotics**: Arduino-controlled 3-DOF robotic arm
+- **Robotics**: Arduino-controlled 5-DOF robotic arm with gripper and distance sensing
 - **Web Interface**: Real-time monitoring and control
 
 ## 🏗️ System Architecture
@@ -214,7 +214,7 @@ python pi/web_interface.py \
 - **Connections**: Serial communication with Pi
 
 ### Mechanical Components
-- **Robotic Arm**: 3-DOF planar arm
+- **Robotic Arm**: 5-DOF arm (base, shoulder, elbow, wrist, gripper) with HC-SR04 distance sensor
 - **Gripper**: Soft gripper for tomatoes
 - **Sorting Bins**: 3 bins for different categories
 - **Workspace**: 30cm x 30cm sorting area
@@ -668,9 +668,13 @@ python test/evaluation.py \
 **Arduino Connections:**
 ```
 Pin 3:  Servo 1 (Base rotation)
-Pin 5:  Servo 2 (Arm joint)  
-Pin 6:  Servo 3 (Gripper)
-GND:    Common ground
+Pin 5:  Servo 2 (Shoulder joint)  
+Pin 6:  Servo 3 (Elbow joint)
+Pin 9:  Servo 4 (Wrist pitch)
+Pin 10: Servo 5 (Gripper)
+Pin 11: HC-SR04 TRIG
+Pin 12: HC-SR04 ECHO
+GND:    Common ground (external 5V ↔ Arduino)
 5V:     Power supply
 ```
 

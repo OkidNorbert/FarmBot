@@ -10,7 +10,8 @@ This guide will walk you through setting up your AI Tomato Sorter on a Raspberry
 - **MicroSD Card** (32GB+ Class 10)
 - **Camera Module** (Pi Camera v2 or USB webcam)
 - **Arduino Uno/Nano** (for robotic arm control)
-- **3x Servo Motors** (SG90 or similar)
+- **5x Servo Motors** (SG90/MG90S or similar: base, shoulder, elbow, wrist, gripper)
+- **HC-SR04 Ultrasonic Sensor** (for precise distance-based wrist adjustment)
 - **Power Supply** (5V, 3A for Pi + 5V, 2A for servos)
 - **Jumper Wires** and **Breadboard**
 - **USB Cable** (Pi ↔ Arduino)
@@ -231,11 +232,11 @@ arduino:
   baudrate: 115200
 
 arm:
-  home_position: [90, 90, 90]
+  home_position: [90, 90, 90, 90, 30]
   bin_positions:
-    not_ready: [0, 45, 90]
-    ready: [90, 45, 90]
-    spoilt: [180, 45, 90]
+    not_ready: [20, 55, 120, 80, 150]
+    ready: [100, 50, 110, 80, 150]
+    spoilt: [160, 60, 115, 80, 150]
   
   # Arm dimensions (mm)
   arm_length_1: 100.0

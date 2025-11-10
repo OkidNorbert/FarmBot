@@ -188,11 +188,11 @@ arduino:
   baudrate: 115200
 
 arm:
-  home_position: [90, 90, 90]
+  home_position: [90, 90, 90, 90, 30]
   bin_positions:
-    not_ready: [0, 45, 90]
-    ready: [90, 45, 90]
-    spoilt: [180, 45, 90]
+    not_ready: [20, 55, 120, 80, 150]
+    ready: [100, 50, 110, 80, 150]
+    spoilt: [160, 60, 115, 80, 150]
   
   # Arm dimensions (mm)
   arm_length_1: 100.0
