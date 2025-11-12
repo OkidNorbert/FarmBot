@@ -4,7 +4,7 @@
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────┐    USB Cable    ┌─────────────────┐    PWM / IO Leads      ┌────────────────────────┐
-│   Raspberry Pi  │◄──────────────►│    Arduino      │◄──────────────────────►│  Robotic Arm Assembly  │
+│ Raspberry Pi 4/5│◄──────────────►│    Arduino      │◄──────────────────────►│  Robotic Arm Assembly  │
 │                 │                 │                 │                        │                        │
 │  ┌───────────┐  │                 │  ┌───────────┐  │                        │  Servo 1 (Base)  Pin 3 │
 │  │   Camera  │  │                 │  │   USB     │  │                        │  Servo 2 (Should) Pin 5│
@@ -13,7 +13,8 @@
 │                 │                 │  ┌───────────┐  │                        │  Servo 5 (Grip)  Pin 10│
 │  ┌───────────┐  │                 │  │  Digital  │  │                        │  HC-SR04 TRIG   Pin 11 │
 │  │   Web     │  │                 │  │   Pins    │  │                        │  HC-SR04 ECHO   Pin 12 │
-│  │Interface  │  │                 │  └───────────┘  │                        │                        │
+│  │Interface  │  │                 │  └───────────┘  │                        │  VL53L0X SDA   Pin A4  │
+│                 │                 │                 │                        │  VL53L0X SCL   Pin A5  │
 └─────────────────┘                 └─────────────────┘                        └────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
@@ -30,6 +31,11 @@
     Servo 5 ──────►│ Pin 10 (PWM)       │◄── Gripper
     HC-SR04 TRIG ─►│ Pin 11 (Digital)   │◄── Distance trigger
     HC-SR04 ECHO ─►│ Pin 12 (Digital)   │◄── Distance echo input
+    VL53L0X SDA  ─►│ Pin A4 (I2C SDA)   │◄── ToF distance (SDA)
+    VL53L0X SCL  ─►│ Pin A5 (I2C SCL)   │◄── ToF distance (SCL)
+    Limit SW1 NC ─►│ Pin D2 (INPUT_PULLUP) ◄── COM→GND
+    Limit SW2 NC ─►│ Pin D4 (INPUT_PULLUP) ◄── COM→GND
+    Limit SW3 NC ─►│ Pin D7 (INPUT_PULLUP) ◄── COM→GND
                    │                    │
     Servo Power + ─►│ 5V (external)      │◄── Dedicated 5V / 2A supply
     Servo Power - ─►│ GND (common)       │◄── Common ground with Pi and servos
@@ -40,7 +46,7 @@
 │                              SERVO CONNECTIONS                                 │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
-    Servo Motor (SG90)
+    Servo Motor (FT5330M / RC Servo)
     ┌─────────────┐
     │             │
     │  ┌───────┐  │
@@ -60,11 +66,11 @@
 │                              POWER SUPPLY SETUP                               │
 └─────────────────────────────────────────────────────────────────────────────────┘
 
-    External Power Supply (5V, 2A+)
+    External Power Supply (5V, 5–8A; 10A recommended)
     ┌─────────────┐
     │             │
     │  ┌───────┐  │
-    │  │  +5V  │  │◄── To servo VCC rail (do NOT power servos from Arduino 5V)
+    │  │  +5V  │  │◄── To servo VCC rail (do NOT power servos from Arduino/Pi 5V)
     │             │
     │  ┌───────┐  │
     │  │  GND  │  │◄── To Arduino GND pin (common ground)
@@ -83,7 +89,9 @@
     │             │                │             │            │  Servo 3 (Elbow)         │
     │      │      │                │      │      │            │  Servo 4 (Wrist)         │
     │      ▼      │                │      ▼      │            │  Servo 5 (Gripper)       │
-    │             │                │             │            │  Ultrasonic Sensor (HC-SR04)│
+    │             │                │             │            │  Ultrasonic (HC-SR04)    │
+    │  ToF (VL53L0X)──────────────►│             │            │  ToF (VL53L0X)          │
+    │  Limit Switches ────────────►│             │            │  Limit Switches (x3)    │
     │  Coordinate │                │  Movement   │            │                          │
     │  Mapping    │                │  Control    │            │                          │
     │             │                │             │            │                          │
@@ -104,7 +112,7 @@
     ANGLE 90 60 120 95 150// Manually set angles (base, shoulder, elbow, wrist, gripper)
     GRIP CLOSE            // Close gripper
     GRIP OPEN             // Open gripper
-    HOME                  // Return to home position (90°, 90°, 90°)
+    HOME                  // Return to home position (90°, 90°, 90°, 90°, gripper open)
     STOP                  // Emergency stop
     STATUS                // Get system status
 

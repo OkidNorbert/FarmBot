@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <style type="text/css"><![CDATA[
+      .box { fill:#ffffff; stroke:#222; stroke-width:2; }
+      .title { font: bold 18px sans-serif; fill:#111; }
+      .text { font: 14px sans-serif; fill:#222; }
+      .wire { stroke:#444; stroke-width:2; fill:none; marker-end:url(#arrow); }
+      .power { stroke:#d22; stroke-width:3; fill:none; marker-end:url(#arrow); }
+      .gnd { stroke:#22a; stroke-width:2; fill:none; marker-end:url(#arrow); stroke-dasharray:6 4; }
+    ]]></style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#444" />
+    </marker>
+  </defs>
+
+  <!-- Raspberry Pi -->
+  <rect class="box" x="80" y="60" width="360" height="210" rx="10"/>
+  <text class="title" x="100" y="90">Raspberry Pi 4/5 + Hailo AI Hat</text>
+  <text class="text" x="100" y="120">Power: Official 5V 3A/5A PSU</text>
+  <text class="text" x="100" y="145">CSI: Pi Cam v2 / HQ (or USB cam)</text>
+  <text class="text" x="100" y="170">USB: to Arduino (data + 5V logic)</text>
+  <text class="text" x="100" y="195">GND: tied to servo PSU GND</text>
+
+  <!-- Camera -->
+  <rect class="box" x="80" y="320" width="360" height="120" rx="10"/>
+  <text class="title" x="100" y="350">Camera</text>
+  <text class="text" x="100" y="375">Pi Camera via CSI ribbon</text>
+  <text class="text" x="100" y="400">or USB Webcam</text>
+  <path class="wire" d="M260,320 L260,270" />
+
+  <!-- USB to Arduino -->
+  <path class="wire" d="M440,160 C520,160 520,160 600,160" />
+
+  <!-- Arduino -->
+  <rect class="box" x="600" y="60" width="360" height="270" rx="10"/>
+  <text class="title" x="620" y="90">Arduino Uno/Nano</text>
+  <text class="text" x="620" y="120">D3  → Servo1 (Base)</text>
+  <text class="text" x="620" y="140">D5  → Servo2 (Shoulder)</text>
+  <text class="text" x="620" y="160">D6  → Servo3 (Elbow)</text>
+  <text class="text" x="620" y="180">D9  → Servo4 (Wrist)</text>
+  <text class="text" x="620" y="200">D10 → Servo5 (Gripper)</text>
+  <text class="text" x="620" y="220">D11 → HC-SR04 TRIG</text>
+  <text class="text" x="620" y="240">D12 ← HC-SR04 ECHO</text>
+  <text class="text" x="620" y="260">A4/A5 ↔ VL53L0X SDA/SCL</text>
+
+  <!-- Ultrasonic -->
+  <rect class="box" x="1040" y="60" width="260" height="120" rx="10"/>
+  <text class="title" x="1060" y="90">HC-SR04</text>
+  <text class="text" x="1060" y="115">VCC→5V, GND→GND</text>
+  <text class="text" x="1060" y="135">TRIG←D11, ECHO→D12</text>
+  <path class="wire" d="M960,120 C1000,120 1000,120 1040,120" />
+
+  <!-- ToF -->
+  <rect class="box" x="1040" y="200" width="260" height="120" rx="10"/>
+  <text class="title" x="1060" y="230">VL53L0X (ToF)</text>
+  <text class="text" x="1060" y="255">VCC→5V (or 3.3V)</text>
+  <text class="text" x="1060" y="275">SDA→A4, SCL→A5</text>
+  <path class="wire" d="M960,240 C1000,240 1000,240 1040,240" />
+
+  <!-- Limit Switches -->
+  <rect class="box" x="1040" y="340" width="260" height="140" rx="10"/>
+  <text class="title" x="1060" y="370">Limit Switches (3×)</text>
+  <text class="text" x="1060" y="395">NC→D2, D4, D7; COM→GND</text>
+  <text class="text" x="1060" y="420">Use INPUT_PULLUP</text>
+  <path class="wire" d="M960,390 C1000,390 1000,390 1040,390" />
+
+  <!-- Servo Power Rail -->
+  <rect class="box" x="600" y="380" width="360" height="220" rx="10"/>
+  <text class="title" x="620" y="410">Servo Power Rail (5V High Current)</text>
+  <text class="text" x="620" y="435">+5V from dedicated 5–8A (10A rec.) PSU</text>
+  <text class="text" x="620" y="455">Bulk 1000–2200µF across +/− near rail</text>
+  <text class="text" x="620" y="475">Distribution to 5× FT5330M servos</text>
+  <text class="text" x="620" y="495">GND tied to Arduino GND and Pi GND</text>
+
+  <!-- Servo blocks -->
+  <rect class="box" x="1000" y="520" width="520" height="360" rx="10"/>
+  <text class="title" x="1020" y="550">Servos (FT5330M ×5)</text>
+  <text class="text" x="1020" y="580">Each: SIG (yellow) → Arduino D3/D5/D6/D9/D10</text>
+  <text class="text" x="1020" y="605">      +5V (red)   → Servo Rail +5V</text>
+  <text class="text" x="1020" y="630">      GND (black) → Servo Rail GND</text>
+  <text class="text" x="1020" y="660">1. Base (D3)     2. Shoulder (D5)</text>
+  <text class="text" x="1020" y="685">3. Elbow (D6)    4. Wrist (D9)</text>
+  <text class="text" x="1020" y="710">5. Gripper (D10)</text>
+
+  <!-- Wires: Arduino to Servo Rail (GND common) -->
+  <path class="gnd" d="M780,330 C780,360 780,360 780,380" />
+  <path class="power" d="M600,490 C560,490 560,200 440,200" />
+  <text class="text" x="460" y="215">Common GND</text>
+
+  <!-- PSU -->
+  <rect class="box" x="80" y="520" width="360" height="160" rx="10"/>
+  <text class="title" x="100" y="550">Servo PSU (5–8A, 10A rec.)</text>
+  <text class="text" x="100" y="575">+5V → Servo Rail +</text>
+  <text class="text" x="100" y="595">GND → Servo Rail − (common)</text>
+  <text class="text" x="100" y="615">Inline fuse 2–5A, main switch</text>
+
+  <!-- PSU to Servo Rail -->
+  <path class="power" d="M440,560 C520,560 520,560 600,560" />
+  <path class="gnd" d="M440,605 C520,605 520,605 600,605" />
+
+  <!-- Legends -->
+  <rect class="box" x="80" y="720" width="860" height="160" rx="10"/>
+  <text class="title" x="100" y="750">Legends & Notes</text>
+  <text class="text" x="100" y="775">• Use ≥18AWG from PSU to servo rail. Keep servo leads short. Place bulk cap near the rail.</text>
+  <text class="text" x="100" y="800">• Do NOT power servos from Arduino/Pi 5V. Only share GND between Pi, Arduino, and servo PSU.</text>
+  <text class="text" x="100" y="825">• Limit switches normally-closed to GND; use INPUT_PULLUP on pins to detect open as a fault/home.</text>
+</svg>
+
+

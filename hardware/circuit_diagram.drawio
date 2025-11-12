@@ -1,0 +1,60 @@
+<mxfile host="app.diagrams.net" modified="2025-11-12T00:00:00.000Z" agent="AI Tomato Sorter" version="24.7.1" type="device">
+  <diagram id="AiTomatoSorter" name="Circuit">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2200" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <!-- Raspberry Pi -->
+        <mxCell id="pi" value="Raspberry Pi 4/5 + Hailo AI Hat&#xa;Power: 5V 3A/5A&#xa;USB → Arduino&#xa;CSI → Pi Cam / USB Cam" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="80" y="80" width="340" height="160" as="geometry"/>
+        </mxCell>
+        <!-- Camera -->
+        <mxCell id="cam" value="Camera&#xa;Pi Cam v2/HQ (CSI) or USB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="80" y="270" width="340" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="pi-cam" edge="1" parent="1" source="cam" target="pi" style="endArrow=block;strokeWidth=2;"/>
+        <!-- Arduino -->
+        <mxCell id="arduino" value="Arduino Uno/Nano&#xa;D3 Base, D5 Shoulder, D6 Elbow&#xa;D9 Wrist, D10 Gripper&#xa;D11 TRIG, D12 ECHO&#xa;A4/A5 SDA/SCL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="520" y="80" width="360" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="pi-arduino" edge="1" parent="1" source="pi" target="arduino" style="endArrow=block;strokeWidth=2;">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- Sensors -->
+        <mxCell id="ultra" value="HC-SR04&#xa;TRIG→D11&#xa;ECHO→D12&#xa;VCC 5V / GND" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="940" y="80" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="tof" value="VL53L0X ToF&#xa;SDA→A4  SCL→A5&#xa;VCC 5V/3.3V / GND" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="940" y="200" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="lim" value="Limit Switches (3× NC)&#xa;D2, D4, D7  → GND&#xa;Use INPUT_PULLUP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="940" y="320" width="220" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="ard-ultra" edge="1" parent="1" source="arduino" target="ultra" style="endArrow=block;strokeWidth=2;"/>
+        <mxCell id="ard-tof" edge="1" parent="1" source="arduino" target="tof" style="endArrow=block;strokeWidth=2;"/>
+        <mxCell id="ard-lim" edge="1" parent="1" source="arduino" target="lim" style="endArrow=block;strokeWidth=2;"/>
+        <!-- Servo Rail -->
+        <mxCell id="rail" value="Servo Power Rail + Distribution&#xa;+5V from 5–8A (10A rec.) PSU&#xa;Bulk 1000–2200µF at rail&#xa;GND tied to Arduino & Pi" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6e6;strokeColor=#cc6666;" vertex="1" parent="1">
+          <mxGeometry x="520" y="320" width="360" height="160" as="geometry"/>
+        </mxCell>
+        <!-- Servos -->
+        <mxCell id="servos" value="Servos FT5330M ×5&#xa;SIG → D3/D5/D6/D9/D10&#xa;+5V → Servo Rail&#xa;GND → Servo Rail" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="940" y="460" width="360" height="160" as="geometry"/>
+        </mxCell>
+        <mxCell id="ard-servos" edge="1" parent="1" source="arduino" target="servos" style="endArrow=block;strokeWidth=2;"/>
+        <mxCell id="rail-servos" edge="1" parent="1" source="rail" target="servos" style="endArrow=block;strokeWidth=2;dashed=1;strokeColor=#cc0000;"/>
+        <!-- Servo PSU -->
+        <mxCell id="psu" value="Servo PSU 5–8A (10A rec.)&#xa;+5V → Servo Rail +&#xa;GND → Servo Rail −&#xa;Inline fuse, main switch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="120" y="500" width="360" height="140" as="geometry"/>
+        </mxCell>
+        <mxCell id="psu-rail" edge="1" parent="1" source="psu" target="rail" style="endArrow=block;strokeWidth=3;strokeColor=#cc0000;"/>
+        <!-- Ground Note -->
+        <mxCell id="gnd" value="Common Ground: Tie Servo PSU GND, Arduino GND, and Pi GND" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="520" y="520" width="360" height="60" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+
+
