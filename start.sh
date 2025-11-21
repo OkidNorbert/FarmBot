@@ -20,7 +20,7 @@ python --version
 
 # Check required packages
 echo "🔍 Checking dependencies..."
-python -c "import torch, cv2, flask; print('✅ All dependencies available')" || {
+python -c "import torch, cv2, flask, yaml; print('✅ All dependencies available')" || {
     echo "❌ Missing dependencies, please run setup.sh again"
     exit 1
 }

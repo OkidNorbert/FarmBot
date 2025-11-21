@@ -7,14 +7,21 @@ Provides remote control and monitoring via web browser
 from flask import Flask, render_template, request, jsonify, send_file
 import json
 import os
+import io
+import csv
 import time
 from datetime import datetime
 import threading
 import cv2
 import numpy as np
 from pathlib import Path
+import psutil
+from hardware_controller import HardwareController
 
 app = Flask(__name__)
+
+# Initialize Hardware Controller
+hw_controller = HardwareController()
 
 # Global variables for system state
 system_state = {
@@ -27,11 +34,53 @@ system_state = {
     'current_frame': None
 }
 
+LOG_FILE = 'detection_log.csv'
+
+def log_detection(detection_data):
+    """Log detection event to CSV"""
+    file_exists = os.path.isfile(LOG_FILE)
+    
+    try:
+        with open(LOG_FILE, 'a', newline='') as f:
+            writer = csv.writer(f)
+            
+            # Write header if file is new
+            if not file_exists:
+                writer.writerow(['timestamp', 'detection_id', 'class', 'confidence'])
+            
+            # Write data
+            writer.writerow([
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                detection_data.get('id', 'unknown'),
+                detection_data.get('class', 'unknown'),
+                detection_data.get('confidence', 0.0)
+            ])
+    except Exception as e:
+        print(f"Error logging detection: {e}")
+
 # Pi-specific routes
 @app.route('/pi/status')
 def pi_status():
     """Get system status"""
+    # Update system state with hardware status
+    hw_status = hw_controller.get_status()
+    system_state['camera_connected'] = hw_status['camera_connected']
+    system_state['arduino_connected'] = hw_status['arduino_connected']
+    system_state['auto_mode'] = hw_status['auto_mode']
+    
     return jsonify(system_state)
+
+@app.route('/api/auto/start', methods=['POST'])
+def api_start_auto():
+    """Enable Auto Mode"""
+    hw_controller.start_auto_mode()
+    return jsonify({'success': True, 'message': 'Auto Mode Started'})
+
+@app.route('/api/auto/stop', methods=['POST'])
+def api_stop_auto():
+    """Disable Auto Mode"""
+    hw_controller.stop_auto_mode()
+    return jsonify({'success': True, 'message': 'Auto Mode Stopped'})
 
 @app.route('/pi/control/start')
 def start_detection():
@@ -48,7 +97,7 @@ def stop_detection():
 @app.route('/pi/control/home')
 def home_arm():
     """Move arm to home position"""
-    # Send command to Arduino
+    hw_controller.home_arm()
     return jsonify({'status': 'home', 'message': 'Arm moved to home position'})
 
 @app.route('/pi/control/calibrate')
@@ -56,12 +105,23 @@ def start_calibration():
     """Start coordinate calibration"""
     return jsonify({'status': 'calibration', 'message': 'Calibration started'})
 
-@app.route('/pi/camera/feed')
+@app.route('/api/camera/feed')
 def camera_feed():
     """Get camera feed"""
-    # This would stream the camera feed
-    # For now, return a placeholder
-    return jsonify({'status': 'camera_feed', 'message': 'Camera feed endpoint'})
+    img = hw_controller.get_frame()
+    
+    # Add timestamp
+    cv2.putText(img, f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", (10, 30), 
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+    
+    # Encode as JPEG
+    _, buffer = cv2.imencode('.jpg', img)
+    return send_file(
+        io.BytesIO(buffer),
+        mimetype='image/jpeg',
+        as_attachment=False,
+        download_name='feed.jpg'
+    )
 
 @app.route('/pi/logs')
 def get_logs():
@@ -135,26 +195,89 @@ def api_move_arm():
     y = data.get('y', 0)
     z = data.get('z', 0)
     
-    # Send command to Arduino
+    z = data.get('z', 0)
+    
+    # Send command to hardware
+    hw_controller.move_arm(x, y, z)
     return jsonify({'success': True, 'message': f'Arm moved to ({x}, {y}, {z})'})
 
 @app.route('/api/arm/home', methods=['POST'])
 def api_home_arm():
     """API endpoint to home arm"""
-    # Send home command to Arduino
+    hw_controller.home_arm()
     return jsonify({'success': True, 'message': 'Arm homed'})
 
 @app.route('/api/camera/capture', methods=['POST'])
 def api_capture_image():
     """API endpoint to capture image"""
-    # Capture image from camera
-    return jsonify({'success': True, 'message': 'Image captured'})
+    img = hw_controller.get_frame()
+    filename = f"capture_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+    cv2.imwrite(filename, img)
+    return jsonify({'success': True, 'message': f'Image captured: {filename}'})
 
 @app.route('/api/detection/run', methods=['POST'])
 def api_run_detection():
     """API endpoint to run detection on current frame"""
     # Run AI detection
-    return jsonify({'success': True, 'message': 'Detection completed'})
+    system_state['detection_count'] += 1
+    system_state['last_detection'] = datetime.now().strftime("%H:%M:%S")
+    
+    # Log the detection (simulated data for now)
+    detection_data = {
+        'id': system_state['detection_count'],
+        'class': 'ripe' if system_state['detection_count'] % 2 == 0 else 'unripe',
+        'confidence': 0.95
+    }
+    log_detection(detection_data)
+    
+    return jsonify({'success': True, 'message': 'Detection completed', 'data': detection_data})
+
+@app.route('/api/system/info')
+def api_system_info():
+    """Get system information"""
+    try:
+        # Get IP address
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            # doesn't even have to be reachable
+            s.connect(('10.255.255.255', 1))
+            ip = s.getsockname()[0]
+        except Exception:
+            ip = '127.0.0.1'
+        finally:
+            s.close()
+            
+        # Get system stats
+        uptime = datetime.now().strftime("%H:%M:%S") # Placeholder for real uptime
+        
+        # Get real system metrics
+        cpu_percent = psutil.cpu_percent(interval=None)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Try to get temperature
+        temp = "N/A"
+        try:
+            # Try standard Linux thermal zone
+            with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+                temp_c = int(f.read()) / 1000.0
+                temp = f"{temp_c:.1f}°C"
+        except:
+            # Fallback for non-Pi systems
+            temp = "N/A"
+        
+        return jsonify({
+            'ip': ip,
+            'uptime': uptime,
+            'temperature': temp,
+            'cpu_percent': cpu_percent,
+            'memory_percent': memory.percent,
+            'disk_percent': disk.percent,
+            'memory': f"{memory.percent}%"
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 # Error handlers
 @app.errorhandler(404)
