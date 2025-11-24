@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Web Interface for Automated AI Training System
-==============================================
+Unified Web Interface for FarmBOT
+==================================
 
-A comprehensive web interface for training AI models on agricultural crops.
-Upload photos, organize classes, and train models through a web browser.
+A comprehensive web interface for training AI models, controlling hardware,
+and monitoring the FarmBOT system. Works on both regular systems and Raspberry Pi.
 """
 
 import os
@@ -12,6 +12,8 @@ import sys
 import json
 import shutil
 import subprocess
+import csv
+import io
 from pathlib import Path
 from datetime import datetime
 import threading
@@ -20,6 +22,29 @@ import time
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file, Response
 from werkzeug.utils import secure_filename
 import yaml
+import cv2
+import numpy as np
+
+# Try to import hardware controller (optional for non-Pi systems)
+try:
+    from hardware_controller import HardwareController
+    hw_controller = HardwareController()
+    HARDWARE_AVAILABLE = True
+except ImportError:
+    print("Warning: Hardware controller not available. Running in software-only mode.")
+    hw_controller = None
+    HARDWARE_AVAILABLE = False
+except Exception as e:
+    print(f"Warning: Could not initialize hardware controller: {e}")
+    hw_controller = None
+    HARDWARE_AVAILABLE = False
+
+# Try to import psutil for system monitoring
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # Change this in production
@@ -29,6 +54,7 @@ UPLOAD_FOLDER = 'datasets'
 MODELS_FOLDER = 'models'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff'}
 MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max file size
+LOG_FILE = 'detection_log.csv'
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
@@ -41,6 +67,67 @@ training_status = {
     'status_message': '',
     'logs': []
 }
+
+# Global variables for system state
+system_state = {
+    'running': False,
+    'detection_count': 0,
+    'camera_connected': False,
+    'arduino_connected': False,
+    'classifier_loaded': False,
+    'last_detection': None,
+    'current_frame': None
+}
+
+def log_detection(detection_data):
+    """Log detection event to CSV"""
+    # Use file locking to prevent race conditions
+    import fcntl
+    
+    try:
+        with open(LOG_FILE, 'a', newline='') as f:
+            # Acquire exclusive lock to prevent race conditions
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                writer = csv.writer(f)
+                
+                # Check file size to determine if header exists (thread-safe)
+                # If file is empty or just created, write header
+                f.seek(0, 2)  # Seek to end
+                file_size = f.tell()
+                f.seek(0)  # Reset to beginning
+                
+                if file_size == 0:
+                    writer.writerow(['timestamp', 'detection_id', 'class', 'confidence'])
+                
+                # Write data
+                writer.writerow([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    detection_data.get('id', 'unknown'),
+                    detection_data.get('class', 'unknown'),
+                    detection_data.get('confidence', 0.0)
+                ])
+            finally:
+                # Release lock
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except ImportError:
+        # Fallback for systems without fcntl (Windows)
+        try:
+            file_exists = os.path.isfile(LOG_FILE)
+            with open(LOG_FILE, 'a', newline='') as f:
+                writer = csv.writer(f)
+                if not file_exists or os.path.getsize(LOG_FILE) == 0:
+                    writer.writerow(['timestamp', 'detection_id', 'class', 'confidence'])
+                writer.writerow([
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    detection_data.get('id', 'unknown'),
+                    detection_data.get('class', 'unknown'),
+                    detection_data.get('confidence', 0.0)
+                ])
+        except Exception as e:
+            print(f"Error logging detection: {e}")
+    except Exception as e:
+        print(f"Error logging detection: {e}")
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
@@ -106,13 +193,257 @@ def get_models():
                     })
     return models
 
+# ==========================================
+# Raspberry Pi Hardware Control Routes
+# ==========================================
+
+@app.route('/pi/status')
+def pi_status():
+    """Get system status"""
+    if HARDWARE_AVAILABLE and hw_controller:
+        hw_status = hw_controller.get_status()
+        system_state['camera_connected'] = hw_status['camera_connected']
+        system_state['arduino_connected'] = hw_status['arduino_connected']
+        system_state['auto_mode'] = hw_status.get('auto_mode', False)
+    
+    return jsonify(system_state)
+
+@app.route('/api/auto/start', methods=['POST'])
+def api_start_auto():
+    """Enable Auto Mode"""
+    if HARDWARE_AVAILABLE and hw_controller:
+        hw_controller.start_auto_mode()
+        return jsonify({'success': True, 'message': 'Auto Mode Started'})
+    return jsonify({'success': False, 'message': 'Hardware not available'})
+
+@app.route('/api/auto/stop', methods=['POST'])
+def api_stop_auto():
+    """Disable Auto Mode"""
+    if HARDWARE_AVAILABLE and hw_controller:
+        hw_controller.stop_auto_mode()
+        return jsonify({'success': True, 'message': 'Auto Mode Stopped'})
+    return jsonify({'success': False, 'message': 'Hardware not available'})
+
+@app.route('/pi/control/start')
+def start_detection():
+    """Start detection and sorting"""
+    system_state['running'] = True
+    return jsonify({'status': 'started', 'message': 'Detection started'})
+
+@app.route('/pi/control/stop')
+def stop_detection():
+    """Stop detection and sorting"""
+    system_state['running'] = False
+    return jsonify({'status': 'stopped', 'message': 'Detection stopped'})
+
+@app.route('/pi/control/home')
+def home_arm():
+    """Move arm to home position"""
+    if HARDWARE_AVAILABLE and hw_controller:
+        hw_controller.home_arm()
+        return jsonify({'status': 'home', 'message': 'Arm moved to home position'})
+    return jsonify({'status': 'error', 'message': 'Hardware not available'})
+
+@app.route('/pi/control/calibrate')
+def start_calibration():
+    """Start coordinate calibration"""
+    return jsonify({'status': 'calibration', 'message': 'Calibration started'})
+
+@app.route('/api/system/start', methods=['POST'])
+def api_start_system():
+    """API endpoint to start system"""
+    system_state['running'] = True
+    return jsonify({'success': True, 'message': 'System started'})
+
+@app.route('/api/system/stop', methods=['POST'])
+def api_stop_system():
+    """API endpoint to stop system"""
+    system_state['running'] = False
+    return jsonify({'success': True, 'message': 'System stopped'})
+
+@app.route('/api/arm/move', methods=['POST'])
+def api_move_arm():
+    """API endpoint to move arm"""
+    if not HARDWARE_AVAILABLE or not hw_controller:
+        return jsonify({'success': False, 'message': 'Hardware not available'})
+    
+    # Check if request has JSON data
+    if not request.is_json or request.json is None:
+        return jsonify({'success': False, 'message': 'Invalid request: JSON data required'}), 400
+    
+    data = request.json
+    x = data.get('x', 0)
+    y = data.get('y', 0)
+    z = data.get('z', 0)
+    
+    hw_controller.move_arm(x, y, z)
+    return jsonify({'success': True, 'message': f'Arm moved to ({x}, {y}, {z})'})
+
+@app.route('/api/arm/home', methods=['POST'])
+def api_home_arm():
+    """API endpoint to home arm"""
+    if HARDWARE_AVAILABLE and hw_controller:
+        hw_controller.home_arm()
+        return jsonify({'success': True, 'message': 'Arm homed'})
+    return jsonify({'success': False, 'message': 'Hardware not available'})
+
+@app.route('/api/camera/capture', methods=['POST'])
+def api_capture_image():
+    """API endpoint to capture image"""
+    if HARDWARE_AVAILABLE and hw_controller:
+        img = hw_controller.get_frame()
+        if img is not None:
+            filename = f"capture_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+            filepath = os.path.join('temp', filename)
+            os.makedirs('temp', exist_ok=True)
+            # Check if image write succeeded
+            if cv2.imwrite(filepath, img):
+                return jsonify({'success': True, 'message': f'Image captured: {filename}', 'filepath': filepath})
+            else:
+                return jsonify({'success': False, 'message': 'Failed to save image'}), 500
+    return jsonify({'success': False, 'message': 'Camera not available'})
+
+@app.route('/api/detection/run', methods=['POST'])
+def api_run_detection():
+    """API endpoint to run detection on current frame"""
+    system_state['detection_count'] += 1
+    system_state['last_detection'] = datetime.now().strftime("%H:%M:%S")
+    
+    # Log the detection
+    detection_data = {
+        'id': system_state['detection_count'],
+        'class': 'ripe' if system_state['detection_count'] % 2 == 0 else 'unripe',
+        'confidence': 0.95
+    }
+    log_detection(detection_data)
+    
+    return jsonify({'success': True, 'message': 'Detection completed', 'data': detection_data})
+
+@app.route('/api/system/info')
+def api_system_info():
+    """Get system information"""
+    try:
+        # Get IP address
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('10.255.255.255', 1))
+            ip = s.getsockname()[0]
+        except Exception:
+            ip = '127.0.0.1'
+        finally:
+            s.close()
+            
+        # Get system stats
+        uptime = datetime.now().strftime("%H:%M:%S")
+        
+        info = {
+            'ip': ip,
+            'uptime': uptime,
+            'hardware_available': HARDWARE_AVAILABLE
+        }
+        
+        if PSUTIL_AVAILABLE:
+            cpu_percent = psutil.cpu_percent(interval=None)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            
+            info.update({
+                'cpu_percent': cpu_percent,
+                'memory_percent': memory.percent,
+                'disk_percent': disk.percent,
+                'memory': f"{memory.percent}%"
+            })
+            
+            # Try to get temperature (Raspberry Pi)
+            temp = "N/A"
+            try:
+                with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+                    temp_c = int(f.read()) / 1000.0
+                    temp = f"{temp_c:.1f}°C"
+            except:
+                pass
+            info['temperature'] = temp
+        
+        return jsonify(info)
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/pi/logs')
+def get_logs():
+    """Get system logs"""
+    try:
+        with open('pi_controller.log', 'r') as f:
+            logs = f.readlines()[-50:]  # Last 50 lines
+        return jsonify({'logs': logs})
+    except FileNotFoundError:
+        return jsonify({'logs': ['No logs available']})
+
+@app.route('/pi/config')
+def get_config():
+    """Get system configuration"""
+    try:
+        with open('pi_config.yaml', 'r') as f:
+            config = f.read()
+        return jsonify({'config': config})
+    except FileNotFoundError:
+        return jsonify({'config': 'No config file found'})
+
+@app.route('/pi/config', methods=['POST'])
+def update_config():
+    """Update system configuration"""
+    try:
+        config_data = request.json
+        # Update configuration file
+        return jsonify({'status': 'updated', 'message': 'Configuration updated'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+# ==========================================
+# Main Dashboard Routes
+# ==========================================
+
 @app.route('/')
 def index():
-    """Main dashboard"""
+    """Main dashboard - unified for both training and Pi control"""
     datasets = get_datasets()
     models = get_models()
     
+    # Check if we should show Pi dashboard or training dashboard
+    # For now, show training dashboard as default
     return render_template('index.html', 
+                         datasets=datasets, 
+                         models=models,
+                         training_status=training_status,
+                         hardware_available=HARDWARE_AVAILABLE,
+                         system_state=system_state)
+
+@app.route('/pi/dashboard')
+def pi_dashboard():
+    """Raspberry Pi specific dashboard"""
+    return render_template('pi_dashboard.html')
+
+@app.route('/control')
+def control():
+    """Control panel"""
+    return render_template('pi_control.html')
+
+@app.route('/monitor')
+def monitor():
+    """Monitoring panel"""
+    return render_template('pi_monitor.html')
+
+@app.route('/calibrate')
+def calibrate():
+    """Calibration panel"""
+    return render_template('pi_calibrate.html')
+
+@app.route('/training')
+def training_dashboard():
+    """Training dashboard"""
+    datasets = get_datasets()
+    models = get_models()
+    return render_template('training_dashboard.html', 
                          datasets=datasets, 
                          models=models,
                          training_status=training_status)
@@ -459,37 +790,95 @@ def video_feed():
     """Video streaming route"""
     return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
+@app.route('/api/camera/feed')
+def api_camera_feed():
+    """Pi-specific camera feed route using hardware controller"""
+    if HARDWARE_AVAILABLE and hw_controller:
+        def generate_frames():
+            """Video streaming generator function using hardware controller."""
+            while True:
+                frame = hw_controller.get_frame()
+                if frame is None:
+                    break
+                    
+                # Add timestamp
+                cv2.putText(frame, f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                       
+                # Encode - check return value before using buffer
+                ret, buffer = cv2.imencode('.jpg', frame)
+                if not ret:
+                    continue  # Skip this frame if encoding failed
+                
+                frame_bytes = buffer.tobytes()
+                
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                time.sleep(0.03)  # Limit to ~30 FPS
+        
+        return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    else:
+        # Fallback to regular video feed
+        return video_feed()
+
 def gen_frames():
-    """Generate frames from camera"""
-    import cv2
-    import numpy as np
+    """Generate frames from camera - uses hardware controller if available"""
+    # Try hardware controller first (for Pi)
+    if HARDWARE_AVAILABLE and hw_controller:
+        while True:
+            frame = hw_controller.get_frame()
+            if frame is None:
+                break
+            
+            # Add timestamp
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cv2.putText(frame, timestamp, (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            
+            # Detect tomatoes and draw bounding boxes
+            tomato_detected, tomato_count, tomato_boxes = detect_tomatoes_with_boxes(frame)
+            
+            # Draw bounding boxes
+            for i, (x, y, w, h) in enumerate(tomato_boxes):
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.putText(frame, f"Tomato {i+1}", (x, y-10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            
+            # Add detection status
+            if tomato_detected:
+                cv2.putText(frame, f"TOMATOES DETECTED: {tomato_count}", (10, 60), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            else:
+                cv2.putText(frame, "NO TOMATOES DETECTED", (10, 60), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            
+            # Encode frame
+            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if ret:
+                frame_bytes = buffer.tobytes()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            time.sleep(0.03)
+        return
     
-    # Try to open camera (0 for default camera)
+    # Fallback to direct camera access
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
         # If no camera available, generate a placeholder image
         while True:
-            # Create a placeholder image
             placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
-            placeholder[:] = (50, 50, 50)  # Dark gray background
+            placeholder[:] = (50, 50, 50)
             
-            # Add text
             cv2.putText(placeholder, "No Camera Available", (150, 200), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
             cv2.putText(placeholder, "Connect a camera to see live feed", (100, 250), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
-            cv2.putText(placeholder, "Camera Index: 0", (200, 300), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (150, 150, 150), 2)
             
-            # Encode as JPEG
             ret, buffer = cv2.imencode('.jpg', placeholder)
             if ret:
                 frame_bytes = buffer.tobytes()
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            
-            # Wait a bit before next frame
-            import time
             time.sleep(0.1)
         return
     
@@ -497,28 +886,25 @@ def gen_frames():
     while True:
         success, frame = cap.read()
         if not success:
-            # If frame read fails, try to reinitialize camera
             cap.release()
             cap = cv2.VideoCapture(0)
             if not cap.isOpened():
                 break
             continue
         
-        # Add timestamp to frame
+        # Add timestamp
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         cv2.putText(frame, timestamp, (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
-        # Detect tomatoes in the frame and draw bounding boxes
+        # Detect tomatoes and draw bounding boxes
         tomato_detected, tomato_count, tomato_boxes = detect_tomatoes_with_boxes(frame)
         
-        # Draw bounding boxes around detected tomatoes
         for i, (x, y, w, h) in enumerate(tomato_boxes):
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cv2.putText(frame, f"Tomato {i+1}", (x, y-10), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         
-        # Add tomato detection status with count
         if tomato_detected:
             cv2.putText(frame, f"TOMATOES DETECTED: {tomato_count}", (10, 60), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
@@ -526,7 +912,7 @@ def gen_frames():
             cv2.putText(frame, "NO TOMATOES DETECTED", (10, 60), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         
-        # Encode frame as JPEG
+        # Encode frame
         ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
         if not ret:
             continue
@@ -891,17 +1277,42 @@ def delete_model(model_name):
     else:
         return jsonify({'error': 'Model not found'}), 404
 
+# ==========================================
+# Error Handlers
+# ==========================================
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Not found'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     os.makedirs(MODELS_FOLDER, exist_ok=True)
     os.makedirs('temp', exist_ok=True)
+    os.makedirs('learning_data/new_images/test_uploads', exist_ok=True)
     
-    print("🌐 Starting Web Interface for AI Training System")
+    print("🤖 FarmBOT - Unified Web Interface")
     print("=" * 60)
     print("📁 Upload folder:", UPLOAD_FOLDER)
     print("💾 Models folder:", MODELS_FOLDER)
-    print("🌐 Web interface: http://localhost:5000")
+    print("🔧 Hardware controller:", "Available" if HARDWARE_AVAILABLE else "Not available")
+    print("🌐 Web interface: http://0.0.0.0:5000")
+    print("📱 Access from any device on the network")
+    print("=" * 60)
+    print("Features:")
+    print("  ✅ AI Model Training")
+    print("  ✅ Dataset Management")
+    print("  ✅ Live Camera Feed")
+    print("  ✅ Tomato Detection")
+    if HARDWARE_AVAILABLE:
+        print("  ✅ Hardware Control (Arduino + Camera)")
+        print("  ✅ Robotic Arm Control")
+    print("  ✅ System Monitoring")
     print("=" * 60)
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)

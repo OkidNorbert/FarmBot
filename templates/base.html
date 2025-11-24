@@ -110,8 +110,8 @@
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-light bg-light">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('training_dashboard') }}">
-                <i class="fas fa-seedling"></i> AI Training System
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="fas fa-robot"></i> FarmBOT
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
@@ -119,19 +119,41 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('training_dashboard') }}">
+                        <a class="nav-link" href="{{ url_for('index') }}">
                             <i class="fas fa-home"></i> Dashboard
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('create_dataset') }}">
-                            <i class="fas fa-plus"></i> New Dataset
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="trainingDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-brain"></i> AI Training
                         </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('training_dashboard') }}">
+                                <i class="fas fa-tachometer-alt"></i> Training Dashboard
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('create_dataset') }}">
+                                <i class="fas fa-plus"></i> Create Dataset
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('continuous_learning_page') }}">
+                                <i class="fas fa-sync"></i> Continuous Learning
+                            </a></li>
+                        </ul>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('continuous_learning_page') }}">
-                            <i class="fas fa-brain"></i> Continuous Learning
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="controlDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-cogs"></i> Control
                         </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('control') }}">
+                                <i class="fas fa-gamepad"></i> Control Panel
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('monitor') }}">
+                                <i class="fas fa-chart-line"></i> Monitor
+                            </a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('calibrate') }}">
+                                <i class="fas fa-ruler"></i> Calibrate
+                            </a></li>
+                        </ul>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('camera_feed') }}">
@@ -142,7 +164,7 @@
                 <ul class="navbar-nav">
                     <li class="nav-item">
                         <span class="navbar-text">
-                            <i class="fas fa-robot"></i> Automated AI Training
+                            <i class="fas fa-seedling"></i> Unified Interface
                         </span>
                     </li>
                 </ul>
@@ -174,8 +196,8 @@
     <footer class="bg-light mt-5 py-4">
         <div class="container text-center">
             <p class="text-muted mb-0">
-                <i class="fas fa-seedling"></i> AI Training System -
-                Automated Agricultural Crop Classification
+                <i class="fas fa-robot"></i> FarmBOT -
+                Unified Training & Control System
             </p>
         </div>
     </footer>

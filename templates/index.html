@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - FarmBOT{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-tachometer-alt"></i> Dashboard
+        </h1>
+    </div>
+</div>
+
+<!-- System Status Row -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle"></i> System Status
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-video me-2"></i>
+                            <span>Camera:</span>
+                            <span id="camera-status" class="badge bg-secondary ms-2">Checking...</span>
+                        </div>
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-microchip me-2"></i>
+                            <span>Arduino:</span>
+                            <span id="arduino-status" class="badge bg-secondary ms-2">Checking...</span>
+                        </div>
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-brain me-2"></i>
+                            <span>AI Model:</span>
+                            <span id="model-status" class="badge bg-secondary ms-2">Checking...</span>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-play me-2"></i>
+                            <span>System:</span>
+                            <span id="system-status" class="badge bg-secondary ms-2">Stopped</span>
+                        </div>
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-sort me-2"></i>
+                            <span>Detections:</span>
+                            <span id="detection-count" class="badge bg-info ms-2">0</span>
+                        </div>
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-clock me-2"></i>
+                            <span>Last Detection:</span>
+                            <span id="last-detection" class="text-muted ms-2">Never</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt"></i> Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6 mb-2">
+                        <a href="{{ url_for('control') }}" class="btn btn-primary btn-sm w-100">
+                            <i class="fas fa-gamepad"></i> Control
+                        </a>
+                    </div>
+                    <div class="col-6 mb-2">
+                        <a href="{{ url_for('camera_feed') }}" class="btn btn-info btn-sm w-100">
+                            <i class="fas fa-video"></i> Camera
+                        </a>
+                    </div>
+                    <div class="col-6 mb-2">
+                        <a href="{{ url_for('training_dashboard') }}" class="btn btn-success btn-sm w-100">
+                            <i class="fas fa-brain"></i> Training
+                        </a>
+                    </div>
+                    <div class="col-6 mb-2">
+                        <a href="{{ url_for('monitor') }}" class="btn btn-warning btn-sm w-100">
+                            <i class="fas fa-chart-line"></i> Monitor
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Training Status -->
+{% if training_status.is_training %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <span class="status-indicator status-training"></span>
+                    Training in Progress: {{ training_status.current_crop }}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>{{ training_status.status_message }}</span>
+                        <span>{{ training_status.progress }}%</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" 
+                             style="width: {{ training_status.progress }}%">
+                        </div>
+                    </div>
+                </div>
+                <div class="log-container" id="training-logs">
+                    {% for log in training_status.logs %}
+                        <div>{{ log }}</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Main Content Tabs -->
+<div class="row mb-4">
+    <div class="col-12">
+        <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="training-tab" data-bs-toggle="tab" data-bs-target="#training" type="button">
+                    <i class="fas fa-brain"></i> AI Training
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="system-tab" data-bs-toggle="tab" data-bs-target="#system" type="button">
+                    <i class="fas fa-cogs"></i> System Control
+                </button>
+            </li>
+        </ul>
+        <div class="tab-content" id="mainTabsContent">
+            <!-- Training Tab -->
+            <div class="tab-pane fade show active" id="training" role="tabpanel">
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <h5><i class="fas fa-database"></i> Datasets ({{ datasets|length }})</h5>
+                                <a href="{{ url_for('create_dataset') }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-plus"></i> New Dataset
+                                </a>
+                            </div>
+                        </div>
+                        {% if datasets %}
+                            <div class="row">
+                                {% for dataset in datasets %}
+                                <div class="col-md-6 col-lg-4 mb-3">
+                                    <div class="card h-100">
+                                        <div class="card-body">
+                                            <h6 class="card-title">
+                                                <i class="fas fa-folder"></i> {{ dataset.name }}
+                                            </h6>
+                                            <p class="card-text">
+                                                <small class="text-muted">
+                                                    <i class="fas fa-images"></i> {{ dataset.image_count }} images<br>
+                                                    <i class="fas fa-tags"></i> {{ dataset.classes|length }} classes
+                                                </small>
+                                            </p>
+                                            <a href="{{ url_for('manage_dataset', dataset_name=dataset.name) }}" 
+                                               class="btn btn-sm btn-outline-primary w-100">
+                                                <i class="fas fa-edit"></i> Manage
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="text-center py-4">
+                                <i class="fas fa-database fa-3x text-muted mb-3"></i>
+                                <h5 class="text-muted">No datasets yet</h5>
+                                <a href="{{ url_for('create_dataset') }}" class="btn btn-primary">
+                                    <i class="fas fa-plus"></i> Create Dataset
+                                </a>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <h5><i class="fas fa-robot"></i> Trained Models ({{ models|length }})</h5>
+                        {% if models %}
+                            <div class="row">
+                                {% for model in models %}
+                                <div class="col-md-6 col-lg-4 mb-3">
+                                    <div class="card h-100">
+                                        <div class="card-body">
+                                            <h6 class="card-title">
+                                                <i class="fas fa-brain"></i> {{ model.name }}
+                                            </h6>
+                                            <a href="{{ url_for('download_model', model_name=model.name) }}" 
+                                               class="btn btn-sm btn-outline-success w-100">
+                                                <i class="fas fa-download"></i> Download
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="text-center py-4">
+                                <i class="fas fa-brain fa-3x text-muted mb-3"></i>
+                                <h5 class="text-muted">No trained models yet</h5>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- System Control Tab -->
+            <div class="tab-pane fade" id="system" role="tabpanel">
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <h5><i class="fas fa-cogs"></i> System Control</h5>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h6><i class="fas fa-gamepad"></i> Control Panel</h6>
+                                        <p class="text-muted">Control robotic arm and system operations</p>
+                                        <a href="{{ url_for('control') }}" class="btn btn-primary w-100">
+                                            <i class="fas fa-arrow-right"></i> Open Control
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h6><i class="fas fa-chart-line"></i> Monitor</h6>
+                                        <p class="text-muted">View system logs and monitoring data</p>
+                                        <a href="{{ url_for('monitor') }}" class="btn btn-info w-100">
+                                            <i class="fas fa-arrow-right"></i> Open Monitor
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h6><i class="fas fa-ruler"></i> Calibrate</h6>
+                                        <p class="text-muted">Calibrate coordinate mapping</p>
+                                        <a href="{{ url_for('calibrate') }}" class="btn btn-warning w-100">
+                                            <i class="fas fa-arrow-right"></i> Open Calibration
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h6><i class="fas fa-video"></i> Live Camera</h6>
+                                        <p class="text-muted">View live camera feed with detection</p>
+                                        <a href="{{ url_for('camera_feed') }}" class="btn btn-success w-100">
+                                            <i class="fas fa-arrow-right"></i> Open Camera
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Update system status
+function updateSystemStatus() {
+    fetch('/pi/status')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('camera-status').textContent = data.camera_connected ? 'Connected' : 'Disconnected';
+            document.getElementById('camera-status').className = 'badge ' + (data.camera_connected ? 'bg-success' : 'bg-danger') + ' ms-2';
+            
+            document.getElementById('arduino-status').textContent = data.arduino_connected ? 'Connected' : 'Disconnected';
+            document.getElementById('arduino-status').className = 'badge ' + (data.arduino_connected ? 'bg-success' : 'bg-danger') + ' ms-2';
+            
+            document.getElementById('system-status').textContent = data.running ? 'Running' : 'Stopped';
+            document.getElementById('system-status').className = 'badge ' + (data.running ? 'bg-success' : 'bg-secondary') + ' ms-2';
+            
+            document.getElementById('detection-count').textContent = data.detection_count || 0;
+            document.getElementById('last-detection').textContent = data.last_detection || 'Never';
+            
+            document.getElementById('model-status').textContent = data.classifier_loaded ? 'Loaded' : 'Not Loaded';
+            document.getElementById('model-status').className = 'badge ' + (data.classifier_loaded ? 'bg-success' : 'bg-warning') + ' ms-2';
+        })
+        .catch(error => {
+            console.error('Error updating status:', error);
+        });
+}
+
+// Initial status update
+updateSystemStatus();
+setInterval(updateSystemStatus, 2000);
+
+// Auto-refresh training status
+{% if training_status.is_training %}
+setInterval(function() {
+    fetch('/training_status')
+    .then(response => response.json())
+    .then(data => {
+        if (data.is_training) {
+            const progressBar = document.querySelector('.progress-bar');
+            if (progressBar) {
+                progressBar.style.width = data.progress + '%';
+            }
+            
+            const statusElement = document.querySelector('.d-flex.justify-content-between span');
+            if (statusElement) {
+                statusElement.textContent = data.status_message;
+            }
+            
+            const logContainer = document.getElementById('training-logs');
+            if (logContainer) {
+                logContainer.innerHTML = data.logs.map(log => `<div>${log}</div>`).join('');
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        } else {
+            location.reload();
+        }
+    });
+}, 2000);
+{% endif %}
+</script>
+{% endblock %}

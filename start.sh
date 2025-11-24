@@ -25,6 +25,6 @@ python -c "import torch, cv2, flask, yaml; print('✅ All dependencies available
     exit 1
 }
 
-# Start the web interface
-echo "Starting AI Tomato Sorter Web Interface..."
-exec "$VENV_DIR/bin/python" pi_web_interface.py
+# Start the unified web interface
+echo "Starting AI Tomato Sorter Unified Web Interface..."
+exec python web_interface.py
