@@ -23,29 +23,32 @@
                 <form method="POST">
                     <div class="mb-3">
                         <label for="crop_name" class="form-label">Crop Name</label>
-                        <input type="text" class="form-control" id="crop_name" name="crop_name" 
-                               placeholder="e.g., strawberry, apple, corn" required>
+                        <input type="text" class="form-control" id="crop_name" name="crop_name"
+                            placeholder="e.g., strawberry, apple, corn" required>
                         <div class="form-text">Choose a descriptive name for your crop</div>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label class="form-label">Classes</label>
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="classes" value="ripe" id="ripe" checked>
+                                    <input class="form-check-input" type="checkbox" name="classes" value="ripe"
+                                        id="ripe" checked>
                                     <label class="form-check-label" for="ripe">
                                         <i class="fas fa-check-circle text-success"></i> Ripe
                                     </label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="classes" value="unripe" id="unripe" checked>
+                                    <input class="form-check-input" type="checkbox" name="classes" value="unripe"
+                                        id="unripe" checked>
                                     <label class="form-check-label" for="unripe">
                                         <i class="fas fa-clock text-warning"></i> Unripe
                                     </label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="classes" value="overripe" id="overripe" checked>
+                                    <input class="form-check-input" type="checkbox" name="classes" value="overripe"
+                                        id="overripe" checked>
                                     <label class="form-check-label" for="overripe">
                                         <i class="fas fa-exclamation-triangle text-danger"></i> Overripe
                                     </label>
@@ -53,19 +56,22 @@
                             </div>
                             <div class="col-md-6">
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="classes" value="damaged" id="damaged" checked>
+                                    <input class="form-check-input" type="checkbox" name="classes" value="damaged"
+                                        id="damaged" checked>
                                     <label class="form-check-label" for="damaged">
                                         <i class="fas fa-times-circle text-danger"></i> Damaged
                                     </label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="classes" value="fresh" id="fresh">
+                                    <input class="form-check-input" type="checkbox" name="classes" value="fresh"
+                                        id="fresh">
                                     <label class="form-check-label" for="fresh">
                                         <i class="fas fa-leaf text-success"></i> Fresh
                                     </label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="classes" value="diseased" id="diseased">
+                                    <input class="form-check-input" type="checkbox" name="classes" value="diseased"
+                                        id="diseased">
                                     <label class="form-check-label" for="diseased">
                                         <i class="fas fa-bug text-warning"></i> Diseased
                                     </label>
@@ -74,9 +80,9 @@
                         </div>
                         <div class="form-text">Select the classes that apply to your crop</div>
                     </div>
-                    
+
                     <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                        <a href="{{ url_for('index') }}" class="btn btn-secondary me-md-2">
+                        <a href="{{ url_for('training_dashboard') }}" class="btn btn-secondary me-md-2">
                             <i class="fas fa-arrow-left"></i> Cancel
                         </a>
                         <button type="submit" class="btn btn-primary">
@@ -87,7 +93,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="col-lg-4">
         <div class="card">
             <div class="card-header">
@@ -102,7 +108,7 @@
                     <li><i class="fas fa-check text-success"></i> Select relevant classes for your crop</li>
                     <li><i class="fas fa-check text-success"></i> You can add more classes later</li>
                 </ul>
-                
+
                 <h6 class="mt-3">Recommended Classes:</h6>
                 <ul class="list-unstyled">
                     <li><strong>Quality Control:</strong> ripe, unripe, damaged</li>
@@ -110,16 +116,16 @@
                     <li><strong>Health:</strong> healthy, diseased, infected</li>
                     <li><strong>Size:</strong> small, medium, large</li>
                 </ul>
-                
+
                 <div class="alert alert-info mt-3">
                     <small>
-                        <i class="fas fa-lightbulb"></i> <strong>Tip:</strong> 
+                        <i class="fas fa-lightbulb"></i> <strong>Tip:</strong>
                         Start with 2-4 classes for best results. You can always add more classes later.
                     </small>
                 </div>
             </div>
         </div>
-        
+
         <div class="card mt-3">
             <div class="card-header">
                 <h5 class="mb-0">
@@ -129,10 +135,10 @@
             <div class="card-body">
                 <h6>How many images do I need?</h6>
                 <p class="small">At least 50-100 images per class for good results. More is better!</p>
-                
+
                 <h6>What image formats are supported?</h6>
                 <p class="small">JPG, PNG, GIF, BMP, TIFF</p>
-                
+
                 <h6>Can I add classes later?</h6>
                 <p class="small">Yes! You can always add more classes to your dataset.</p>
             </div>
@@ -143,30 +149,30 @@
 
 {% block scripts %}
 <script>
-// Add custom class functionality
-function addCustomClass() {
-    const customClass = prompt('Enter custom class name:');
-    if (customClass && customClass.trim()) {
-        const container = document.querySelector('.row .col-md-6:last-child');
-        const newCheckbox = document.createElement('div');
-        newCheckbox.className = 'form-check';
-        newCheckbox.innerHTML = `
+    // Add custom class functionality
+    function addCustomClass() {
+        const customClass = prompt('Enter custom class name:');
+        if (customClass && customClass.trim()) {
+            const container = document.querySelector('.row .col-md-6:last-child');
+            const newCheckbox = document.createElement('div');
+            newCheckbox.className = 'form-check';
+            newCheckbox.innerHTML = `
             <input class="form-check-input" type="checkbox" name="classes" value="${customClass}" id="${customClass}" checked>
             <label class="form-check-label" for="${customClass}">
                 <i class="fas fa-tag text-primary"></i> ${customClass}
             </label>
         `;
-        container.appendChild(newCheckbox);
+            container.appendChild(newCheckbox);
+        }
     }
-}
 
-// Validate form
-document.querySelector('form').addEventListener('submit', function(e) {
-    const checkedBoxes = document.querySelectorAll('input[name="classes"]:checked');
-    if (checkedBoxes.length === 0) {
-        e.preventDefault();
-        alert('Please select at least one class for your dataset.');
-    }
-});
+    // Validate form
+    document.querySelector('form').addEventListener('submit', function (e) {
+        const checkedBoxes = document.querySelectorAll('input[name="classes"]:checked');
+        if (checkedBoxes.length === 0) {
+            e.preventDefault();
+            alert('Please select at least one class for your dataset.');
+        }
+    });
 </script>
 {% endblock %}

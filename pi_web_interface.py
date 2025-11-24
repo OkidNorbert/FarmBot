@@ -24,6 +24,13 @@ from hardware_controller import HardwareController
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # Required for flash messages
+
+# Configuration
+UPLOAD_FOLDER = 'datasets'
+MODELS_FOLDER = 'models'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff'}
+MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max file size
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
@@ -39,6 +46,15 @@ system_state = {
     'classifier_loaded': False,
     'last_detection': None,
     'current_frame': None
+}
+
+# Global variables for training status
+training_status = {
+    'is_training': False,
+    'current_crop': None,
+    'progress': 0,
+    'status_message': '',
+    'logs': []
 }
 
 LOG_FILE = 'detection_log.csv'
