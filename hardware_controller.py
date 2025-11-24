@@ -275,9 +275,10 @@ class HardwareController:
         """Control gripper (OPEN/CLOSE)"""
         return self.send_command(f"GRIPPER {state}")
     
-    def set_conveyor(self, speed):
-        """Control conveyor speed (0-100)"""
-        return self.send_command(f"CONVEYOR {speed}")
+    # Conveyor belt not available in current setup
+    # def set_conveyor(self, speed):
+    #     """Control conveyor speed (0-100)"""
+    #     return self.send_command(f"CONVEYOR {speed}")
 
     def get_status(self):
         """Get hardware status"""

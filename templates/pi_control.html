@@ -100,7 +100,7 @@
             <div class="col-md-6">
                 <div class="card mb-4">
                     <div class="card-header bg-secondary text-white">
-                        <h5><i class="fas fa-hand-rock"></i> Gripper & Conveyor</h5>
+                        <h5><i class="fas fa-hand-rock"></i> Gripper Control</h5>
                     </div>
                     <div class="card-body">
                         <div class="mb-4">
@@ -118,6 +118,8 @@
                             </div>
                         </div>
 
+                        <!-- Conveyor belt not available in current setup -->
+                        <!--
                         <div class="mb-3">
                             <label for="conveyor-speed" class="form-label fw-bold">Conveyor Speed</label>
                             <input type="range" class="form-range" id="conveyor-speed" min="0" max="100" value="0">
@@ -132,6 +134,7 @@
                                 <i class="fas fa-stop"></i> Stop Conveyor
                             </button>
                         </div>
+                        -->
                     </div>
                 </div>
 
@@ -195,20 +198,21 @@
             });
         });
 
-        const speedSlider = document.getElementById('conveyor-speed');
-        speedSlider.addEventListener('input', (e) => {
-            document.getElementById('speed-val').textContent = e.target.value + '%';
-        });
+        // Conveyor belt not available in current setup
+        // const speedSlider = document.getElementById('conveyor-speed');
+        // speedSlider.addEventListener('input', (e) => {
+        //     document.getElementById('speed-val').textContent = e.target.value + '%';
+        // });
 
-        speedSlider.addEventListener('change', async (e) => {
-            log(`Setting conveyor speed to ${e.target.value}%`);
-            // API call would go here
-        });
+        // speedSlider.addEventListener('change', async (e) => {
+        //     log(`Setting conveyor speed to ${e.target.value}%`);
+        //     // API call would go here
+        // });
 
-        async function setConveyor(running) {
-            log(running ? 'Starting conveyor' : 'Stopping conveyor');
-            // API call would go here
-        }
+        // async function setConveyor(running) {
+        //     log(running ? 'Starting conveyor' : 'Stopping conveyor');
+        //     // API call would go here
+        // }
     </script>
 </body>
 
