@@ -106,10 +106,16 @@ class HardwareController:
                 # In real usage, map pixels to mm
                 center_x, center_y = target['center']
                 
-                # Get Depth (Placeholder for VL53L0X)
+                # Get Depth from VL53L0X sensor
                 z_depth = self.get_distance_sensor()
                 
-                self.logger.info(f"[AUTO] Picking at {center_x}, {center_y}, {z_depth}")
+                # Use default distance if sensor fails to prevent command parsing errors
+                DEFAULT_DISTANCE_MM = 50  # Safe default distance
+                if z_depth is None:
+                    self.logger.warning(f"[AUTO] Distance sensor unavailable, using default {DEFAULT_DISTANCE_MM}mm")
+                    z_depth = DEFAULT_DISTANCE_MM
+                
+                self.logger.info(f"[AUTO] Picking at {center_x}, {center_y}, {z_depth}mm")
                 
                 # Send Pick Command
                 # Format: PICK <x> <y> <z> <class_id>
@@ -139,9 +145,36 @@ class HardwareController:
             return []
 
     def get_distance_sensor(self):
-        """Read from VL53L0X (Placeholder)"""
-        # TODO: Implement actual I2C reading
-        return 50 # mm
+        """Read distance from VL53L0X via Arduino"""
+        if self.arduino_connected and self.arduino:
+            try:
+                # Send DISTANCE command
+                self.arduino.write(b"DISTANCE\n")
+                time.sleep(0.1)  # Wait for response
+                
+                # Read response
+                response = self.arduino.readline().decode().strip()
+                
+                if response.startswith("DISTANCE: "):
+                    distance_str = response.replace("DISTANCE: ", "")
+                    if distance_str == "OUT_OF_RANGE" or distance_str == "SENSOR_NOT_AVAILABLE":
+                        self.logger.warning(f"Distance sensor: {distance_str}")
+                        return None
+                    try:
+                        distance_mm = int(distance_str)
+                        return distance_mm
+                    except ValueError:
+                        self.logger.error(f"Invalid distance reading: {distance_str}")
+                        return None
+                else:
+                    self.logger.warning(f"Unexpected distance response: {response}")
+                    return None
+            except Exception as e:
+                self.logger.error(f"Distance sensor read error: {e}")
+                return None
+        else:
+            # Simulation mode
+            return 50  # mm (dummy value)
 
     def start_auto_mode(self):
         self.auto_mode = True

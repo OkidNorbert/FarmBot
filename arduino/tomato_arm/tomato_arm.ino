@@ -1,8 +1,9 @@
 /*
  * Tomato Sorter Robotic Arm Firmware
- * Board: Arduino R4 / Uno
+ * Board: Arduino R4 WiFi/Minima
  * 
  * Controls 6 Servos for a 6DOF Robotic Arm
+ * VL53L0X Distance Sensor for precise depth measurement
  * Communicates via Serial (115200 baud)
  * 
  * Commands:
@@ -10,10 +11,17 @@
  * - PICK <x> <y> <z> <class> : Execute pick sequence
  * - HOME                     : Move to home position
  * - GRIPPER <OPEN/CLOSE>     : Control gripper
+ * - DISTANCE                  : Read distance from VL53L0X sensor (mm)
  * - STATUS                   : Report status
+ * 
+ * Wiring:
+ * - Servos: Base(D3), Shoulder(D5), Elbow(D6), Wrist Vert(D9), Wrist Rot(D10), Gripper(D11)
+ * - VL53L0X: SDA(A4), SCL(A5), VCC(3.3V), GND(GND)
+ * - Power: Servos powered from external 5V 5A supply, Arduino via USB
  */
 
 #include <Servo.h>
+#include "Adafruit_VL53L0X.h"
 
 // Servo Pin Definitions (Adjust based on your wiring)
 #define PIN_BASE       3
@@ -31,6 +39,10 @@ Servo wrist_ver;
 Servo wrist_rot;
 Servo gripper;
 
+// VL53L0X Distance Sensor
+Adafruit_VL53L0X lox = Adafruit_VL53L0X();
+bool distance_sensor_available = false;
+
 // Home Positions (Angles 0-180)
 const int HOME_BASE = 90;
 const int HOME_SHOULDER = 90;
@@ -45,6 +57,15 @@ const int BIN_RIPE = 150;
 
 void setup() {
   Serial.begin(115200);
+  
+  // Initialize VL53L0X Distance Sensor
+  if (!lox.begin()) {
+    Serial.println("WARNING: VL53L0X sensor not found");
+    distance_sensor_available = false;
+  } else {
+    Serial.println("VL53L0X sensor initialized");
+    distance_sensor_available = true;
+  }
   
   // Attach Servos
   base.attach(PIN_BASE);
@@ -100,8 +121,28 @@ void processCommand(String cmd) {
       Serial.println("ERROR: INVALID ARGS");
     }
   }
+  else if (cmd.startsWith("DISTANCE")) {
+    if (distance_sensor_available) {
+      VL53L0X_RangingMeasurementData_t measure;
+      lox.rangingTest(&measure, false);
+      
+      if (measure.RangeStatus != 4) {  // Valid reading
+        Serial.print("DISTANCE: ");
+        Serial.println(measure.RangeMilliMeter);
+      } else {
+        Serial.println("DISTANCE: OUT_OF_RANGE");
+      }
+    } else {
+      Serial.println("DISTANCE: SENSOR_NOT_AVAILABLE");
+    }
+  }
   else if (cmd.startsWith("STATUS")) {
-    Serial.println("STATUS: READY");
+    Serial.print("STATUS: READY");
+    if (distance_sensor_available) {
+      Serial.println(" | VL53L0X: OK");
+    } else {
+      Serial.println(" | VL53L0X: NOT_FOUND");
+    }
   }
 }
 
@@ -126,16 +167,37 @@ void executePickSequence(int classId) {
   elbow.write(60);
   delay(1000);
   
-  // 2. Close Gripper
+  // 2. Measure distance and adjust wrist height if sensor available
+  if (distance_sensor_available) {
+    VL53L0X_RangingMeasurementData_t measure;
+    lox.rangingTest(&measure, false);
+    
+    if (measure.RangeStatus != 4 && measure.RangeMilliMeter > 0) {
+      int distance_mm = measure.RangeMilliMeter;
+      // Adjust wrist angle based on distance (closer = lower wrist)
+      // Adjust these values based on your arm geometry
+      // Map: 20mm (close) -> 60° (low), 200mm (far) -> 120° (high)
+      int wrist_angle = map(constrain(distance_mm, 20, 200), 20, 200, 60, 120);
+      wrist_ver.write(wrist_angle);
+      Serial.print("Distance: ");
+      Serial.print(distance_mm);
+      Serial.print("mm, Wrist angle: ");
+      Serial.println(wrist_angle);
+      delay(300);
+    }
+  }
+  
+  // 3. Close Gripper
   gripper.write(180);
   delay(500);
   
-  // 3. Lift
+  // 4. Lift
   shoulder.write(90);
   elbow.write(90);
+  wrist_ver.write(90); // Reset wrist
   delay(1000);
   
-  // 4. Move to Bin
+  // 5. Move to Bin
   if (classId == 1) { // Ripe
     base.write(BIN_RIPE);
   } else { // Unripe
@@ -143,10 +205,10 @@ void executePickSequence(int classId) {
   }
   delay(1000);
   
-  // 5. Drop
+  // 6. Drop
   gripper.write(0);
   delay(500);
   
-  // 6. Return Home
+  // 7. Return Home
   moveHome();
 }
