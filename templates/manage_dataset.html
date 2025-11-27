@@ -191,9 +191,11 @@
 
     // Load images for each class
     function loadImages() {
-        {% for class_info in classes %}
-        loadClassImages('{{ class_info.name }}');
-        {% endfor %}
+        const classNames = {{ classes | map(attribute = 'name') | list | tojson
+    }};
+    classNames.forEach(className => {
+        loadClassImages(className);
+    });
     }
 
     function loadClassImages(className) {
@@ -263,7 +265,7 @@
 
     // Training functions
     function startTraining(datasetName) {
-        const totalImages = {{ classes| sum(attribute = 'image_count')
+        const totalImages = {{ classes | sum(attribute = 'image_count')
     }};
     if (totalImages === 0) {
         alert('Please upload some images before training!');
@@ -273,7 +275,7 @@
     currentDataset = datasetName;
     const modal = new bootstrap.Modal(document.getElementById('trainingModal'));
     modal.show();
-}
+    }
 
     function confirmTraining() {
         if (!currentDataset) return;
