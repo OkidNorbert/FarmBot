@@ -1,0 +1,13 @@
+[Unit]
+Description=AI Tomato Sorter Web Interface
+After=network.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/tomato_sorter
+ExecStart=/home/pi/tomato_sorter/start.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

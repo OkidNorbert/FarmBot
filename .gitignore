@@ -1,0 +1,25 @@
+# Virtual Environments
+tomato_sorter_env/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Logs and Databases
+*.log
+logs/
+detection_log.csv
+
+# Data and Models
+datasets/
+learning_data/
+temp/
+*.pth
+*.pt
+
+# OS Generated
+.DS_Store
+Thumbs.db

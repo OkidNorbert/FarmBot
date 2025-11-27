@@ -1,0 +1,435 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - AI Training System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4">
+            <i class="fas fa-tachometer-alt"></i> Dashboard
+        </h1>
+    </div>
+</div>
+
+<!-- Training Status -->
+{% if training_status.is_training %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <span class="status-indicator status-training"></span>
+                    Training in Progress: {{ training_status.current_crop }}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span>{{ training_status.status_message }}</span>
+                        <span>{{ training_status.progress }}%</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" 
+                             style="width: {{ training_status.progress }}%">
+                        </div>
+                    </div>
+                </div>
+                <div class="log-container" id="training-logs">
+                    {% for log in training_status.logs %}
+                        <div>{{ log }}</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Quick Actions -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt"></i> Quick Actions
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <a href="{{ url_for('create_dataset') }}" class="btn btn-primary btn-lg w-100">
+                            <i class="fas fa-plus"></i><br>
+                            Create New Dataset
+                        </a>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <button class="btn btn-info btn-lg w-100" onclick="refreshStatus()">
+                            <i class="fas fa-sync"></i><br>
+                            Refresh Status
+                        </button>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <button class="btn btn-secondary btn-lg w-100" onclick="showHelp()">
+                            <i class="fas fa-question-circle"></i><br>
+                            Help & Guide
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Datasets -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-database"></i> Datasets ({{ datasets|length }})
+                </h5>
+                <a href="{{ url_for('create_dataset') }}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-plus"></i> New Dataset
+                </a>
+            </div>
+            <div class="card-body">
+                {% if datasets %}
+                    <div class="row">
+                        {% for dataset in datasets %}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        <i class="fas fa-folder"></i> {{ dataset.name }}
+                                    </h6>
+                                    <p class="card-text">
+                                        <small class="text-muted">
+                                            <i class="fas fa-images"></i> {{ dataset.image_count }} images<br>
+                                            <i class="fas fa-tags"></i> {{ dataset.classes|length }} classes<br>
+                                            {% if dataset.has_model %}
+                                                <span class="text-success">
+                                                    <i class="fas fa-check-circle"></i> Model trained
+                                                </span>
+                                            {% else %}
+                                                <span class="text-warning">
+                                                    <i class="fas fa-clock"></i> No model yet
+                                                </span>
+                                            {% endif %}
+                                        </small>
+                                    </p>
+                                    <div class="btn-group w-100" role="group">
+                                        <a href="{{ url_for('manage_dataset', dataset_name=dataset.name) }}" 
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-edit"></i> Manage
+                                        </a>
+                                        {% if not dataset.has_model and dataset.image_count > 0 %}
+                                            <button class="btn btn-sm btn-success" 
+                                                    onclick="startTraining('{{ dataset.name }}')">
+                                                <i class="fas fa-play"></i> Train
+                                            </button>
+                                        {% endif %}
+                                        <button class="btn btn-sm btn-outline-danger" 
+                                                onclick="deleteDataset('{{ dataset.name }}')">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-database fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No datasets yet</h5>
+                        <p class="text-muted">Create your first dataset to get started</p>
+                        <a href="{{ url_for('create_dataset') }}" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> Create Dataset
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trained Models -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-brain"></i> Trained Models ({{ models|length }})
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if models %}
+                <div class="row">
+                    {% for model in models %}
+                    <div class="col-md-6 col-lg-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title">
+                                    <i class="fas fa-robot"></i> {{ model.name }}
+                                </h6>
+                                <p class="card-text">
+                                    <small class="text-muted">
+                                        {% if model.metadata %}
+                                            <i class="fas fa-chart-line"></i> {{ "%.1f"|format(model.metadata.best_val_accuracy) }}% accuracy<br>
+                                            <i class="fas fa-tags"></i> {{ model.metadata.class_names|length }} classes<br>
+                                            <i class="fas fa-calendar"></i> {{ model.metadata.training_date[:10] }}
+                                        {% else %}
+                                            <i class="fas fa-info-circle"></i> Model available
+                                        {% endif %}
+                                    </small>
+                                </p>
+                                <div class="btn-group w-100" role="group">
+                                    <button class="btn btn-sm btn-outline-primary" 
+                                            onclick="testModel('{{ model.name }}')">
+                                        <i class="fas fa-play"></i> Test
+                                    </button>
+                                    <a href="{{ url_for('download_model', model_name=model.name) }}" 
+                                       class="btn btn-sm btn-outline-success">
+                                        <i class="fas fa-download"></i> Download
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-danger" 
+                                            onclick="deleteModel('{{ model.name }}')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-brain fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">No trained models yet</h5>
+                    <p class="text-muted">Train a model from your datasets</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Training Modal -->
+<div class="modal fade" id="trainingModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Start Training</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="trainingForm">
+                    <div class="mb-3">
+                        <label for="epochs" class="form-label">Epochs</label>
+                        <input type="number" class="form-control" id="epochs" name="epochs" value="30" min="1" max="200">
+                    </div>
+                    <div class="mb-3">
+                        <label for="batch_size" class="form-label">Batch Size</label>
+                        <input type="number" class="form-control" id="batch_size" name="batch_size" value="32" min="1" max="128">
+                    </div>
+                    <div class="mb-3">
+                        <label for="learning_rate" class="form-label">Learning Rate</label>
+                        <input type="number" class="form-control" id="learning_rate" name="learning_rate" value="0.001" step="0.0001" min="0.0001" max="0.1">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmTraining()">Start Training</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Test Model Modal -->
+<div class="modal fade" id="testModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Test Model</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="testForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="testImage" class="form-label">Upload Test Image</label>
+                        <input type="file" class="form-control" id="testImage" name="image" accept="image/*" required>
+                    </div>
+                    <!-- Multi-tomato detection removed - not needed for robotic sorting system -->
+                </form>
+                <div id="testResult" class="mt-3" style="display: none;">
+                    <div class="alert alert-info">
+                        <h6>Prediction Result:</h6>
+                        <p id="predictionText"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="runTest()">Test Image</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentDataset = null;
+let currentModel = null;
+
+function refreshStatus() {
+    location.reload();
+}
+
+function showHelp() {
+    alert('AI Training System Help:\n\n' +
+          '1. Create a new dataset with crop classes\n' +
+          '2. Upload images to each class folder\n' +
+          '3. Start training to create an AI model\n' +
+          '4. Test your model with new images\n' +
+          '5. Download trained models for deployment\n\n' +
+          'Supported image formats: JPG, PNG, GIF, BMP, TIFF\n' +
+          'Recommended: 50+ images per class for best results');
+}
+
+function startTraining(datasetName) {
+    currentDataset = datasetName;
+    const modal = new bootstrap.Modal(document.getElementById('trainingModal'));
+    modal.show();
+}
+
+function confirmTraining() {
+    if (!currentDataset) return;
+    
+    const form = document.getElementById('trainingForm');
+    const formData = new FormData(form);
+    
+    fetch(`/start_training/${currentDataset}`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('trainingModal')).hide();
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error starting training');
+    });
+}
+
+function testModel(modelName) {
+    currentModel = modelName;
+    const modal = new bootstrap.Modal(document.getElementById('testModal'));
+    modal.show();
+}
+
+    function runTest() {
+        if (!currentModel) return;
+        
+        const form = document.getElementById('testForm');
+        const formData = new FormData(form);
+        
+        // Use single-tomato classification endpoint
+        const endpoint = `/test_model/${currentModel}`;
+        
+        fetch(endpoint, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Single tomato classification result
+                document.getElementById('predictionText').innerHTML = 
+                    `<strong>Class:</strong> ${data.prediction}<br>` +
+                    `<strong>Confidence:</strong> ${(data.confidence * 100).toFixed(1)}%`;
+                document.getElementById('testResult').style.display = 'block';
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error testing model');
+        });
+    }
+
+function deleteDataset(datasetName) {
+    if (confirm(`Are you sure you want to delete dataset "${datasetName}"?`)) {
+        fetch(`/delete_dataset/${datasetName}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+    }
+}
+
+function deleteModel(modelName) {
+    if (confirm(`Are you sure you want to delete model "${modelName}"?`)) {
+        fetch(`/delete_model/${modelName}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        });
+    }
+}
+
+// Auto-refresh training status
+{% if training_status.is_training %}
+setInterval(function() {
+    fetch('/training_status')
+    .then(response => response.json())
+    .then(data => {
+        if (data.is_training) {
+            // Update progress bar
+            const progressBar = document.querySelector('.progress-bar');
+            if (progressBar) {
+                progressBar.style.width = data.progress + '%';
+            }
+            
+            // Update status message
+            const statusElement = document.querySelector('.d-flex.justify-content-between span');
+            if (statusElement) {
+                statusElement.textContent = data.status_message;
+            }
+            
+            // Update logs
+            const logContainer = document.getElementById('training-logs');
+            if (logContainer) {
+                logContainer.innerHTML = data.logs.map(log => `<div>${log}</div>`).join('');
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        } else {
+            // Training completed, reload page
+            location.reload();
+        }
+    });
+}, 2000);
+{% endif %}
+</script>
+{% endblock %}

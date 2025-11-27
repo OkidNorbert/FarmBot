@@ -4,12 +4,12 @@ After=network.target
 
 [Service]
 Type=simple
-User=okidi6
-WorkingDirectory=/home/okidi6/Documents/GitHub/emebeded
-ExecStart=/home/okidi6/Documents/GitHub/emebeded/tomato_sorter_env/bin/python web_interface.py
+User=student
+WorkingDirectory=/home/student/Downloads/emebeded
+ExecStart=/home/student/Downloads/emebeded/tomato_sorter_env/bin/python web_interface.py
 Restart=always
 RestartSec=10
-Environment=PATH=/home/okidi6/Documents/GitHub/emebeded/tomato_sorter_env/bin
+Environment=PATH=/home/student/Downloads/emebeded/tomato_sorter_env/bin
 
 [Install]
 WantedBy=multi-user.target
