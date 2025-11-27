@@ -99,6 +99,31 @@
 
             <div class="col-md-6">
                 <div class="card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5><i class="fas fa-bluetooth"></i> Bluetooth Connection</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Arduino Connection</label>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-outline-primary" onclick="scanBluetooth()">
+                                    <i class="fas fa-search"></i> Scan for Devices
+                                </button>
+                            </div>
+                        </div>
+                        <div id="bluetooth-devices" class="mb-3" style="display: none;">
+                            <label class="form-label fw-bold">Available Devices</label>
+                            <div id="device-list" class="list-group">
+                                <!-- Devices will be listed here -->
+                            </div>
+                        </div>
+                        <div id="connection-status" class="alert alert-info" style="display: none;">
+                            <i class="fas fa-info-circle"></i> <span id="status-text">Not connected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
                     <div class="card-header bg-secondary text-white">
                         <h5><i class="fas fa-hand-rock"></i> Gripper Control</h5>
                     </div>
@@ -213,6 +238,67 @@
         //     log(running ? 'Starting conveyor' : 'Stopping conveyor');
         //     // API call would go here
         // }
+
+        // Bluetooth connection functions
+        async function scanBluetooth() {
+            try {
+                log('Scanning for Bluetooth devices...');
+                const response = await fetch('/api/bluetooth/scan', { method: 'POST' });
+                const result = await response.json();
+
+                if (result.success && result.devices.length > 0) {
+                    const deviceList = document.getElementById('device-list');
+                    deviceList.innerHTML = '';
+
+                    result.devices.forEach(device => {
+                        const item = document.createElement('a');
+                        item.href = '#';
+                        item.className = 'list-group-item list-group-item-action';
+                        item.innerHTML = `
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${device.name}</h6>
+                                <small>RSSI: ${device.rssi}</small>
+                            </div>
+                            <small>${device.address}</small>
+                        `;
+                        item.onclick = () => connectBluetooth(device.address, device.name);
+                        deviceList.appendChild(item);
+                    });
+
+                    document.getElementById('bluetooth-devices').style.display = 'block';
+                    log(`Found ${result.devices.length} device(s)`);
+                } else {
+                    log('No Bluetooth devices found');
+                }
+            } catch (e) {
+                log('Bluetooth scan error: ' + e.message);
+            }
+        }
+
+        async function connectBluetooth(address, name) {
+            try {
+                log(`Connecting to ${name}...`);
+                const response = await fetch('/api/bluetooth/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address: address })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    const statusDiv = document.getElementById('connection-status');
+                    const statusText = document.getElementById('status-text');
+                    statusDiv.className = 'alert alert-success';
+                    statusText.textContent = `Connected to ${name}`;
+                    statusDiv.style.display = 'block';
+                    log(`Connected to ${name}`);
+                } else {
+                    log('Connection failed: ' + result.message);
+                }
+            } catch (e) {
+                log('Connection error: ' + e.message);
+            }
+        }
     </script>
 </body>
 

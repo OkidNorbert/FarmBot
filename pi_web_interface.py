@@ -129,30 +129,31 @@ def start_calibration():
     return jsonify({'status': 'calibration', 'message': 'Calibration started'})
 
 @app.route('/api/camera/feed')
-def generate_frames():
-    """Video streaming generator function."""
-    while True:
-        frame = hw_controller.get_frame()
-        if frame is None:
-            break
-            
-        # Add timestamp
-        cv2.putText(frame, f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", (10, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                   
-        # Encode
-        ret, buffer = cv2.imencode('.jpg', frame)
-        frame = buffer.tobytes()
-        
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        time.sleep(0.03) # Limit to ~30 FPS
-
-@app.route('/api/camera/feed')
 def camera_feed():
     """Video streaming route. Put this in the src attribute of an img tag."""
+    def generate_frames():
+        """Video streaming generator function."""
+        while True:
+            frame = hw_controller.get_frame()
+            if frame is None:
+                break
+                
+            # Add timestamp
+            cv2.putText(frame, f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                       
+            # Encode
+            ret, buffer = cv2.imencode('.jpg', frame)
+            frame = buffer.tobytes()
+            
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            time.sleep(0.03) # Limit to ~30 FPS
+    
     return Response(generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
 
 @app.route('/pi/logs')
 def get_logs():
@@ -262,6 +263,61 @@ def api_run_detection():
     log_detection(detection_data)
     
     return jsonify({'success': True, 'message': 'Detection completed', 'data': detection_data})
+
+@app.route('/api/calibration/save', methods=['POST'])
+def api_save_calibration():
+    """API endpoint to save calibration data"""
+    try:
+        data = request.json
+        points = data.get('points', [])
+        
+        if len(points) < 4:
+            return jsonify({'success': False, 'message': 'Need at least 4 calibration points'}), 400
+        
+        # Update calibration in hardware controller
+        if hw_controller.update_calibration(points):
+            return jsonify({'success': True, 'message': f'Calibration saved with {len(points)} points'})
+        else:
+            return jsonify({'success': False, 'message': 'Failed to update calibration'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/bluetooth/scan', methods=['POST'])
+def api_bluetooth_scan():
+    """API endpoint to scan for Bluetooth devices"""
+    try:
+        # This would require additional Bluetooth libraries on the Pi
+        # For now, return a simulated response
+        devices = [
+            {'name': 'FarmBot', 'address': '00:11:22:33:44:55', 'rssi': -45}
+        ]
+        return jsonify({'success': True, 'devices': devices})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/bluetooth/connect', methods=['POST'])
+def api_bluetooth_connect():
+    """API endpoint to connect to Bluetooth device"""
+    try:
+        data = request.json
+        address = data.get('address')
+        
+        if not address:
+            return jsonify({'success': False, 'message': 'No device address provided'}), 400
+        
+        # Connect via Bluetooth (this would need BLE library implementation)
+        # For now, just log the attempt
+        return jsonify({'success': True, 'message': f'Connected to {address}'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/bluetooth/disconnect', methods=['POST'])
+def api_bluetooth_disconnect():
+    """API endpoint to disconnect from Bluetooth device"""
+    try:
+        return jsonify({'success': True, 'message': 'Disconnected from Bluetooth device'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/system/info')
 def api_system_info():

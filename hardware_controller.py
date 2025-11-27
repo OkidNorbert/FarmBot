@@ -280,6 +280,46 @@ class HardwareController:
     #     """Control conveyor speed (0-100)"""
     #     return self.send_command(f"CONVEYOR {speed}")
 
+    def update_calibration(self, points):
+        """Update calibration data for coordinate mapping
+        
+        Args:
+            points: List of calibration points with pixel and world coordinates
+                    [{'pixel': [x, y], 'world': [x, y]}, ...]
+        
+        Returns:
+            bool: True if calibration successful
+        """
+        try:
+            if len(points) < 4:
+                self.logger.error("Need at least 4 calibration points")
+                return False
+            
+            # Extract pixel and world coordinates
+            pixel_coords = np.array([p['pixel'] for p in points], dtype=np.float32)
+            world_coords = np.array([p['world'] for p in points], dtype=np.float32)
+            
+            # Compute homography matrix
+            homography_matrix, status = cv2.findHomography(pixel_coords, world_coords)
+            
+            if homography_matrix is None:
+                self.logger.error("Failed to compute homography")
+                return False
+            
+            # Save calibration
+            calibration_file = 'calibration.npz'
+            np.savez(calibration_file, 
+                     homography=homography_matrix,
+                     pixel_coords=pixel_coords,
+                     world_coords=world_coords)
+            
+            self.logger.info(f"Calibration saved with {len(points)} points")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Calibration update failed: {e}")
+            return False
+
     def get_status(self):
         """Get hardware status"""
         return {

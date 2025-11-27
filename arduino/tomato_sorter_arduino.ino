@@ -122,14 +122,14 @@ void setup() {
     while (1);
   }
 
-  BLE.setLocalName("TomatoSorter");
-  BLE.setAdvertisedService(tomatoSorterService);
-  tomatoSorterService.addCharacteristic(commandCharacteristic);
-  BLE.addService(tomatoSorterService);
+  BLE.setLocalName("FarmBot");
+  BLE.setAdvertisedService(farmBotService);
+  farmBotService.addCharacteristic(commandCharacteristic);
+  BLE.addService(farmBotService);
   commandCharacteristic.writeValue("");
 
   BLE.advertise();
-  Serial.println("BLE Tomato Sorter Ready");
+  Serial.println("BLE FarmBot Ready");
   
   // Initialize servos to home position
   moveToHome();
@@ -174,6 +174,10 @@ void processCommand(String command) {
     // MOVE X Y CLASS - Move to world coordinates and sort by class
     processMoveCommand(command);
   }
+  else if (command.startsWith("PICK")) {
+    // PICK X Y Z CLASS - Pick from coordinates with depth and sort by class
+    processPickCommand(command);
+  }
   else if (command.startsWith("ANGLE")) {
     // ANGLE A1 A2 A3 A4 A5 A6 - Set servo angles directly (-1 to keep current)
     processAngleCommand(command);
@@ -190,9 +194,17 @@ void processCommand(String command) {
     // GRIP OPEN/CLOSE - Control gripper
     processGripCommand(command);
   }
+  else if (command.startsWith("GRIPPER")) {
+    // GRIPPER OPEN/CLOSE - Alternative gripper command
+    processGripCommand(command);
+  }
   else if (command.startsWith("STATUS")) {
     // Return current status
     sendStatus();
+  }
+  else if (command.startsWith("DISTANCE")) {
+    // Return distance sensor reading
+    sendDistance();
   }
   else {
     Serial.println("Unknown command: " + command);
@@ -222,6 +234,49 @@ void processMoveCommand(String command) {
     performPickAndSort(baseAngle, shoulderAngle, elbowAngle, class_id);
   } else {
     Serial.println("Position unreachable");
+  }
+}
+
+void processPickCommand(String command) {
+  // Parse PICK X Y Z CLASS command
+  int firstSpace = command.indexOf(' ');
+  int secondSpace = command.indexOf(' ', firstSpace + 1);
+  int thirdSpace = command.indexOf(' ', secondSpace + 1);
+  int fourthSpace = command.indexOf(' ', thirdSpace + 1);
+  
+  if (firstSpace == -1 || secondSpace == -1 || thirdSpace == -1 || fourthSpace == -1) {
+    Serial.println("Invalid PICK command format");
+    return;
+  }
+  
+  float x = command.substring(firstSpace + 1, secondSpace).toFloat();
+  float y = command.substring(secondSpace + 1, thirdSpace).toFloat();
+  float z = command.substring(thirdSpace + 1, fourthSpace).toFloat();
+  int class_id = command.substring(fourthSpace + 1).toInt();
+  
+  Serial.println("Picking at: X=" + String(x) + ", Y=" + String(y) + ", Z=" + String(z) + ", Class=" + String(class_id));
+  
+  // Convert world coordinates to servo angles using inverse kinematics
+  float baseAngle, shoulderAngle, elbowAngle;
+  if (inverseKinematics(x, y, baseAngle, shoulderAngle, elbowAngle)) {
+    performPickAndSort(baseAngle, shoulderAngle, elbowAngle, class_id);
+  } else {
+    Serial.println("Position unreachable");
+  }
+}
+
+void sendDistance() {
+  // Read distance sensor and send response
+  float distance = measureDistanceCm();
+  
+  if (distance < 0) {
+    Serial.println("DISTANCE: OUT_OF_RANGE");
+  } else if (distance > 400) {
+    Serial.println("DISTANCE: OUT_OF_RANGE");
+  } else {
+    // Convert cm to mm
+    int distance_mm = (int)(distance * 10);
+    Serial.println("DISTANCE: " + String(distance_mm));
   }
 }
 
@@ -327,8 +382,25 @@ void setGripper(bool open) {
 }
 
 void smoothMoveServo(int servoIndex, int targetAngle) {
+  // Safety check: validate servo index
+  if (servoIndex < 0 || servoIndex >= SERVO_COUNT) {
+    Serial.println("ERROR: Invalid servo index");
+    return;
+  }
+  
   int currentAngle = current_angles[servoIndex];
   int constrainedTarget = constrain(targetAngle, SERVO_MIN[servoIndex], SERVO_MAX[servoIndex]);
+
+  // Safety check: prevent extreme movements
+  int maxSingleMove = 90; // Max degrees in one command
+  if (abs(constrainedTarget - currentAngle) > maxSingleMove) {
+    Serial.println("WARNING: Large movement requested, limiting to " + String(maxSingleMove) + " degrees");
+    if (constrainedTarget > currentAngle) {
+      constrainedTarget = currentAngle + maxSingleMove;
+    } else {
+      constrainedTarget = currentAngle - maxSingleMove;
+    }
+  }
 
   if (currentAngle == constrainedTarget) {
     return;
@@ -340,12 +412,19 @@ void smoothMoveServo(int servoIndex, int targetAngle) {
 
   int angle = currentAngle;
   while (angle != constrainedTarget) {
-    if (emergency_stop) return;
+    // Emergency stop check
+    if (emergency_stop) {
+      Serial.println("Movement stopped - emergency stop active");
+      return;
+    }
+    
     angle += stepDirection * stepSize;
     if ((stepDirection > 0 && angle > constrainedTarget) ||
         (stepDirection < 0 && angle < constrainedTarget)) {
       angle = constrainedTarget;
     }
+    
+    // Double-check bounds
     angle = constrain(angle, SERVO_MIN[servoIndex], SERVO_MAX[servoIndex]);
     servos[servoIndex].write(angle);
     delay(MOVEMENT_DELAY);

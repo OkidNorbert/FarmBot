@@ -159,25 +159,78 @@ class PiController:
     
     def setup_coordinate_mapping(self):
         """Setup coordinate mapping from camera to robotic arm"""
-        # This creates a transformation matrix from camera pixels to arm coordinates
-        # You'll need to calibrate this based on your physical setup
+        # Try to load calibration from file first
+        if self.load_calibration():
+            self.logger.info("Loaded calibration from file")
+            return
         
-        # Camera resolution
+        # Fallback to default transformation matrix
         cam_width = self.config['camera']['width']
         cam_height = self.config['camera']['height']
-        
-        # Arm workspace (in mm)
         workspace_x = self.config['arm']['workspace_x']
         workspace_y = self.config['arm']['workspace_y']
         
-        # Create transformation matrix (simplified - you may need more complex calibration)
         self.camera_to_arm_matrix = np.array([
             [(workspace_x[1] - workspace_x[0]) / cam_width, 0, workspace_x[0]],
             [0, (workspace_y[1] - workspace_y[0]) / cam_height, workspace_y[0]],
             [0, 0, 1]
         ])
         
-        self.logger.info("Coordinate mapping initialized")
+        self.logger.info("Using default coordinate mapping")
+    
+    def load_calibration(self):
+        """Load calibration from file"""
+        try:
+            if os.path.exists('calibration.yaml'):
+                with open('calibration.yaml', 'r') as f:
+                    calib_data = yaml.safe_load(f)
+                    if 'matrix' in calib_data:
+                        self.camera_to_arm_matrix = np.array(calib_data['matrix'])
+                        return True
+        except Exception as e:
+            self.logger.error(f"Failed to load calibration: {e}")
+        return False
+    
+    def save_calibration(self):
+        """Save calibration to file"""
+        try:
+            calib_data = {
+                'matrix': self.camera_to_arm_matrix.tolist(),
+                'timestamp': datetime.now().isoformat()
+            }
+            with open('calibration.yaml', 'w') as f:
+                yaml.dump(calib_data, f)
+            self.logger.info("Calibration saved")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to save calibration: {e}")
+            return False
+    
+    def update_calibration(self, points):
+        """Update calibration using point correspondences"""
+        if len(points) < 4:
+            self.logger.error("Need at least 4 points for calibration")
+            return False
+        
+        try:
+            # Extract pixel and world coordinates
+            src_points = np.array([p['pixel'] for p in points], dtype=np.float32)
+            dst_points = np.array([p['world'] for p in points], dtype=np.float32)
+            
+            # Calculate homography matrix
+            matrix, _ = cv2.findHomography(src_points, dst_points)
+            
+            if matrix is not None:
+                self.camera_to_arm_matrix = matrix
+                self.save_calibration()
+                self.logger.info(f"Calibration updated with {len(points)} points")
+                return True
+            else:
+                self.logger.error("Failed to compute homography")
+                return False
+        except Exception as e:
+            self.logger.error(f"Calibration update failed: {e}")
+            return False
     
     def initialize_camera(self):
         """Initialize camera"""
