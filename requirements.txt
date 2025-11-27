@@ -38,6 +38,7 @@ scipy>=1.9.0
 
 # Serial Communication (for Arduino)
 pyserial>=3.5
+bleak>=0.20.0  # For Bluetooth Low Energy (Arduino R4 WiFi)
 
 # Configuration Management
 python-dotenv>=1.0.0

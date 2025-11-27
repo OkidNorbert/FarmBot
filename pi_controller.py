@@ -27,6 +27,65 @@ except ImportError as e:
     print(f"Warning: Could not import some modules: {e}")
     print("Running in standalone mode...")
 
+import asyncio
+from bleak import BleakClient, BleakScanner
+
+class BLEClient:
+    def __init__(self, service_uuid, char_uuid, target_name="FarmBot"):
+        self.service_uuid = service_uuid
+        self.char_uuid = char_uuid
+        self.target_name = target_name
+        self.client = None
+        self.loop = asyncio.new_event_loop()
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.connected = False
+        self.command_queue = asyncio.Queue()
+
+    def _run_loop(self):
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_until_complete(self._main_loop())
+
+    async def _main_loop(self):
+        while True:
+            if not self.connected:
+                await self._connect()
+            else:
+                await asyncio.sleep(1)
+
+    async def _connect(self):
+        print(f"Scanning for BLE device: {self.target_name}...")
+        device = await BleakScanner.find_device_by_filter(
+            lambda d, ad: d.name and self.target_name in d.name
+        )
+        
+        if device:
+            print(f"Found device: {device.address}")
+            self.client = BleakClient(device)
+            try:
+                await self.client.connect()
+                self.connected = True
+                print("BLE Connected!")
+                while self.connected:
+                    command = await self.command_queue.get()
+                    if command:
+                        await self.client.write_gatt_char(self.char_uuid, command.encode())
+                        print(f"Sent BLE command: {command}")
+            except Exception as e:
+                print(f"BLE Connection failed: {e}")
+                self.connected = False
+        else:
+            print("Device not found, retrying...")
+            await asyncio.sleep(5)
+
+    def start(self):
+        self.thread.start()
+
+    def send_command(self, command):
+        if self.connected:
+            self.loop.call_soon_threadsafe(self.command_queue.put_nowait, command)
+            return True
+        return False
+
 class PiController:
     def __init__(self, config_file="pi_config.yaml"):
         """Initialize the Raspberry Pi controller"""
@@ -36,6 +95,7 @@ class PiController:
         # Initialize components
         self.camera = None
         self.arduino = None
+        self.ble_client = None
         self.classifier = None
         
         # State management
@@ -62,13 +122,19 @@ class PiController:
         """Default configuration"""
         return {
             'camera': {'index': 0, 'width': 640, 'height': 480, 'fps': 30},
-            'arduino': {'port': '/dev/ttyUSB0', 'baudrate': 115200},
+            'arduino': {
+                'connection_type': 'serial', # or 'bluetooth'
+                'port': '/dev/ttyUSB0', 
+                'baudrate': 115200,
+                'ble_service_uuid': '19B10000-E8F2-537E-4F6C-D104768A1214',
+                'ble_char_uuid': '19B10001-E8F2-537E-4F6C-D104768A1214'
+            },
             'arm': {
-                'home_position': [90, 90, 90, 90, 30],
+                'home_position': [90, 90, 90, 90, 90, 30],
                 'bin_positions': {
-                    'not_ready': [20, 55, 120, 80, 150],
-                    'ready': [100, 50, 110, 80, 150],
-                    'spoilt': [160, 60, 115, 80, 150]
+                    'not_ready': [20, 55, 120, 90, 80, 150],
+                    'ready': [100, 50, 110, 90, 80, 150],
+                    'spoilt': [160, 60, 115, 90, 80, 150]
                 },
                 'arm_length_1': 100.0,
                 'arm_length_2': 80.0,
@@ -133,35 +199,54 @@ class PiController:
     def initialize_arduino(self):
         """Initialize Arduino connection"""
         try:
-            # Try different possible ports
-            possible_ports = ['/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyACM0', '/dev/ttyACM1']
-            port = self.config['arduino']['port']
+            conn_type = self.config['arduino'].get('connection_type', 'serial')
             
-            if port not in possible_ports:
-                # Auto-detect port
-                for p in possible_ports:
-                    if os.path.exists(p):
-                        port = p
-                        break
-            
-            self.arduino = serial.Serial(
-                port=port,
-                baudrate=self.config['arduino']['baudrate'],
-                timeout=1
-            )
-            
-            # Wait for Arduino to initialize
-            time.sleep(2)
-            
-            # Send status command to test connection
-            self.arduino.write(b"STATUS\n")
-            response = self.arduino.readline().decode().strip()
-            
-            if "STATUS" in response:
-                self.logger.info(f"Arduino connected on {port}")
-                return True
+            if conn_type == 'bluetooth':
+                self.logger.info("Initializing BLE connection...")
+                service_uuid = self.config['arduino'].get('ble_service_uuid')
+                char_uuid = self.config['arduino'].get('ble_char_uuid')
+                
+                self.ble_client = BLEClient(service_uuid, char_uuid)
+                self.ble_client.start()
+                # Give it some time to connect
+                time.sleep(2)
+                if self.ble_client.connected:
+                     self.logger.info("BLE Connected")
+                     return True
+                else:
+                     self.logger.info("BLE Client started, scanning...")
+                     return True # Return true to allow loop to continue while scanning
+
             else:
-                raise Exception("Arduino not responding")
+                # Serial connection
+                possible_ports = [
+                    '/dev/ttyUSB0', '/dev/ttyUSB1', 
+                    '/dev/ttyACM0', '/dev/ttyACM1'
+                ]
+                port = self.config['arduino']['port']
+                
+                if port not in possible_ports:
+                    # Auto-detect port
+                    for p in possible_ports:
+                        if os.path.exists(p):
+                            port = p
+                            break
+                
+                self.arduino = serial.Serial(
+                    port=port,
+                    baudrate=self.config['arduino']['baudrate'],
+                    timeout=1
+                )
+                
+                time.sleep(2)
+                self.arduino.write(b"STATUS\n")
+                response = self.arduino.readline().decode().strip()
+                
+                if "STATUS" in response:
+                    self.logger.info(f"Arduino connected on {port}")
+                    return True
+                else:
+                    raise Exception("Arduino not responding")
                 
         except Exception as e:
             self.logger.error(f"Arduino initialization failed: {e}")
@@ -253,13 +338,15 @@ class PiController:
     
     def send_arduino_command(self, command):
         """Send command to Arduino"""
-        if not self.arduino:
-            return False
-        
         try:
-            self.arduino.write(f"{command}\n".encode())
-            time.sleep(0.1)  # Small delay for Arduino processing
-            return True
+            if self.ble_client:
+                return self.ble_client.send_command(f"{command}\n")
+            elif self.arduino:
+                self.arduino.write(f"{command}\n".encode())
+                time.sleep(0.1)
+                return True
+            else:
+                return False
         except Exception as e:
             self.logger.error(f"Arduino command failed: {e}")
             return False
@@ -344,7 +431,7 @@ class PiController:
                     'running': self.running,
                     'detection_count': self.detection_count,
                     'camera_connected': self.camera is not None,
-                    'arduino_connected': self.arduino is not None,
+                    'arduino_connected': (self.arduino is not None) or (self.ble_client is not None and self.ble_client.connected),
                     'classifier_loaded': self.classifier is not None
                 }
             

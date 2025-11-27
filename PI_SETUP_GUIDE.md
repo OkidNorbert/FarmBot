@@ -10,8 +10,8 @@ This guide will walk you through setting up your AI Tomato Sorter on a Raspberry
 - **MicroSD Card** (32GB+ Class 10)
 - **Camera Module** (Pi Camera v2 or USB webcam)
 - **Arduino Uno/Nano** (for robotic arm control)
-- **5x Servo Motors** (SG90/MG90S or similar: base, shoulder, elbow, wrist, gripper)
-- **HC-SR04 Ultrasonic Sensor** (for precise distance-based wrist adjustment)
+- **6x Servo Motors** (SG90/MG90S or similar: base, shoulder, elbow, wrist yaw, wrist pitch, gripper)
+- **VL53L0X Time-of-Flight Sensor** (for precise distance-based wrist adjustment)
 - **Power Supply** (5V, 3A for Pi + 5V, 2A for servos)
 - **Jumper Wires** and **Breadboard**
 - **USB Cable** (Pi ↔ Arduino)
@@ -232,11 +232,11 @@ arduino:
   baudrate: 115200
 
 arm:
-  home_position: [90, 90, 90, 90, 30]
+  home_position: [90, 90, 90, 90, 90, 30]
   bin_positions:
-    not_ready: [20, 55, 120, 80, 150]
-    ready: [100, 50, 110, 80, 150]
-    spoilt: [160, 60, 115, 80, 150]
+    not_ready: [20, 55, 120, 90, 80, 150]
+    ready: [100, 50, 110, 90, 80, 150]
+    spoilt: [160, 60, 115, 90, 80, 150]
   
   # Arm dimensions (mm)
   arm_length_1: 100.0
@@ -592,4 +592,32 @@ If you encounter issues:
 3. Test components individually
 4. Verify all connections and power supplies
 
-Happy sorting! 🍅🤖✨
+
+## 🔵 Step 3.5: Bluetooth Low Energy (BLE) Setup
+
+If you are using the **Arduino UNO R4 WiFi**, you can control the arm wirelessly using BLE.
+
+### **1. Arduino Setup**
+- Ensure you have uploaded the updated firmware (`tomato_sorter_arduino.ino`) which includes BLE support.
+- Open the Serial Monitor (115200 baud) after uploading.
+- You should see: `BLE FarmBot Ready`.
+
+### **2. Raspberry Pi Setup**
+- Install the required library:
+  ```bash
+  pip install bleak
+  ```
+
+### **3. Configuration**
+Update your `pi_config.yaml` to use Bluetooth:
+
+```yaml
+arduino:
+  connection_type: bluetooth
+  # The UUIDs below match the Arduino firmware
+  ble_service_uuid: '19B10000-E8F2-537E-4F6C-D104768A1214'
+  ble_char_uuid: '19B10001-E8F2-537E-4F6C-D104768A1214'
+```
+
+*Note: The system will automatically scan for a device named "FarmBot" and connect to it.*
+

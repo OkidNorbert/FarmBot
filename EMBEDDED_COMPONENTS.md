@@ -59,8 +59,14 @@ This file lists all embedded/robotics hardware required for the AI Tomato Sorter
 - Ethernet cable (1) or reliable Wi‑Fi
 
 ## Pin Allocation (Reference)
-- Arduino PWM servo pins: D3 (Base), D5 (Shoulder), D6 (Elbow), D9 (Wrist), D10 (Gripper)
-- HC‑SR04: TRIG→D11, ECHO→D12
+- Arduino PWM servo pins:
+  - Base Rotation: D7
+  - Forearm (Shoulder): D6
+  - Elbow: D5
+  - Wrist Yaw: D4
+  - Wrist Pitch: D3
+  - Claw: D2
+- VL53L0X Sensor: SDA (A4), SCL (A5), VIN (5V), GND
 - Power: Servos on dedicated 5V PSU; tie servo GND to Arduino GND and Raspberry Pi GND (common ground is mandatory)
 
 ## Notes

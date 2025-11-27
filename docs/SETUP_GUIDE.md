@@ -186,13 +186,13 @@ print('TFLite model loaded successfully')
 #### 6.1 Hardware Connections
 ```
 Arduino Pin Layout:
-- Pin 3:  Servo 1 (Base rotation)
-- Pin 5:  Servo 2 (Shoulder joint)
-- Pin 6:  Servo 3 (Elbow joint)
-- Pin 9:  Servo 4 (Wrist pitch)
-- Pin 10: Servo 5 (Gripper)
-- Pin 11: Ultrasonic TRIG
-- Pin 12: Ultrasonic ECHO
+- Pin 7:  Servo 1 (Base rotation)
+- Pin 6:  Servo 2 (Shoulder/Forearm)
+- Pin 5:  Servo 3 (Elbow joint)
+- Pin 4:  Servo 4 (Wrist Yaw)
+- Pin 3:  Servo 5 (Wrist Pitch)
+- Pin 2:  Servo 6 (Gripper)
+- VL53L0X: SDA (A4), SCL (A5)
 - GND:    Common ground (tie external 5V ground to Arduino GND)
 - 5V:     Power supply (if servos need external power)
 ```

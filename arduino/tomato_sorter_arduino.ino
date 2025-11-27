@@ -3,40 +3,52 @@
  * Controls 5-DOF robotic arm for tomato sorting
  * 
  * Hardware:
- * - 5x Servo motors (SG90 / MG90S or similar)
- *   Servo 1: Base rotation (Pin 3)
- *   Servo 2: Shoulder joint (Pin 5)
- *   Servo 3: Elbow joint (Pin 6)
- *   Servo 4: Wrist pitch (Pin 9)
- *   Servo 5: Gripper (Pin 10)
- * - Ultrasonic distance sensor (HC-SR04) TRIG (Pin 11), ECHO (Pin 12)
+ * - 6x Servo motors
+ *   Servo 1: Base rotation (Pin 7)
+ *   Servo 2: Shoulder/Forearm (Pin 6)
+ *   Servo 3: Elbow joint (Pin 5)
+ *   Servo 4: Wrist Yaw (Pin 4)
+ *   Servo 5: Wrist Pitch (Pin 3)
+ *   Servo 6: Gripper (Pin 2)
+ * - VL53L0X Time-of-Flight Distance Sensor (SDA A4, SCL A5)
  * 
  * Communication:
  * - Serial commands from Raspberry Pi
- * - Commands: MOVE X Y CLASS, ANGLE A1 A2 A3 A4 A5, STOP
+ * - Commands: MOVE X Y CLASS, ANGLE A1 A2 A3 A4 A5 A6, STOP
  */
 
 #include <Servo.h>
+#include <Wire.h>
+#include "Adafruit_VL53L0X.h"
+#include <ArduinoBLE.h>
+
+Adafruit_VL53L0X lox = Adafruit_VL53L0X();
+
+// BLE Service and Characteristic
+BLEService farmBotService("19B10000-E8F2-537E-4F6C-D104768A1214"); // Custom UUID
+BLEStringCharacteristic commandCharacteristic("19B10001-E8F2-537E-4F6C-D104768A1214", BLERead | BLEWrite, 50);
+
 
 // Servo indices for readability
 enum ServoIndex {
   SERVO_BASE = 0,
   SERVO_SHOULDER = 1,
   SERVO_ELBOW = 2,
-  SERVO_WRIST = 3,
-  SERVO_GRIPPER = 4,
-  SERVO_COUNT = 5
+  SERVO_WRIST_YAW = 3,
+  SERVO_WRIST_PITCH = 4,
+  SERVO_GRIPPER = 5,
+  SERVO_COUNT = 6
 };
 
 // Servo objects
 Servo servos[SERVO_COUNT];
 
-// Servo pins (PWM capable pins on Arduino Uno / Nano)
-const int SERVO_PINS[SERVO_COUNT] = {3, 5, 6, 9, 10};
+// Servo pins (Base, Shoulder, Elbow, WristYaw, WristPitch, Gripper)
+const int SERVO_PINS[SERVO_COUNT] = {7, 6, 5, 4, 3, 2};
 
 // Servo limits (degrees)
-const int SERVO_MIN[SERVO_COUNT] = {0, 10, 0, 0, 20};
-const int SERVO_MAX[SERVO_COUNT] = {180, 170, 180, 180, 160};
+const int SERVO_MIN[SERVO_COUNT] = {0, 10, 0, 0, 0, 20};
+const int SERVO_MAX[SERVO_COUNT] = {180, 170, 180, 180, 180, 160};
 
 // Movement parameters
 const int MOVEMENT_DELAY = 40;  // Delay between servo movements (ms)
@@ -45,13 +57,15 @@ const int GRIPPER_OPEN = 30;
 const int GRIPPER_CLOSE = 150;
 
 // Wrist presets
-const int WRIST_NEUTRAL = 90;
-const int WRIST_PICK = 110;
-const int WRIST_BIN = 80;
+// Wrist presets
+const int WRIST_PITCH_NEUTRAL = 90;
+const int WRIST_PITCH_PICK = 110;
+const int WRIST_PITCH_BIN = 80;
+const int WRIST_YAW_NEUTRAL = 90;
 
 // Current servo positions
-int current_angles[SERVO_COUNT] = {90, 90, 90, WRIST_NEUTRAL, GRIPPER_OPEN};
-int target_angles[SERVO_COUNT]  = {90, 90, 90, WRIST_NEUTRAL, GRIPPER_OPEN};
+int current_angles[SERVO_COUNT] = {90, 90, 90, WRIST_YAW_NEUTRAL, WRIST_PITCH_NEUTRAL, GRIPPER_OPEN};
+int target_angles[SERVO_COUNT]  = {90, 90, 90, WRIST_YAW_NEUTRAL, WRIST_PITCH_NEUTRAL, GRIPPER_OPEN};
 
 bool emergency_stop = false;
 
@@ -60,12 +74,13 @@ struct ServoPose {
   int base;
   int shoulder;
   int elbow;
-  int wrist;
+  int wrist_yaw;
+  int wrist_pitch;
 };
 
-const ServoPose BIN_NOT_READY_POSE = {20, 55, 120, WRIST_BIN};
-const ServoPose BIN_READY_POSE     = {100, 50, 110, WRIST_BIN};
-const ServoPose BIN_SPOILT_POSE    = {160, 60, 115, WRIST_BIN};
+const ServoPose BIN_NOT_READY_POSE = {20, 55, 120, WRIST_YAW_NEUTRAL, WRIST_PITCH_BIN};
+const ServoPose BIN_READY_POSE     = {100, 50, 110, WRIST_YAW_NEUTRAL, WRIST_PITCH_BIN};
+const ServoPose BIN_SPOILT_POSE    = {160, 60, 115, WRIST_YAW_NEUTRAL, WRIST_PITCH_BIN};
 
 ServoPose getBinPose(int class_id);
 void performPickAndSort(float baseAngle, float shoulderAngle, float elbowAngle, int class_id);
@@ -74,10 +89,8 @@ void performPickAndSort(float baseAngle, float shoulderAngle, float elbowAngle, 
 const float ARM_LENGTH1 = 100.0;  // First arm segment
 const float ARM_LENGTH2 = 80.0;   // Second arm segment
 
-// Ultrasonic distance sensor (HC-SR04)
-const int ULTRASONIC_TRIG_PIN = 11;
-const int ULTRASONIC_ECHO_PIN = 12;
-const float SPEED_OF_SOUND_CM_PER_US = 0.0343;  // cm per microsecond
+// VL53L0X Sensor
+// No specific pins needed as it uses I2C (SDA, SCL)
 
 // Pick height configuration
 const float MIN_PICK_DISTANCE_CM = 6.0;
@@ -95,8 +108,28 @@ void setup() {
     servos[i].attach(SERVO_PINS[i]);
   }
 
-  pinMode(ULTRASONIC_TRIG_PIN, OUTPUT);
-  pinMode(ULTRASONIC_ECHO_PIN, INPUT);
+  // Initialize VL53L0X
+  if (!lox.begin()) {
+    Serial.println(F("Failed to boot VL53L0X"));
+    // Continue anyway, but distance sensing won't work
+  } else {
+    Serial.println(F("VL53L0X ready"));
+  }
+
+  // Initialize BLE
+  if (!BLE.begin()) {
+    Serial.println("starting BLE failed!");
+    while (1);
+  }
+
+  BLE.setLocalName("TomatoSorter");
+  BLE.setAdvertisedService(tomatoSorterService);
+  tomatoSorterService.addCharacteristic(commandCharacteristic);
+  BLE.addService(tomatoSorterService);
+  commandCharacteristic.writeValue("");
+
+  BLE.advertise();
+  Serial.println("BLE Tomato Sorter Ready");
   
   // Initialize servos to home position
   moveToHome();
@@ -108,6 +141,18 @@ void setup() {
 }
 
 void loop() {
+  // Poll for BLE events
+  BLE.poll();
+
+  // Check for BLE commands
+  if (commandCharacteristic.written()) {
+    String command = commandCharacteristic.value();
+    command.trim();
+    if (command.length() > 0) {
+      processCommand(command);
+    }
+  }
+
   // Check for serial commands
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
@@ -130,7 +175,7 @@ void processCommand(String command) {
     processMoveCommand(command);
   }
   else if (command.startsWith("ANGLE")) {
-    // ANGLE A1 A2 A3 A4 A5 - Set servo angles directly (-1 to keep current)
+    // ANGLE A1 A2 A3 A4 A5 A6 - Set servo angles directly (-1 to keep current)
     processAngleCommand(command);
   }
   else if (command.startsWith("STOP")) {
@@ -268,7 +313,7 @@ void emergencyStop() {
 
 void moveToHome() {
   Serial.println("Moving to home position");
-  int homeAngles[SERVO_COUNT] = {90, 90, 90, WRIST_NEUTRAL, GRIPPER_OPEN};
+  int homeAngles[SERVO_COUNT] = {90, 90, 90, WRIST_YAW_NEUTRAL, WRIST_PITCH_NEUTRAL, GRIPPER_OPEN};
   moveServos(homeAngles);
   emergency_stop = false;
 }
@@ -329,8 +374,11 @@ void moveServos(const int desiredAngles[SERVO_COUNT]) {
   current_angles[SERVO_ELBOW] = target_angles[SERVO_ELBOW];
 
   // Wrist adjustments
-  smoothMoveServo(SERVO_WRIST, target_angles[SERVO_WRIST]);
-  current_angles[SERVO_WRIST] = target_angles[SERVO_WRIST];
+  smoothMoveServo(SERVO_WRIST_YAW, target_angles[SERVO_WRIST_YAW]);
+  current_angles[SERVO_WRIST_YAW] = target_angles[SERVO_WRIST_YAW];
+
+  smoothMoveServo(SERVO_WRIST_PITCH, target_angles[SERVO_WRIST_PITCH]);
+  current_angles[SERVO_WRIST_PITCH] = target_angles[SERVO_WRIST_PITCH];
 
   // Gripper moves only when explicitly requested
   if (target_angles[SERVO_GRIPPER] != current_angles[SERVO_GRIPPER]) {
@@ -344,38 +392,34 @@ void moveToPose(const ServoPose &pose, int gripperAngle = -1) {
     pose.base,
     pose.shoulder,
     pose.elbow,
-    pose.wrist,
+    pose.wrist_yaw,
+    pose.wrist_pitch,
     (gripperAngle >= 0) ? gripperAngle : current_angles[SERVO_GRIPPER]
   };
   moveServos(desired);
 }
 
-void setWristAngle(int angle) {
-  int constrained = constrain(angle, SERVO_MIN[SERVO_WRIST], SERVO_MAX[SERVO_WRIST]);
-  target_angles[SERVO_WRIST] = constrained;
-  smoothMoveServo(SERVO_WRIST, constrained);
-  current_angles[SERVO_WRIST] = constrained;
+void setWristPitchAngle(int angle) {
+  int constrained = constrain(angle, SERVO_MIN[SERVO_WRIST_PITCH], SERVO_MAX[SERVO_WRIST_PITCH]);
+  target_angles[SERVO_WRIST_PITCH] = constrained;
+  smoothMoveServo(SERVO_WRIST_PITCH, constrained);
+  current_angles[SERVO_WRIST_PITCH] = constrained;
 }
 
 float measureDistanceCm() {
-  digitalWrite(ULTRASONIC_TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(ULTRASONIC_TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(ULTRASONIC_TRIG_PIN, LOW);
+  VL53L0X_RangingMeasurementData_t measure;
+  lox.rangingTest(&measure, false); 
 
-  unsigned long duration = pulseIn(ULTRASONIC_ECHO_PIN, HIGH, 30000UL); // 30 ms timeout (~5 m)
-  if (duration == 0) {
+  if (measure.RangeStatus != 4) {  // phase failures have incorrect data
+    return measure.RangeMilliMeter / 10.0;
+  } else {
     return -1.0;
   }
-
-  float distance = (duration * SPEED_OF_SOUND_CM_PER_US) / 2.0;
-  return distance;
 }
 
 int computeWristAngleForDistance(float distanceCm) {
   if (distanceCm < 0) {
-    return WRIST_PICK;
+    return WRIST_PITCH_PICK;
   }
   float clamped = constrain(distanceCm, MIN_PICK_DISTANCE_CM, MAX_PICK_DISTANCE_CM);
   long scaled = (long)(clamped * 10.0);  // improve precision for map
@@ -407,7 +451,8 @@ void performPickAndSort(float baseAngle, float shoulderAngle, float elbowAngle, 
     constrain((int)baseAngle, SERVO_MIN[SERVO_BASE], SERVO_MAX[SERVO_BASE]),
     constrain((int)shoulderAngle, SERVO_MIN[SERVO_SHOULDER], SERVO_MAX[SERVO_SHOULDER]),
     constrain((int)elbowAngle, SERVO_MIN[SERVO_ELBOW], SERVO_MAX[SERVO_ELBOW]),
-    WRIST_PICK,
+    WRIST_YAW_NEUTRAL,
+    WRIST_PITCH_PICK,
     GRIPPER_OPEN
   };
 
@@ -422,10 +467,10 @@ void performPickAndSort(float baseAngle, float shoulderAngle, float elbowAngle, 
     Serial.print(distance);
     Serial.print(" cm -> Wrist angle ");
     Serial.println(wristAngle);
-    setWristAngle(wristAngle);
+    setWristPitchAngle(wristAngle);
   } else {
     Serial.println("Distance measurement failed, using default wrist angle");
-    setWristAngle(WRIST_PICK);
+    setWristPitchAngle(WRIST_PITCH_PICK);
   }
   delay(200);
 
@@ -439,7 +484,7 @@ void performPickAndSort(float baseAngle, float shoulderAngle, float elbowAngle, 
   delay(500);
 
   // Release tomato
-  setWristAngle(binPose.wrist);
+  setWristPitchAngle(binPose.wrist_pitch);
   delay(150);
   setGripper(true);
   delay(400);
@@ -455,7 +500,8 @@ void moveToPosition(float baseAngle, float shoulderAngle, float elbowAngle, floa
     constrain((int)baseAngle, SERVO_MIN[SERVO_BASE], SERVO_MAX[SERVO_BASE]),
     constrain((int)shoulderAngle, SERVO_MIN[SERVO_SHOULDER], SERVO_MAX[SERVO_SHOULDER]),
     constrain((int)elbowAngle, SERVO_MIN[SERVO_ELBOW], SERVO_MAX[SERVO_ELBOW]),
-    constrain((int)wristAngle, SERVO_MIN[SERVO_WRIST], SERVO_MAX[SERVO_WRIST]),
+    WRIST_YAW_NEUTRAL,
+    constrain((int)wristAngle, SERVO_MIN[SERVO_WRIST_PITCH], SERVO_MAX[SERVO_WRIST_PITCH]),
     current_angles[SERVO_GRIPPER]
   };
 
@@ -467,8 +513,8 @@ void moveToPosition(float baseAngle, float shoulderAngle, float elbowAngle, floa
   Serial.print(desired[SERVO_SHOULDER]);
   Serial.print(", ");
   Serial.print(desired[SERVO_ELBOW]);
-  Serial.print(", wrist ");
-  Serial.println(desired[SERVO_WRIST]);
+  Serial.print(", wrist pitch ");
+  Serial.println(desired[SERVO_WRIST_PITCH]);
 }
 
 
