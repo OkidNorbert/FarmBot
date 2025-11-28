@@ -87,11 +87,13 @@ void setup() {
     motionPlanner.setBinPose("ripe", ripePose);
     motionPlanner.setBinPose("unripe", unripePose);
     
-    Serial.println("Connecting to WiFi/WebSocket...");
+    Serial.println("Connecting to communication...");
     commClient.begin();
     commClient.onMessage(handleWebSocketMessage);
     
     Serial.println("========================================");
+    Serial.print("Connection Type: ");
+    Serial.println(commClient.getConnectionType());
     Serial.println("System Ready!");
     Serial.println("Waiting for commands...");
     Serial.println("========================================");
@@ -151,7 +153,7 @@ void handleWebSocketMessage(String payload) {
     Serial.print("Received: ");
     Serial.println(payload);
     
-    // Parse JSON
+    // Parse JSON - handle both Socket.IO format and direct JSON
     StaticJsonDocument<512> doc;
     DeserializationError error = deserializeJson(doc, payload);
     
@@ -161,15 +163,31 @@ void handleWebSocketMessage(String payload) {
         return;
     }
     
-    // Extract Command
-    JsonArray arr = doc.as<JsonArray>();
-    String event = arr[0].as<String>();
-    JsonObject data = arr[1].as<JsonObject>();
-    
-    if (event == "command") {
-        String cmd = data["cmd"].as<String>();
+    // Check if Socket.IO format (array) or direct JSON (object)
+    JsonObject data;
+    if (doc.is<JsonArray>()) {
+        // Socket.IO format: ["event", {...}]
+        JsonArray arr = doc.as<JsonArray>();
+        String event = arr[0].as<String>();
+        data = arr[1].as<JsonObject>();
         
-        if (cmd == "pick") {
+        if (event != "command") {
+            Serial.print("Unknown event: ");
+            Serial.println(event);
+            return;
+        }
+    } else if (doc.is<JsonObject>()) {
+        // Direct JSON format (from BLE)
+        data = doc.as<JsonObject>();
+    } else {
+        Serial.println("Invalid JSON format");
+        return;
+    }
+    
+    // Process command
+    String cmd = data["cmd"].as<String>();
+    
+    if (cmd == "pick") {
             String id = data["id"] | "unknown";
             int x = data["x"] | 320;
             int y = data["y"] | 240;
@@ -206,6 +224,8 @@ void handleWebSocketMessage(String payload) {
             currentState = CALIBRATING;
             Serial.println("Entering calibration mode");
         }
+    } else {
+        Serial.print("No 'cmd' field in message");
     }
 }
 

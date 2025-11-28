@@ -59,13 +59,25 @@
 #define HOME_ANGLE          90
 
 // ==========================================
-// WiFi / WebSocket Configuration
+// Communication Configuration
 // ==========================================
-// These will be loaded from secrets.h or hardcoded for now
+// Choose communication method: "WIFI", "BLE", or "AUTO" (tries WiFi first, falls back to BLE)
+#define COMM_MODE           "AUTO"
+
+// Enable communication methods (comment out to disable)
+#define USE_WIFI            1
+#define USE_BLE             1
+
+// WiFi / WebSocket Configuration
 #define WIFI_SSID           "FarmBot_Net"
 #define WIFI_PASS           "tomato123"
 #define WS_HOST             "192.168.1.100" // Replace with actual PC IP
 #define WS_PORT             5000
 #define WS_PATH             "/socket.io/?EIO=4&transport=websocket"
+
+// BLE Configuration
+#define BLE_DEVICE_NAME     "FarmBot"
+#define BLE_SERVICE_UUID    "19B10000-E8F2-537E-4F6C-D104768A1214"
+#define BLE_CHAR_UUID       "19B10001-E8F2-537E-4F6C-D104768A1214"
 
 #endif // CONFIG_H
