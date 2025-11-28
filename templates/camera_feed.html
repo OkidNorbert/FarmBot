@@ -15,11 +15,15 @@
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-8">
-                            <div class="camera-container">
-                                <img src="{{ url_for('video_feed') }}" 
+                            <div class="camera-container" style="position: relative; background-color: #000; min-height: 300px; border: 2px solid #007bff; border-radius: 8px; overflow: hidden;">
+                                <img src="" 
                                      class="img-fluid" 
                                      id="camera-feed"
-                                     style="max-width: 100%; height: auto; border: 2px solid #007bff; border-radius: 8px;">
+                                     style="max-width: 100%; height: auto; display: block;">
+                                <div id="camera-placeholder" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; text-align: center; pointer-events: none; z-index: 10;">
+                                    <i class="fas fa-camera fa-3x mb-3"></i>
+                                    <p>Camera stopped. Click "Start Camera" to begin.</p>
+                                </div>
                             </div>
                         </div>
                         <div class="col-md-4">
@@ -121,12 +125,20 @@ let isTomatoMonitoring = false;
 
 function startCamera() {
     if (!isCameraRunning) {
-        // Reload the camera feed
-        document.getElementById('camera-feed').src = "{{ url_for('video_feed') }}?" + new Date().getTime();
+        const cameraFeed = document.getElementById('camera-feed');
+        const placeholder = document.getElementById('camera-placeholder');
+        
+        // Hide placeholder
+        if (placeholder) {
+            placeholder.style.display = 'none';
+        }
+        
+        // Start the camera feed with a timestamp to prevent caching
+        cameraFeed.src = "{{ url_for('video_feed') }}?" + new Date().getTime();
         isCameraRunning = true;
         
         // Start auto-capture if enabled
-        if (document.getElementById('autoCapture').checked) {
+        if (document.getElementById('autoCapture') && document.getElementById('autoCapture').checked) {
             const interval = parseInt(document.getElementById('captureInterval').value) * 1000;
             cameraInterval = setInterval(captureAndClassify, interval);
         }
@@ -136,19 +148,41 @@ function startCamera() {
 }
 
 function stopCamera() {
-    if (isCameraRunning) {
-        // Stop the camera feed
-        document.getElementById('camera-feed').src = '';
-        isCameraRunning = false;
-        
-        // Stop auto-capture
-        if (cameraInterval) {
-            clearInterval(cameraInterval);
-            cameraInterval = null;
-        }
-        
-        updateStatus('Camera stopped', 'warning');
+    // Always allow stopping, even if state is inconsistent
+    const cameraFeed = document.getElementById('camera-feed');
+    const placeholder = document.getElementById('camera-placeholder');
+    
+    // Stop the camera feed by removing the src attribute
+    // This stops the browser from making requests to the video feed
+    cameraFeed.removeAttribute('src');
+    cameraFeed.src = ''; // Clear src completely
+    
+    // Show placeholder
+    if (placeholder) {
+            placeholder.style.display = 'block';
     }
+    
+    // Force the image to stop loading
+    try {
+        cameraFeed.load(); // This forces the browser to stop loading
+    } catch (e) {
+        // Ignore errors
+    }
+    
+    isCameraRunning = false;
+    
+    // Stop auto-capture
+    if (cameraInterval) {
+        clearInterval(cameraInterval);
+        cameraInterval = null;
+    }
+    
+    // Stop tomato monitoring if running
+    if (isTomatoMonitoring) {
+        stopTomatoMonitoring();
+    }
+    
+    updateStatus('Camera stopped', 'warning');
 }
 
 function captureImage() {
@@ -377,11 +411,18 @@ function updateTomatoStatus(message, type) {
     statusDiv.innerHTML = `<strong>Tomato Status:</strong> ${message}`;
 }
 
-// Auto-start camera when page loads
+// Initialize page when loaded
 document.addEventListener('DOMContentLoaded', function() {
     checkCameraStatus();
-    startCamera();
+    // Don't auto-start camera - let user start it manually
+    // startCamera();
     checkTomatoDetection(); // Check for tomatoes on page load
+    
+    // Show placeholder initially
+    const placeholder = document.getElementById('camera-placeholder');
+    if (placeholder) {
+        placeholder.style.display = 'block';
+    }
 });
 
 // Handle auto-capture toggle

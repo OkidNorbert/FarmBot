@@ -579,7 +579,8 @@ class HardwareController:
             'arduino_connected': arduino_conn,
             'camera_connected': self.camera_connected,
             'auto_mode': self.auto_mode,
-            'connection_type': connection_type
+            'connection_type': connection_type,
+            'classifier_loaded': self.classifier is not None
         }
         
         if self.ble_client:

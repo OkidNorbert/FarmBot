@@ -24,6 +24,8 @@ from werkzeug.utils import secure_filename
 import yaml
 import cv2
 import numpy as np
+from flask_socketio import SocketIO, emit
+import eventlet
 
 # Try to import hardware controller (optional for non-Pi systems)
 try:
@@ -50,6 +52,7 @@ except ImportError:
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # Change this in production
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # Configuration
 UPLOAD_FOLDER = 'datasets'
@@ -208,29 +211,96 @@ def pi_status():
         system_state['arduino_connected'] = hw_status['arduino_connected']
         system_state['auto_mode'] = hw_status.get('auto_mode', False)
         system_state['connection_type'] = hw_status.get('connection_type', 'none')
+        system_state['classifier_loaded'] = hw_status.get('classifier_loaded', False)
     else:
         system_state['camera_connected'] = False
         system_state['arduino_connected'] = False
         system_state['auto_mode'] = False
         system_state['connection_type'] = 'none'
+        system_state['classifier_loaded'] = False
     
     return jsonify(system_state)
 
 @app.route('/api/auto/start', methods=['POST'])
 def api_start_auto():
     """Enable Auto Mode"""
+    system_state['auto_mode'] = True
+    system_state['system_mode'] = 'AUTO'
+    
+    # Send mode change to Arduino if connected
+    if arduino_clients:
+        socketio.emit('command', {'cmd': 'set_mode', 'mode': 'AUTO'}, namespace='/arduino')
+    
     if HARDWARE_AVAILABLE and hw_controller:
         hw_controller.start_auto_mode()
-        return jsonify({'success': True, 'message': 'Auto Mode Started'})
-    return jsonify({'success': False, 'message': 'Hardware not available'})
+    
+    return jsonify({'success': True, 'message': 'Auto Mode Started', 'mode': 'AUTO'})
 
 @app.route('/api/auto/stop', methods=['POST'])
 def api_stop_auto():
     """Disable Auto Mode"""
+    system_state['auto_mode'] = False
+    system_state['system_mode'] = 'MANUAL'
+    
+    # Send mode change to Arduino if connected
+    if arduino_clients:
+        socketio.emit('command', {'cmd': 'set_mode', 'mode': 'MANUAL'}, namespace='/arduino')
+    
     if HARDWARE_AVAILABLE and hw_controller:
         hw_controller.stop_auto_mode()
-        return jsonify({'success': True, 'message': 'Auto Mode Stopped'})
-    return jsonify({'success': False, 'message': 'Hardware not available'})
+    
+    return jsonify({'success': True, 'message': 'Auto Mode Stopped', 'mode': 'MANUAL'})
+
+@app.route('/api/control/mode', methods=['POST'])
+def api_set_mode():
+    """Set system mode (AUTO/MANUAL)"""
+    data = request.get_json() or {}
+    mode = data.get('mode', 'MANUAL').upper()
+    
+    if mode == 'AUTO':
+        system_state['auto_mode'] = True
+        system_state['system_mode'] = 'AUTO'
+        if arduino_clients:
+            socketio.emit('command', {'cmd': 'set_mode', 'mode': 'AUTO'}, namespace='/arduino')
+    else:
+        system_state['auto_mode'] = False
+        system_state['system_mode'] = 'MANUAL'
+        if arduino_clients:
+            socketio.emit('command', {'cmd': 'set_mode', 'mode': 'MANUAL'}, namespace='/arduino')
+    
+    return jsonify({'success': True, 'mode': mode})
+
+@app.route('/api/control/emergency_stop', methods=['POST'])
+def api_emergency_stop():
+    """Trigger emergency stop"""
+    if arduino_clients:
+        socketio.emit('command', {'cmd': 'stop'}, namespace='/arduino')
+    
+    system_state['auto_mode'] = False
+    system_state['system_mode'] = 'MANUAL'
+    
+    return jsonify({'success': True, 'message': 'Emergency stop activated'})
+
+@app.route('/api/manual/move', methods=['POST'])
+def api_manual_move():
+    """Send manual joint angles to Arduino"""
+    data = request.get_json()
+    
+    if not arduino_clients:
+        return jsonify({'error': 'Arduino not connected'}), 400
+    
+    command = {
+        'cmd': 'move_joints',
+        'base': data.get('base', 90),
+        'shoulder': data.get('shoulder', 90),
+        'forearm': data.get('forearm', 90),
+        'elbow': data.get('elbow', 90),
+        'pitch': data.get('pitch', 90),
+        'claw': data.get('claw', 90)
+    }
+    
+    socketio.emit('command', command, namespace='/arduino')
+    return jsonify({'success': True, 'message': 'Manual move command sent'})
 
 @app.route('/pi/control/start')
 def start_detection():
@@ -485,6 +555,98 @@ def update_config():
         return jsonify({'status': 'updated', 'message': 'Configuration updated'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
+
+# ==========================================
+# WebSocket Events
+# ==========================================
+
+@socketio.on('connect', namespace='/arduino')
+def handle_arduino_connect():
+    print('🔌 Arduino connected to WebSocket')
+    arduino_clients.add(request.sid)
+    system_state['arduino_connected'] = True
+    emit('status', {'msg': 'Connected to Server'})
+
+@socketio.on('disconnect', namespace='/arduino')
+def handle_arduino_disconnect():
+    print('🔌 Arduino disconnected')
+    arduino_clients.discard(request.sid)
+    if not arduino_clients:
+        system_state['arduino_connected'] = False
+
+@socketio.on('telemetry', namespace='/arduino')
+def handle_telemetry(data):
+    """Handle telemetry from Arduino"""
+    # Broadcast to frontend
+    socketio.emit('telemetry_update', data)
+    
+    # Update system state
+    if 'status' in data:
+        system_state['arduino_status'] = data['status']
+    if 'battery_voltage' in data:
+        system_state['battery'] = data['battery_voltage']
+
+@socketio.on('pick_result', namespace='/arduino')
+def handle_pick_result(data):
+    """Handle pick result from Arduino"""
+    print(f"✅ Pick Result: {data}")
+    socketio.emit('pick_complete', data, namespace='/arduino')
+    log_detection(data) # Log result
+
+@socketio.on('yolo_detection', namespace='/arduino')
+def handle_yolo_detection(data):
+    """Handle YOLO detection from detection service"""
+    print(f"🎯 YOLO Detection: {data}")
+    
+    # Convert detection to pick command
+    bbox = data.get('bbox', {})
+    pixel_x = bbox.get('x', 320)
+    pixel_y = bbox.get('y', 240)
+    class_type = data.get('class', 'ripe')
+    confidence = data.get('confidence', 0.0)
+    detection_id = data.get('id', f"det_{int(time.time() * 1000)}")
+    
+    # Log detection
+    log_detection({
+        'id': detection_id,
+        'class': class_type,
+        'confidence': confidence
+    })
+    
+    # Check if system is in AUTO mode and ready
+    if system_state.get('auto_mode', False) and system_state.get('arduino_connected', False):
+        # Send pick command to Arduino
+        pick_command = {
+            "cmd": "pick",
+            "id": detection_id,
+            "x": pixel_x,
+            "y": pixel_y,
+            "class": class_type,
+            "confidence": confidence
+        }
+        
+        # Emit to Arduino via WebSocket (Socket.IO format)
+        socketio.emit('command', pick_command, namespace='/arduino')
+        print(f"📤 Pick command sent to Arduino: {detection_id}")
+    else:
+        mode_status = "MANUAL" if not system_state.get('auto_mode', False) else "AUTO"
+        conn_status = "disconnected" if not system_state.get('arduino_connected', False) else "connected"
+        print(f"⏸️  Detection received but system in {mode_status} mode or Arduino {conn_status}")
+
+@app.route('/api/vision/detection', methods=['POST'])
+def api_vision_detection():
+    """REST endpoint for YOLO detection service (HTTP fallback)"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Emit via WebSocket to handle it
+        socketio.emit('yolo_detection', data, namespace='/arduino')
+        
+        return jsonify({'success': True, 'message': 'Detection received'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ==========================================
 # Main Dashboard Routes
@@ -1443,4 +1605,4 @@ if __name__ == '__main__':
     print("  ✅ System Monitoring")
     print("=" * 60)
     
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False)

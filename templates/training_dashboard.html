@@ -377,7 +377,7 @@ function resetTestModal() {
     document.getElementById('testButton').disabled = false;
 }
 
-function runTest() {
+    function runTest() {
     if (!currentModel) {
         alert('No model selected');
         return;
@@ -393,47 +393,47 @@ function runTest() {
     document.getElementById('testLoading').style.display = 'block';
     document.getElementById('testResult').style.display = 'none';
     document.getElementById('testButton').disabled = true;
-    
-    const form = document.getElementById('testForm');
-    const formData = new FormData(form);
-    
-    // Use single-tomato classification endpoint
-    const endpoint = `/test_model/${currentModel}`;
-    
-    fetch(endpoint, {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
+        
+        const form = document.getElementById('testForm');
+        const formData = new FormData(form);
+        
+        // Use single-tomato classification endpoint
+        const endpoint = `/test_model/${currentModel}`;
+        
+        fetch(endpoint, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
         document.getElementById('testLoading').style.display = 'none';
         document.getElementById('testButton').disabled = false;
         
-        if (data.success) {
-            // Single tomato classification result
+            if (data.success) {
+                // Single tomato classification result
             const confidencePercent = (data.confidence * 100).toFixed(1);
             let confidenceClass = 'success';
             if (confidencePercent < 50) confidenceClass = 'danger';
             else if (confidencePercent < 75) confidenceClass = 'warning';
             
-            document.getElementById('predictionText').innerHTML = 
+                document.getElementById('predictionText').innerHTML = 
                 `<strong>Class:</strong> <span class="badge bg-${confidenceClass}">${data.prediction}</span><br>` +
                 `<strong>Confidence:</strong> <span class="badge bg-${confidenceClass}">${confidencePercent}%</span>`;
-            document.getElementById('testResult').style.display = 'block';
+                document.getElementById('testResult').style.display = 'block';
             
             // Scroll to results
             document.getElementById('testResult').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } else {
+            } else {
             alert('Error: ' + (data.error || 'Unknown error occurred'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
         document.getElementById('testLoading').style.display = 'none';
         document.getElementById('testButton').disabled = false;
         alert('Error testing model: ' + error.message);
-    });
-}
+        });
+    }
 
 function deleteDataset(datasetName) {
     if (confirm(`Are you sure you want to delete dataset "${datasetName}"?`)) {

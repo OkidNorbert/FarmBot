@@ -1,236 +1,192 @@
-# Arduino Robotic Arm Controller
-## AI Tomato Sorter - Arduino Firmware
+# Arduino Firmware: Hybrid Tomato-Picking System
 
-This Arduino code controls a 5-DOF robotic arm for automatic tomato sorting. It receives commands from a Raspberry Pi and executes precise movements to pick and sort tomatoes based on AI classification, including automatic distance compensation with an ultrasonic sensor.
+## Overview
 
-## 🤖 Hardware Requirements
+Complete firmware for Arduino UNO R4 WiFi to control a 6-DOF robotic arm for automated tomato picking and sorting.
 
-### **Arduino Board**
-- Arduino Uno, Nano, or Mega
-- USB cable for programming and communication
+## Hardware Requirements
 
-### **Servo Motors (5x)**
-- **Servo 1**: Base rotation (Pin 3)
-- **Servo 2**: Shoulder / main arm joint (Pin 5)  
-- **Servo 3**: Elbow / secondary arm joint (Pin 6)
-- **Servo 4**: Wrist pitch (Pin 9)
-- **Servo 5**: Gripper open/close (Pin 10)
+- **Arduino UNO R4 WiFi**
+- **6 Servos**:
+  - 3x SG90 (Claw, Pitch, Elbow) on D2-D4
+  - 3x MG99x/MG996R (Forearm, Shoulder, Base) on D5-D7
+- **VL53L0X** Time-of-Flight sensor (I2C)
+- **External Power Supply**: 5-6V @ 2-5A for servos
+- **Emergency Stop Switch** (optional, D8)
 
-### **Distance Sensor (optional but recommended)**
-- HC-SR04 ultrasonic sensor (TRIG → Pin 11, ECHO → Pin 12)
-- Provides accurate distance to the tomato to fine-tune the wrist height
+## Pin Configuration
 
-### **Power Supply**
-- 5V power supply (2A minimum)
-- Servo motors require significant current
+| Pin | Component | Type |
+|-----|-----------|------|
+| D2 | Claw Servo | SG90 |
+| D3 | Pitch Servo | SG90 |
+| D4 | Elbow Servo | SG90 |
+| D5 | Forearm Servo | MG99x |
+| D6 | Shoulder Servo | MG99x |
+| D7 | Base Servo | MG99x |
+| D8 | Emergency Stop | Digital Input |
+| SDA/SCL | VL53L0X | I2C |
 
-### **Connections**
-- USB cable to Raspberry Pi
-- Jumper wires for servo connections
-
-## 🔌 Connection Diagram
-
-```
-┌─────────────────┐    USB     ┌─────────────────┐     PWM          ┌────────────────────┐
-│   Raspberry Pi  │◄──────────►│    Arduino      │◄────────────────►│  Robotic Arm       │
-│                 │            │                 │                   │                    │
-│  Camera Input   │            │  PWM Pins       │                   │  Servo 1 (Base)    │
-│  Web Interface  │            │  (3,5,6,9,10)   │                   │  Servo 2 (Shoulder)│
-│  AI Processing  │            │                 │                   │  Servo 3 (Elbow)   │
-│                 │            │  IO Pins        │          ┌──────► │  Servo 4 (Wrist)   │
-│  GPIO (optional)│            │  (11,12)        │          │        │  Servo 5 (Gripper) │
-└─────────────────┘            └─────────────────┘          │        └────────────────────┘
-                                                           │
-                                                           │ HC-SR04 Ultrasonic Sensor
-                                                           ▼
-                                                    TRIG (Pin 11) / ECHO (Pin 12)
-```
-
-## 📋 Pin Connections
-
-| Arduino Pin | Component | Description |
-|-------------|-----------|-------------|
-| **Pin 3** | Servo 1 | Base rotation |
-| **Pin 5** | Servo 2 | Shoulder joint |
-| **Pin 6** | Servo 3 | Elbow joint |
-| **Pin 9** | Servo 4 | Wrist pitch |
-| **Pin 10** | Servo 5 | Gripper open/close |
-| **Pin 11** | Ultrasonic TRIG | Distance trigger pulse |
-| **Pin 12** | Ultrasonic ECHO | Distance measurement |
-| **5V (external)** | Servo Power | 5V, 2A+ dedicated supply |
-| **GND (common)** | Ground | Tie external supply, servos, and Arduino GND |
-| **USB** | Raspberry Pi | Serial communication & Arduino power/logic |
-
-## 🔧 Wiring Diagram
+## Software Structure
 
 ```
-                   Arduino Uno / Nano
-                  ┌───────────────────┐
-                  │                   │
- Servo 1 (Base) ─►│ Pin 3   (PWM)     │
- Servo 2 (Should)│ Pin 5   (PWM)     │◄─ External 5V (+) to servo red wires
- Servo 3 (Elbow) │ Pin 6   (PWM)     │
- Servo 4 (Wrist) │ Pin 9   (PWM)     │
- Servo 5 (Grip) ─►│ Pin 10  (PWM)     │
- Ultrasonic TRIG │ Pin 11 (Digital)  │
- Ultrasonic ECHO │ Pin 12 (Digital)  │
- Common Ground ─►│ GND               │◄─ External 5V ground & servo grounds
- Raspberry Pi ──►│ USB               │
-                  │                   │
-                  └───────────────────┘
+arduino/src/
+├── main.ino              # Main program loop
+├── config.h              # Pin definitions and configuration
+├── servo_manager.h/cpp   # Servo control with safety limits
+├── tof_vl53.h/cpp        # VL53L0X sensor management
+├── comm_client.h/cpp     # WebSocket/WiFi communication
+├── motion_planner.h/cpp  # Pick sequence state machine
+└── calibration.h/cpp     # EEPROM calibration storage
 ```
 
-## 🚀 Setup Instructions
+## Features
 
-### **1. Hardware Assembly**
-1. Connect all five servos to the designated PWM pins (3, 5, 6, 9, 10)
-2. Wire the HC-SR04 ultrasonic sensor (TRIG → 11, ECHO → 12)
-3. Power the servos from a dedicated 5V / 2A (or higher) supply and tie grounds together
-4. Connect USB cable to Raspberry Pi
-5. Double-check that every ground (Arduino, servos, ultrasonic, Pi) is common
+### ✅ Implemented
 
-### **2. Software Setup**
-1. Open Arduino IDE
-2. Load `tomato_sorter_arduino.ino`
-3. Select correct Arduino board and port
-4. Upload the code to Arduino
-5. Open Serial Monitor (115200 baud) to verify
+1. **Modular Architecture**: Clean separation of concerns
+2. **Safety Limits**: Per-joint angle limits enforced
+3. **Smooth Motion**: Speed-controlled servo movement
+4. **ToF Integration**: Distance-based fine positioning
+5. **WebSocket Communication**: Real-time command/telemetry
+6. **Pick Sequence**: Complete state machine (Approach → Grasp → Lift → Bin → Home)
+7. **Calibration Storage**: EEPROM-based calibration persistence
+8. **Emergency Stop**: Hardware and software stop
+9. **Homing Sequence**: All servos to 90° on startup
 
-### **3. Testing**
-1. Power on Arduino
-2. Check Serial Monitor for "Tomato Sorter Arduino - Ready"
-3. Send test commands:
-   - `STATUS` - Check system status
-   - `HOME` - Move to home position
-   - `ANGLE 90 90 90 90 30` - Set all servos to their neutral positions
+### Safety Features
 
-## 📡 Communication Protocol
+- **Joint Limits**: Enforced per servo type
+- **Speed Control**: Prevents sudden movements
+- **Emergency Stop**: Immediate halt on D8 or "stop" command
+- **Timeout Protection**: 10-second state timeout
+- **Range Validation**: ToF distance checks before approach
 
-### **Commands from Raspberry Pi**
+## Configuration
 
-| Command | Format | Description |
-|---------|--------|-------------|
-| **MOVE** | `MOVE X Y CLASS` | Move to coordinates and sort by class |
-| **ANGLE** | `ANGLE A1 A2 A3 A4 A5` | Set servo angles directly (`-1` keeps current) |
-| **GRIP** | `GRIP OPEN/CLOSE` | Control gripper |
-| **HOME** | `HOME` | Return to home position |
-| **STOP** | `STOP` | Emergency stop |
-| **STATUS** | `STATUS` | Get system status |
+Edit `config.h` to configure:
 
-### **Example Commands**
-```
-MOVE 100 150 1           // Move to (100,150) and sort as class 1 (Ready)
-ANGLE 90 60 120 95 150   // Set joints manually (base, shoulder, elbow, wrist, gripper)
-ANGLE -1 -1 -1 85 30     // Adjust wrist only, keep other joints unchanged
-GRIP CLOSE               // Close gripper
-HOME                      // Return to home position
-```
+- WiFi credentials (`WIFI_SSID`, `WIFI_PASS`)
+- WebSocket server (`WS_HOST`, `WS_PORT`)
+- Servo limits (if different from defaults)
+- Motion parameters (speed, approach distance, etc.)
 
-## 🎯 Sorting Logic
+## Upload Instructions
 
-The system sorts tomatoes into 3 bins based on AI classification:
+1. **Install Arduino IDE** (latest version)
+2. **Install Board Support**: 
+   - Tools → Board → Boards Manager
+   - Search "Arduino UNO R4 WiFi" and install
+3. **Install Libraries**:
+   - Tools → Manage Libraries
+   - Install: `Servo`, `Adafruit_VL53L0X`, `ArduinoWebsockets`, `ArduinoJson`
+4. **Open Project**:
+   - File → Open → `arduino/src/main.ino`
+5. **Configure**:
+   - Edit `config.h` with your WiFi credentials and server IP
+6. **Upload**:
+   - Select board: Tools → Board → Arduino UNO R4 WiFi
+   - Select port: Tools → Port → (your port)
+   - Click Upload
 
-| Class | Description | Bin Pose (Base, Shoulder, Elbow, Wrist, Gripper) |
-|-------|-------------|-----------------------------------------------|
-| **0** | Not Ready | (20°, 55°, 120°, 80°, 150°) |
-| **1** | Ready | (100°, 50°, 110°, 80°, 150°) |
-| **2** | Spoilt | (160°, 60°, 115°, 80°, 150°) |
+## First Run
 
-## ⚙️ Configuration
+1. **Power On**: Arduino boots, servos home to 90°
+2. **WiFi Connection**: Arduino connects to WiFi network
+3. **WebSocket Connection**: Arduino connects to web server
+4. **Ready**: System waits for commands
 
-### **Servo Limits**
-```cpp
-const int SERVO_PINS[5] = {3, 5, 6, 9, 10};
-const int SERVO_MIN[5]  = {0, 10, 0, 0, 20};    // Base, Shoulder, Elbow, Wrist, Gripper
-const int SERVO_MAX[5]  = {180, 170, 180, 180, 160};
-```
+## Commands
 
-### **Movement Parameters**
-```cpp
-const int MOVEMENT_DELAY = 40;           // Delay between movement steps (ms)
-const int MAX_MOVEMENT_SPEED = 5;        // Max degrees per step per update
-const int GRIPPER_OPEN = 30;             // Gripper open position
-const int GRIPPER_CLOSE = 150;           // Gripper close position
-const int WRIST_NEUTRAL = 90;            // Default wrist position
+### Via WebSocket
+
+**Pick Command**:
+```json
+{
+  "cmd": "pick",
+  "id": "det123",
+  "x": 320,
+  "y": 240,
+  "class": "ripe",
+  "confidence": 0.92
+}
 ```
 
-### **Arm Dimensions**
-```cpp
-const float ARM_LENGTH1 = 100.0;  // First arm segment (mm)
-const float ARM_LENGTH2 = 80.0;   // Second arm segment (mm)
+**Manual Move**:
+```json
+{
+  "cmd": "move_joints",
+  "base": 90,
+  "shoulder": 45,
+  "forearm": 90,
+  "elbow": 90,
+  "pitch": 90,
+  "claw": 0
+}
 ```
 
-## 🔒 Safety Features
-
-### **Emergency Stop**
-- `STOP` command immediately halts all movement
-- Emergency stop flag prevents new movements
-- Use `HOME` command to reset emergency stop
-
-### **Movement Limits**
-- All servo angles constrained to 0-180°
-- Smooth movement prevents jerky motion
-- Speed limiting prevents damage
-
-### **Error Handling**
-- Invalid commands are rejected
-- Unreachable positions are detected
-- Serial communication errors are handled
-
-## 🐛 Troubleshooting
-
-### **Common Issues**
-
-| Problem | Solution |
-|---------|----------|
-| **Servos not moving** | Check power supply (5V, 2A) |
-| **Jittery movement** | Check connections, reduce speed |
-| **Serial communication fails** | Check USB cable, baud rate (115200) |
-| **Servos move to wrong positions** | Calibrate servo mounting and update limits |
-| **Arduino not responding** | Check power, reset Arduino |
-
-### **Debug Commands**
-```
-STATUS                    // Check system status
-ANGLE 90 90 90 90 30      // Test all servos (base, shoulder, elbow, wrist, gripper)
-HOME                      // Return to safe position
+**System Commands**:
+```json
+{"cmd": "home"}
+{"cmd": "stop"}
+{"cmd": "set_mode", "mode": "AUTO"}
 ```
 
-## 📊 Status Information
+## Calibration
 
-The `STATUS` command returns:
-- Emergency stop status
-- Current servo angles
-- Servo range limits
-- System configuration
+### Servo Trim Calibration
 
-## 🔄 Workflow
+1. Physically position each servo to 90°
+2. Send calibration command via web interface
+3. Trims saved to EEPROM
 
-1. **Initialize**: Arduino starts in home position (90°, 90°, 90°, 90°, gripper open)
-2. **Receive Command**: Pi sends `MOVE X Y CLASS`
-3. **Calculate Angles**: Inverse kinematics converts coordinates
-4. **Measure Distance**: Ultrasonic sensor refines wrist height
-5. **Move to Position**: Smooth movement to target
-6. **Pick Tomato**: Close gripper
-7. **Sort**: Move to appropriate bin based on class
-8. **Drop Tomato**: Open gripper
-9. **Return Home**: Move back to home position
+### Bin Position Calibration
 
-## 📝 Notes
+1. Manually move arm to right bin (ripe) position
+2. Record servo angles
+3. Repeat for left bin (unripe)
+4. Save to EEPROM
 
-- **Power**: Servos require significant current - use external power supply
-- **Calibration**: Adjust servo mounting and limits for your specific arm
-- **Safety**: Always test movements in safe area first
-- **Maintenance**: Check connections regularly
+### Pixel-to-Robot Mapping
 
-## 🔗 Integration with Raspberry Pi
+Use the calibration wizard (`calibration/pixel_to_servo_wizard.py`) to:
+1. Capture calibration points (pixel + ToF + servo angles)
+2. Generate distance-based lookup table
+3. Export for use in motion planner
 
-The Arduino works seamlessly with the Raspberry Pi:
+## Troubleshooting
 
-1. **Pi detects tomatoes** using AI camera system
-2. **Pi calculates coordinates** from camera pixels
-3. **Pi sends commands** to Arduino via serial
-4. **Arduino executes movements** and sorts tomatoes
-5. **Arduino reports status** back to Pi
+### Servos Don't Move
+- Check power supply (external 5-6V)
+- Verify ground connections
+- Check pin assignments in `config.h`
 
-This creates a complete autonomous tomato sorting system! 🍅🤖✨
+### WiFi Not Connecting
+- Verify SSID and password in `config.h`
+- Check network availability
+- Verify WiFi antenna (R4 WiFi has built-in)
+
+### WebSocket Not Connecting
+- Verify web server IP in `config.h`
+- Check web server is running
+- Verify firewall allows connections
+
+### Pick Sequence Fails
+- Check ToF sensor readings
+- Verify joint limits allow movement
+- Check bin positions are reachable
+
+## Safety Warnings
+
+⚠️ **IMPORTANT**:
+- Always test in MANUAL mode first
+- Verify emergency stop works before automation
+- Start with slow speeds and small movements
+- Keep hands clear during automatic operation
+- Power on Arduino BEFORE enabling servo power supply
+
+## Documentation
+
+- **Wiring Diagram**: See `WIRING_DIAGRAM.md`
+- **Commissioning**: See `COMMISSIONING_CHECKLIST.md`
+- **API Contract**: See `web/api_contract.md`
