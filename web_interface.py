@@ -838,38 +838,79 @@ def camera_feed():
 
 @app.route('/camera_status')
 def camera_status():
-    """Check if camera is available"""
+    """Check if camera is available - tests multiple indices"""
     import cv2
+    import os
     
-    # Try to open camera
-    cap = cv2.VideoCapture(0)
-    if cap.isOpened():
-        # Test if we can read a frame
-        ret, frame = cap.read()
-        cap.release()
-        
-        if ret:
-            return jsonify({
-                'available': True,
-                'message': 'Camera is working properly',
-                'camera_index': 0
+    # Check for video devices
+    video_devices = []
+    if os.path.exists('/dev'):
+        for item in os.listdir('/dev'):
+            if item.startswith('video'):
+                video_devices.append(f"/dev/{item}")
+    video_devices = sorted(video_devices)
+    
+    # Try multiple camera indices
+    working_camera = None
+    tested_indices = []
+    
+    for i in range(5):  # Test indices 0-4
+        try:
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                ret, frame = cap.read()
+                tested_indices.append({
+                    'index': i,
+                    'opened': True,
+                    'can_read': ret and frame is not None
+                })
+                if ret and frame is not None:
+                    working_camera = i
+                    height, width = frame.shape[:2]
+                    cap.release()
+                    break
+            else:
+                tested_indices.append({
+                    'index': i,
+                    'opened': False,
+                    'can_read': False
+                })
+            cap.release()
+        except Exception as e:
+            tested_indices.append({
+                'index': i,
+                'opened': False,
+                'can_read': False,
+                'error': str(e)
             })
-        else:
-            return jsonify({
-                'available': False,
-                'message': 'Camera opened but cannot read frames',
-                'camera_index': 0
-            })
+    
+    if working_camera is not None:
+        return jsonify({
+            'available': True,
+            'message': f'Camera is working properly at index {working_camera}',
+            'camera_index': working_camera,
+            'video_devices': video_devices,
+            'tested_indices': tested_indices
+        })
     else:
+        suggestions = [
+            'Connect a USB camera or webcam',
+            'Check if camera is being used by another application',
+            'On Linux: Check permissions with: ls -l /dev/video*',
+            'On Linux: Try: sudo chmod 666 /dev/video0',
+            'On Raspberry Pi: Enable camera in raspi-config'
+        ]
+        
+        if not video_devices:
+            suggestions.insert(0, 'No /dev/video* devices found - camera may not be connected')
+        
         return jsonify({
             'available': False,
-            'message': 'No camera found at index 0',
-            'camera_index': 0,
-            'suggestions': [
-                'Connect a USB camera',
-                'Enable camera permissions in browser',
-                'Check if camera is being used by another application'
-            ]
+            'message': 'No working camera found',
+            'camera_index': None,
+            'video_devices': video_devices,
+            'tested_indices': tested_indices,
+            'suggestions': suggestions
         })
 
 @app.route('/video_feed')

@@ -383,19 +383,37 @@ class HardwareController:
                 self.logger.error(f"Arduino connection failed: {e}")
                 self.arduino_connected = False
 
-        # Connect Camera
-        try:
-            self.camera = cv2.VideoCapture(self.camera_index)
-            if self.camera.isOpened():
-                self.camera_connected = True
-                self.logger.info("Camera connected")
-                # Start frame reading thread
-                threading.Thread(target=self._update_frame, daemon=True).start()
-            else:
-                self.logger.warning("Camera not found - Simulation Mode")
-        except Exception as e:
-            self.logger.error(f"Camera connection failed: {e}")
-            self.camera_connected = False
+        # Connect Camera - try multiple indices
+        self.camera_connected = False
+        for camera_idx in range(5):  # Try indices 0-4
+            try:
+                self.camera = cv2.VideoCapture(camera_idx)
+                if self.camera.isOpened():
+                    # Test if we can actually read a frame
+                    ret, frame = self.camera.read()
+                    if ret and frame is not None:
+                        self.camera_index = camera_idx
+                        self.camera_connected = True
+                        self.logger.info(f"Camera connected at index {camera_idx}")
+                        # Start frame reading thread
+                        threading.Thread(target=self._update_frame, daemon=True).start()
+                        break
+                    else:
+                        self.camera.release()
+                        self.logger.debug(f"Camera {camera_idx} opened but cannot read frames")
+                else:
+                    self.logger.debug(f"Camera {camera_idx} not available")
+            except Exception as e:
+                self.logger.debug(f"Camera {camera_idx} error: {e}")
+                if self.camera:
+                    try:
+                        self.camera.release()
+                    except:
+                        pass
+        
+        if not self.camera_connected:
+            self.logger.warning("No working camera found - Simulation Mode")
+            self.camera = None
 
     def _update_frame(self):
         """Background thread to keep reading frames"""

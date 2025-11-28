@@ -249,30 +249,47 @@
 
 <!-- Test Model Modal -->
 <div class="modal fade" id="testModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Test Model</h5>
+                <h5 class="modal-title">Test Model: <span id="testModelName"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="testForm" enctype="multipart/form-data">
                     <div class="mb-3">
                         <label for="testImage" class="form-label">Upload Test Image</label>
-                        <input type="file" class="form-control" id="testImage" name="image" accept="image/*" required>
+                        <input type="file" class="form-control" id="testImage" name="image" accept="image/*" required onchange="previewTestImage(event)">
+                        <small class="form-text text-muted">Select an image file to test the model</small>
                     </div>
-                    <!-- Multi-tomato detection removed - not needed for robotic sorting system -->
+                    <!-- Image Preview -->
+                    <div class="mb-3" id="imagePreviewContainer" style="display: none;">
+                        <label class="form-label">Image Preview:</label>
+                        <div class="text-center">
+                            <img id="imagePreview" src="" alt="Preview" class="img-fluid rounded" style="max-height: 400px; border: 2px solid #dee2e6;">
+                        </div>
+                    </div>
                 </form>
+                <!-- Loading indicator -->
+                <div id="testLoading" class="text-center mt-3" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Testing...</span>
+                    </div>
+                    <p class="mt-2">Processing image...</p>
+                </div>
+                <!-- Test Results -->
                 <div id="testResult" class="mt-3" style="display: none;">
                     <div class="alert alert-info">
-                        <h6>Prediction Result:</h6>
+                        <h6><i class="fas fa-check-circle"></i> Prediction Result:</h6>
                         <p id="predictionText"></p>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="runTest()">Test Image</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="resetTestModal()">Close</button>
+                <button type="button" class="btn btn-primary" onclick="runTest()" id="testButton">
+                    <i class="fas fa-play"></i> Test Image
+                </button>
             </div>
         </div>
     </div>
@@ -332,40 +349,91 @@ function confirmTraining() {
 
 function testModel(modelName) {
     currentModel = modelName;
+    document.getElementById('testModelName').textContent = modelName;
+    resetTestModal();
     const modal = new bootstrap.Modal(document.getElementById('testModal'));
     modal.show();
 }
 
-    function runTest() {
-        if (!currentModel) return;
-        
-        const form = document.getElementById('testForm');
-        const formData = new FormData(form);
-        
-        // Use single-tomato classification endpoint
-        const endpoint = `/test_model/${currentModel}`;
-        
-        fetch(endpoint, {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Single tomato classification result
-                document.getElementById('predictionText').innerHTML = 
-                    `<strong>Class:</strong> ${data.prediction}<br>` +
-                    `<strong>Confidence:</strong> ${(data.confidence * 100).toFixed(1)}%`;
-                document.getElementById('testResult').style.display = 'block';
-            } else {
-                alert('Error: ' + data.error);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error testing model');
-        });
+function previewTestImage(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const preview = document.getElementById('imagePreview');
+            const container = document.getElementById('imagePreviewContainer');
+            preview.src = e.target.result;
+            container.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
     }
+}
+
+function resetTestModal() {
+    document.getElementById('testForm').reset();
+    document.getElementById('imagePreviewContainer').style.display = 'none';
+    document.getElementById('testResult').style.display = 'none';
+    document.getElementById('testLoading').style.display = 'none';
+    document.getElementById('testButton').disabled = false;
+}
+
+function runTest() {
+    if (!currentModel) {
+        alert('No model selected');
+        return;
+    }
+    
+    const fileInput = document.getElementById('testImage');
+    if (!fileInput.files || !fileInput.files[0]) {
+        alert('Please select an image first');
+        return;
+    }
+    
+    // Show loading, hide results
+    document.getElementById('testLoading').style.display = 'block';
+    document.getElementById('testResult').style.display = 'none';
+    document.getElementById('testButton').disabled = true;
+    
+    const form = document.getElementById('testForm');
+    const formData = new FormData(form);
+    
+    // Use single-tomato classification endpoint
+    const endpoint = `/test_model/${currentModel}`;
+    
+    fetch(endpoint, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('testLoading').style.display = 'none';
+        document.getElementById('testButton').disabled = false;
+        
+        if (data.success) {
+            // Single tomato classification result
+            const confidencePercent = (data.confidence * 100).toFixed(1);
+            let confidenceClass = 'success';
+            if (confidencePercent < 50) confidenceClass = 'danger';
+            else if (confidencePercent < 75) confidenceClass = 'warning';
+            
+            document.getElementById('predictionText').innerHTML = 
+                `<strong>Class:</strong> <span class="badge bg-${confidenceClass}">${data.prediction}</span><br>` +
+                `<strong>Confidence:</strong> <span class="badge bg-${confidenceClass}">${confidencePercent}%</span>`;
+            document.getElementById('testResult').style.display = 'block';
+            
+            // Scroll to results
+            document.getElementById('testResult').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error occurred'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        document.getElementById('testLoading').style.display = 'none';
+        document.getElementById('testButton').disabled = false;
+        alert('Error testing model: ' + error.message);
+    });
+}
 
 function deleteDataset(datasetName) {
     if (confirm(`Are you sure you want to delete dataset "${datasetName}"?`)) {

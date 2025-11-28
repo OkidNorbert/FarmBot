@@ -255,30 +255,72 @@ function updateStatus(message, type) {
 }
 
 function checkCameraStatus() {
+    updateStatus('Checking camera status...', 'info');
     fetch('/camera_status')
         .then(response => response.json())
         .then(data => {
             const statusDiv = document.getElementById('camera-status');
             if (data.available) {
                 statusDiv.className = 'alert alert-success';
-                statusDiv.innerHTML = `<strong>Camera Status:</strong> ${data.message}`;
-            } else {
-                statusDiv.className = 'alert alert-warning';
-                let suggestions = '';
-                if (data.suggestions) {
-                    suggestions = '<br><strong>Suggestions:</strong><ul>';
-                    data.suggestions.forEach(suggestion => {
-                        suggestions += `<li>${suggestion}</li>`;
-                    });
-                    suggestions += '</ul>';
+                let html = `<strong>✅ Camera Status:</strong> ${data.message}<br>`;
+                if (data.camera_index !== null) {
+                    html += `<strong>Camera Index:</strong> ${data.camera_index}<br>`;
                 }
-                statusDiv.innerHTML = `<strong>Camera Status:</strong> ${data.message}${suggestions}`;
+                if (data.video_devices && data.video_devices.length > 0) {
+                    html += `<strong>Video Devices:</strong> ${data.video_devices.join(', ')}`;
+                }
+                statusDiv.innerHTML = html;
+                updateStatus('Camera is working', 'success');
+            } else {
+                statusDiv.className = 'alert alert-danger';
+                let html = `<strong>❌ Camera Status:</strong> ${data.message}<br>`;
+                
+                // Show video devices
+                if (data.video_devices && data.video_devices.length > 0) {
+                    html += `<strong>Video Devices Found:</strong> ${data.video_devices.join(', ')}<br>`;
+                } else {
+                    html += `<strong>Video Devices:</strong> None found<br>`;
+                }
+                
+                // Show tested indices
+                if (data.tested_indices && data.tested_indices.length > 0) {
+                    html += `<strong>Tested Indices:</strong><br>`;
+                    data.tested_indices.forEach(test => {
+                        const icon = test.can_read ? '✅' : (test.opened ? '⚠️' : '❌');
+                        html += `&nbsp;&nbsp;${icon} Index ${test.index}: `;
+                        if (test.can_read) {
+                            html += 'Working<br>';
+                        } else if (test.opened) {
+                            html += 'Opened but cannot read frames<br>';
+                        } else {
+                            html += 'Not available<br>';
+                        }
+                    });
+                }
+                
+                // Show suggestions
+                if (data.suggestions && data.suggestions.length > 0) {
+                    html += '<br><strong>💡 Troubleshooting:</strong><ul>';
+                    data.suggestions.forEach(suggestion => {
+                        html += `<li>${suggestion}</li>`;
+                    });
+                    html += '</ul>';
+                }
+                
+                statusDiv.innerHTML = html;
+                updateStatus('Camera not available', 'danger');
             }
         })
         .catch(error => {
             const statusDiv = document.getElementById('camera-status');
             statusDiv.className = 'alert alert-danger';
-            statusDiv.innerHTML = `<strong>Camera Status:</strong> Error checking camera: ${error}`;
+            statusDiv.innerHTML = `<strong>❌ Camera Status:</strong> Error checking camera: ${error}<br>
+                <strong>Possible causes:</strong><ul>
+                <li>Web server is not running</li>
+                <li>OpenCV is not installed</li>
+                <li>Network connection issue</li>
+                </ul>`;
+            updateStatus('Error checking camera', 'danger');
         });
 }
 
