@@ -28,7 +28,9 @@ import numpy as np
 # Try to import hardware controller (optional for non-Pi systems)
 try:
     from hardware_controller import HardwareController
-    hw_controller = HardwareController()
+    # Initialize with Bluetooth support - will try Bluetooth if serial not available
+    # Arduino advertises as "FarmBot" (from firmware)
+    hw_controller = HardwareController(connection_type='auto', ble_device_name="FarmBot")
     HARDWARE_AVAILABLE = True
 except ImportError:
     print("Warning: Hardware controller not available. Running in software-only mode.")
@@ -205,6 +207,12 @@ def pi_status():
         system_state['camera_connected'] = hw_status['camera_connected']
         system_state['arduino_connected'] = hw_status['arduino_connected']
         system_state['auto_mode'] = hw_status.get('auto_mode', False)
+        system_state['connection_type'] = hw_status.get('connection_type', 'none')
+    else:
+        system_state['camera_connected'] = False
+        system_state['arduino_connected'] = False
+        system_state['auto_mode'] = False
+        system_state['connection_type'] = 'none'
     
     return jsonify(system_state)
 
@@ -286,6 +294,85 @@ def api_home_arm():
         hw_controller.home_arm()
         return jsonify({'success': True, 'message': 'Arm homed'})
     return jsonify({'success': False, 'message': 'Hardware not available'})
+
+@app.route('/api/bluetooth/scan', methods=['POST'])
+def api_bluetooth_scan():
+    """API endpoint to scan for Bluetooth devices"""
+    try:
+        if not HARDWARE_AVAILABLE or not hw_controller:
+            return jsonify({'success': False, 'message': 'Hardware controller not available'}), 500
+        
+        # Scan for Bluetooth devices
+        devices = hw_controller.scan_bluetooth_devices(timeout=10)
+        return jsonify({'success': True, 'devices': devices})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/bluetooth/connect', methods=['POST'])
+def api_bluetooth_connect():
+    """API endpoint to connect to Bluetooth device"""
+    try:
+        if not HARDWARE_AVAILABLE or not hw_controller:
+            return jsonify({'success': False, 'message': 'Hardware controller not available'}), 500
+        
+        data = request.json
+        address = data.get('address')
+        name = data.get('name', 'FarmBot')
+        
+        if not address:
+            return jsonify({'success': False, 'message': 'No device address provided'}), 400
+        
+        # Connect to Bluetooth device
+        if hw_controller.connect_bluetooth_device(address, name):
+            # Wait a moment and check status
+            import time
+            time.sleep(2)
+            status = hw_controller.get_status()
+            return jsonify({
+                'success': True, 
+                'message': f'Connected to {name} ({address})',
+                'address': address,
+                'connected': status.get('arduino_connected', False),
+                'ble_connected': status.get('ble_connected', False)
+            })
+        else:
+            return jsonify({'success': False, 'message': 'Failed to connect to device. It may already be connected by the OS.'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/bluetooth/disconnect', methods=['POST'])
+def api_bluetooth_disconnect():
+    """API endpoint to disconnect from Bluetooth device"""
+    try:
+        if not HARDWARE_AVAILABLE or not hw_controller:
+            return jsonify({'success': False, 'message': 'Hardware controller not available'}), 500
+        
+        if hw_controller.ble_client:
+            hw_controller.ble_client.disconnect()
+            hw_controller.arduino_connected = False
+            return jsonify({'success': True, 'message': 'Disconnected from Bluetooth device'})
+        else:
+            return jsonify({'success': False, 'message': 'No Bluetooth connection active'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/bluetooth/status', methods=['GET'])
+def api_bluetooth_status():
+    """API endpoint to get Bluetooth connection status"""
+    try:
+        if not HARDWARE_AVAILABLE or not hw_controller:
+            return jsonify({'success': False, 'message': 'Hardware controller not available'}), 500
+        
+        status = hw_controller.get_status()
+        return jsonify({
+            'success': True,
+            'connected': status.get('arduino_connected', False),
+            'connection_type': status.get('connection_type', 'none'),
+            'ble_connected': status.get('ble_connected', False),
+            'ble_address': status.get('ble_address', None)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/camera/capture', methods=['POST'])
 def api_capture_image():

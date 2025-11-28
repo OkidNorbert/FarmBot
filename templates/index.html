@@ -34,6 +34,11 @@
                             <span id="arduino-status" class="badge bg-secondary ms-2">Checking...</span>
                         </div>
                         <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-bluetooth me-2"></i>
+                            <span>Bluetooth:</span>
+                            <span id="bluetooth-status" class="badge bg-secondary ms-2">Checking...</span>
+                        </div>
+                        <div class="d-flex align-items-center mb-2">
                             <i class="fas fa-brain me-2"></i>
                             <span>AI Model:</span>
                             <span id="model-status" class="badge bg-secondary ms-2">Checking...</span>
@@ -294,8 +299,16 @@ function updateSystemStatus() {
             document.getElementById('camera-status').textContent = data.camera_connected ? 'Connected' : 'Disconnected';
             document.getElementById('camera-status').className = 'badge ' + (data.camera_connected ? 'bg-success' : 'bg-danger') + ' ms-2';
             
-            document.getElementById('arduino-status').textContent = data.arduino_connected ? 'Connected' : 'Disconnected';
-            document.getElementById('arduino-status').className = 'badge ' + (data.arduino_connected ? 'bg-success' : 'bg-danger') + ' ms-2';
+            // Arduino status with connection type
+            const arduinoStatus = document.getElementById('arduino-status');
+            if (data.arduino_connected) {
+                const connType = data.connection_type || 'serial';
+                arduinoStatus.textContent = 'Connected (' + connType + ')';
+                arduinoStatus.className = 'badge bg-success ms-2';
+            } else {
+                arduinoStatus.textContent = 'Disconnected';
+                arduinoStatus.className = 'badge bg-danger ms-2';
+            }
             
             document.getElementById('system-status').textContent = data.running ? 'Running' : 'Stopped';
             document.getElementById('system-status').className = 'badge ' + (data.running ? 'bg-success' : 'bg-secondary') + ' ms-2';
@@ -308,6 +321,38 @@ function updateSystemStatus() {
         })
         .catch(error => {
             console.error('Error updating status:', error);
+        });
+    
+    // Update Bluetooth status separately
+    updateBluetoothStatus();
+}
+
+// Update Bluetooth connection status
+function updateBluetoothStatus() {
+    fetch('/api/bluetooth/status')
+        .then(response => response.json())
+        .then(data => {
+            const bluetoothStatus = document.getElementById('bluetooth-status');
+            if (data.success && data.ble_connected) {
+                bluetoothStatus.textContent = 'Connected';
+                bluetoothStatus.className = 'badge bg-success ms-2';
+                if (data.ble_address) {
+                    bluetoothStatus.title = 'Device: ' + data.ble_address;
+                }
+            } else if (data.success && data.connected && data.connection_type === 'bluetooth') {
+                // Connected via Bluetooth but BLE status might be updating
+                bluetoothStatus.textContent = 'Connecting...';
+                bluetoothStatus.className = 'badge bg-warning ms-2';
+            } else {
+                bluetoothStatus.textContent = 'Disconnected';
+                bluetoothStatus.className = 'badge bg-danger ms-2';
+            }
+        })
+        .catch(error => {
+            console.error('Error updating Bluetooth status:', error);
+            const bluetoothStatus = document.getElementById('bluetooth-status');
+            bluetoothStatus.textContent = 'Error';
+            bluetoothStatus.className = 'badge bg-secondary ms-2';
         });
 }
 

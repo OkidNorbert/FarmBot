@@ -23,6 +23,7 @@
 #include <ArduinoBLE.h>
 
 Adafruit_VL53L0X lox = Adafruit_VL53L0X();
+bool tof_sensor_available = false;
 
 // BLE Service and Characteristic
 BLEService farmBotService("19B10000-E8F2-537E-4F6C-D104768A1214"); // Custom UUID
@@ -68,6 +69,7 @@ int current_angles[SERVO_COUNT] = {90, 90, 90, WRIST_YAW_NEUTRAL, WRIST_PITCH_NE
 int target_angles[SERVO_COUNT]  = {90, 90, 90, WRIST_YAW_NEUTRAL, WRIST_PITCH_NEUTRAL, GRIPPER_OPEN};
 
 bool emergency_stop = false;
+bool servos_attached = false;  // Track if servos are attached
 
 // Sorting bins positions (servo angles)
 struct ServoPose {
@@ -99,21 +101,50 @@ const int WRIST_MIN_PICK_ANGLE = 70;
 const int WRIST_MAX_PICK_ANGLE = 130;
 
 void setup() {
+  // CRITICAL: Disable all servo pins IMMEDIATELY on boot
+  // Do this BEFORE Serial.begin() to minimize delay
+  for (int i = 0; i < SERVO_COUNT; i++) {
+    pinMode(SERVO_PINS[i], INPUT);  // Set to INPUT (high impedance) immediately
+    // Note: digitalWrite on INPUT pin doesn't work, but INPUT mode prevents signal
+  }
+  
+  // Small delay to ensure pins are set before any other initialization
+  delay(10);
+  
   // Initialize serial communication
   Serial.begin(115200);
-  Serial.println("Tomato Sorter Arduino - Ready");
-  
-  // Attach servos
-  for (int i = 0; i < SERVO_COUNT; i++) {
-    servos[i].attach(SERVO_PINS[i]);
+  // Wait for serial to be ready (important for some boards)
+  while (!Serial && millis() < 3000) {
+    delay(10);
   }
+  Serial.println("Tomato Sorter Arduino - Ready");
+  Serial.println("Servo pins set to INPUT mode - no signal will be sent until first command");
+  
+  // NOTE: If servos still move on power-up, it's a hardware/power sequencing issue:
+  // 1. External power supply is turned on before Arduino boots
+  // 2. Servos physically move when they first receive power (normal behavior)
+  // 3. Solution: Power on Arduino FIRST, wait for boot, THEN turn on servo power supply
+  //    OR use a relay/MOSFET controlled by Arduino to enable servo power after boot
+  
+  // DO NOT attach servos here - this causes them to move to default position
+  // Servos will be attached only when first movement command is received
+  servos_attached = false;
+  Serial.println("Servos NOT attached - will attach on first command to prevent movement");
 
   // Initialize VL53L0X
   if (!lox.begin()) {
-    Serial.println(F("Failed to boot VL53L0X"));
-    // Continue anyway, but distance sensing won't work
+    Serial.println(F("WARNING: Failed to boot VL53L0X - Distance sensing disabled"));
+    tof_sensor_available = false;
   } else {
-    Serial.println(F("VL53L0X ready"));
+    Serial.println(F("VL53L0X TOF sensor initialized successfully"));
+    tof_sensor_available = true;
+    // Test sensor with initial reading
+    float testDist = measureDistanceCm();
+    if (testDist > 0 && testDist <= 400) {
+      Serial.print(F("TOF Test Reading: "));
+      Serial.print(testDist, 1);
+      Serial.println(F("cm"));
+    }
   }
 
   // Initialize BLE
@@ -130,15 +161,16 @@ void setup() {
 
   BLE.advertise();
   Serial.println("BLE FarmBot Ready");
-  
-  // Initialize servos to home position
-  moveToHome();
-  
-  // Wait for servos to settle
-  delay(1000);
-  
-  Serial.println("Servos initialized to home position");
+  Serial.println("STATUS: Waiting for commands from web interface");
+  Serial.println("NOTE: Arm will NOT move on power-up - servos will attach on first command");
+  Serial.println("Ready for commands - servos will remain stationary until commanded");
 }
+
+// Status reporting timing
+unsigned long lastStatusReport = 0;
+unsigned long lastDistanceReport = 0;
+const unsigned long STATUS_INTERVAL = 5000;  // Report status every 5 seconds
+const unsigned long DISTANCE_INTERVAL = 1000;  // Report distance every 1 second
 
 void loop() {
   // Poll for BLE events
@@ -148,8 +180,16 @@ void loop() {
   if (commandCharacteristic.written()) {
     String command = commandCharacteristic.value();
     command.trim();
+    // Remove any null characters or control characters
+    command.replace("\0", "");
+    command.replace("\r", "");
     if (command.length() > 0) {
+      Serial.print("BLE Command received: [");
+      Serial.print(command);
+      Serial.println("]");
       processCommand(command);
+    } else {
+      Serial.println("BLE Command received but empty after trim");
     }
   }
 
@@ -157,10 +197,31 @@ void loop() {
   if (Serial.available()) {
     String command = Serial.readStringUntil('\n');
     command.trim();
+    // Remove any null characters or control characters
+    command.replace("\0", "");
+    command.replace("\r", "");
     
     if (command.length() > 0) {
+      Serial.print("Serial Command received: [");
+      Serial.print(command);
+      Serial.println("]");
       processCommand(command);
     }
+  }
+  
+  // Periodic status reporting to serial monitor
+  unsigned long currentTime = millis();
+  
+  // Report distance sensor reading every second
+  if (currentTime - lastDistanceReport >= DISTANCE_INTERVAL) {
+    lastDistanceReport = currentTime;
+    reportDistance();
+  }
+  
+  // Report full status every 5 seconds
+  if (currentTime - lastStatusReport >= STATUS_INTERVAL) {
+    lastStatusReport = currentTime;
+    reportStatusBrief();
   }
   
   // Small delay to prevent overwhelming the serial buffer
@@ -266,7 +327,7 @@ void processPickCommand(String command) {
 }
 
 void sendDistance() {
-  // Read distance sensor and send response
+  // Read distance sensor and send response (command response)
   float distance = measureDistanceCm();
   
   if (distance < 0) {
@@ -278,6 +339,55 @@ void sendDistance() {
     int distance_mm = (int)(distance * 10);
     Serial.println("DISTANCE: " + String(distance_mm));
   }
+}
+
+void reportDistance() {
+  // Periodic distance reporting to serial monitor
+  if (!tof_sensor_available) {
+    Serial.println("[TOF] Sensor not available");
+    return;
+  }
+  
+  float distance = measureDistanceCm();
+  
+  if (distance < 0) {
+    Serial.println("[TOF] Distance: OUT_OF_RANGE or SENSOR_ERROR");
+  } else if (distance > 400) {
+    Serial.println("[TOF] Distance: OUT_OF_RANGE (>40cm)");
+  } else {
+    // Convert cm to mm for display
+    int distance_mm = (int)(distance * 10);
+    Serial.print("[TOF] Distance: ");
+    Serial.print(distance_mm);
+    Serial.print("mm (");
+    Serial.print(distance, 1);
+    Serial.println("cm)");
+  }
+}
+
+void reportStatusBrief() {
+  // Brief periodic status report
+  Serial.println("=== STATUS REPORT ===");
+  Serial.print("Servos Attached: ");
+  Serial.println(servos_attached ? "YES" : "NO (waiting for first command)");
+  Serial.print("Emergency Stop: ");
+  Serial.println(emergency_stop ? "ACTIVE" : "INACTIVE");
+  Serial.print("Servo Angles: Base=");
+  Serial.print(current_angles[SERVO_BASE]);
+  Serial.print("°, Shoulder=");
+  Serial.print(current_angles[SERVO_SHOULDER]);
+  Serial.print("°, Elbow=");
+  Serial.print(current_angles[SERVO_ELBOW]);
+  Serial.print("°, WristY=");
+  Serial.print(current_angles[SERVO_WRIST_YAW]);
+  Serial.print("°, WristP=");
+  Serial.print(current_angles[SERVO_WRIST_PITCH]);
+  Serial.print("°, Gripper=");
+  Serial.print(current_angles[SERVO_GRIPPER]);
+  Serial.println("°");
+  Serial.print("BLE Connected: ");
+  Serial.println(BLE.central().connected() ? "YES" : "NO");
+  Serial.println("===================");
 }
 
 void processAngleCommand(String command) {
@@ -366,7 +476,35 @@ void emergencyStop() {
   // or move to a safe position
 }
 
+void attachServosIfNeeded() {
+  // Attach servos only when first movement is needed
+  // This prevents servos from moving to default position (90°) on power-up
+  if (!servos_attached) {
+    Serial.println("Attaching servos for first movement...");
+    Serial.println("Note: Servos may move slightly when attaching (unavoidable with Servo library)");
+    
+    // First, set pins to OUTPUT mode before attaching
+    for (int i = 0; i < SERVO_COUNT; i++) {
+      pinMode(SERVO_PINS[i], OUTPUT);
+      digitalWrite(SERVO_PINS[i], LOW);  // Ensure LOW before attaching
+      delay(10);  // Small delay to ensure pin state is set
+    }
+    
+    // Now attach servos and immediately write position
+    for (int i = 0; i < SERVO_COUNT; i++) {
+      servos[i].attach(SERVO_PINS[i]);
+      // Write current angle immediately to minimize movement
+      // Note: attach() may cause brief movement to default position before this write
+      servos[i].write(current_angles[i]);
+      delay(50);  // Small delay between attachments to reduce power surge
+    }
+    servos_attached = true;
+    Serial.println("Servos attached and positioned to current angles");
+  }
+}
+
 void moveToHome() {
+  attachServosIfNeeded();  // Attach servos before moving
   Serial.println("Moving to home position");
   int homeAngles[SERVO_COUNT] = {90, 90, 90, WRIST_YAW_NEUTRAL, WRIST_PITCH_NEUTRAL, GRIPPER_OPEN};
   moveServos(homeAngles);
@@ -374,6 +512,7 @@ void moveToHome() {
 }
 
 void setGripper(bool open) {
+  attachServosIfNeeded();  // Ensure servos are attached before moving gripper
   target_angles[SERVO_GRIPPER] = constrain(open ? GRIPPER_OPEN : GRIPPER_CLOSE,
                                            SERVO_MIN[SERVO_GRIPPER],
                                            SERVO_MAX[SERVO_GRIPPER]);
@@ -433,6 +572,8 @@ void smoothMoveServo(int servoIndex, int targetAngle) {
 }
 
 void moveServos(const int desiredAngles[SERVO_COUNT]) {
+  attachServosIfNeeded();  // Ensure servos are attached before moving
+  
   if (emergency_stop) {
     Serial.println("Movement blocked - emergency stop active");
     return;
@@ -479,6 +620,7 @@ void moveToPose(const ServoPose &pose, int gripperAngle = -1) {
 }
 
 void setWristPitchAngle(int angle) {
+  attachServosIfNeeded();  // Ensure servos are attached before moving
   int constrained = constrain(angle, SERVO_MIN[SERVO_WRIST_PITCH], SERVO_MAX[SERVO_WRIST_PITCH]);
   target_angles[SERVO_WRIST_PITCH] = constrained;
   smoothMoveServo(SERVO_WRIST_PITCH, constrained);
@@ -630,7 +772,8 @@ bool inverseKinematics(float x, float y, float &baseAngle, float &shoulderAngle,
 }
 
 void sendStatus() {
-  Serial.println("=== STATUS ===");
+  // Detailed status report (command response)
+  Serial.println("=== FULL STATUS ===");
   Serial.println("Emergency Stop: " + String(emergency_stop ? "ACTIVE" : "INACTIVE"));
   Serial.print("Current Angles: ");
   for (int i = 0; i < SERVO_COUNT; i++) {
@@ -638,6 +781,36 @@ void sendStatus() {
     if (i < SERVO_COUNT - 1) Serial.print(", ");
   }
   Serial.println();
+  Serial.print("Target Angles: ");
+  for (int i = 0; i < SERVO_COUNT; i++) {
+    Serial.print(target_angles[i]);
+    if (i < SERVO_COUNT - 1) Serial.print(", ");
+  }
+  Serial.println();
+  Serial.print("Servos Attached: ");
+  Serial.println(servos_attached ? "YES" : "NO (waiting for first command)");
+  Serial.print("BLE Connected: ");
+  BLEDevice central = BLE.central();
+  Serial.println(central.connected() ? "YES" : "NO");
+  if (central.connected()) {
+    Serial.print("BLE Central Address: ");
+    Serial.println(central.address());
+  }
+  Serial.print("TOF Sensor: ");
+  Serial.println(tof_sensor_available ? "AVAILABLE" : "NOT AVAILABLE");
+  
+  // Report distance
+  float distance = measureDistanceCm();
+  if (distance > 0 && distance <= 400) {
+    Serial.print("Current Distance: ");
+    Serial.print(distance, 1);
+    Serial.print("cm (");
+    Serial.print((int)(distance * 10));
+    Serial.println("mm)");
+  } else {
+    Serial.println("Current Distance: OUT_OF_RANGE");
+  }
+  
   for (int i = 0; i < SERVO_COUNT; i++) {
     Serial.print("Servo ");
     Serial.print(i + 1);
@@ -646,7 +819,7 @@ void sendStatus() {
     Serial.print(" - ");
     Serial.println(SERVO_MAX[i]);
   }
-  Serial.println("==============");
+  Serial.println("==================");
 }
 
 // Utility functions

@@ -5,4 +5,4 @@ psutil==5.9.5
 pyyaml==6.0.1
 numpy==1.24.3
 torch==2.0.1
-bleak==0.21.1
+bleak>=2.0.0
