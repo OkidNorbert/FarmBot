@@ -1,0 +1,611 @@
+/* Modern Robotic Arm Controller Styles - Matching Dashboard Theme */
+
+:root {
+    --primary-color: #28a745;  /* Dashboard green */
+    --primary-hover: #218838;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --info-color: #17a2b8;
+    
+    --bg-primary: #f8f9fa;  /* Dashboard background */
+    --bg-secondary: #ffffff;
+    --bg-dark: #1a1d29;
+    
+    --text-primary: #2c3e50;
+    --text-secondary: #6c757d;
+    --text-light: #ffffff;
+    
+    --border-color: #dee2e6;  /* Dashboard border */
+    --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);  /* Dashboard shadow */
+    --shadow-md: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    
+    --slider-track: #dee2e6;
+    --slider-fill: #28a745;  /* Dashboard green */
+    --slider-thumb: #28a745;  /* Dashboard green */
+    
+    --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Controller wrapper to work with base template */
+.controller-wrapper {
+    width: 100%;
+    max-width: 100%;
+}
+
+/* Controller header (replaces app-header since we use base template) */
+.controller-header {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.controller-header h1 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.controller-header h1 i {
+    color: var(--primary-color);
+}
+
+/* Header controls moved inline with flexbox */
+
+/* Connection Status */
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: 500;
+    font-size: 0.9rem;
+    transition: var(--transition);
+}
+
+.connection-status.disconnected {
+    background: rgba(220, 53, 69, 0.1);
+    color: var(--danger-color);
+}
+
+.connection-status.connected {
+    background: rgba(40, 167, 69, 0.1);
+    color: var(--success-color);
+}
+
+.status-indicator {
+    font-size: 0.6rem;
+    animation: pulse 2s infinite;
+}
+
+.connection-status.connected .status-indicator {
+    color: var(--success-color);
+}
+
+.connection-status.disconnected .status-indicator {
+    color: var(--danger-color);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Mode Toggle */
+.mode-toggle {
+    display: flex;
+    align-items: center;
+}
+
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 120px;
+    height: 36px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--secondary-color);
+    transition: var(--transition);
+    border-radius: 34px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 28px;
+    width: 28px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: var(--transition);
+    border-radius: 50%;
+    box-shadow: var(--shadow-sm);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: var(--primary-color);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(84px);
+}
+
+.toggle-label {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    left: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    pointer-events: none;
+    display: flex;
+    gap: 30px;
+    width: 100px;
+}
+
+.toggle-text-manual {
+    opacity: 1;
+    transition: var(--transition);
+}
+
+.toggle-text-auto {
+    opacity: 0;
+    transition: var(--transition);
+}
+
+.toggle-switch input:checked ~ .toggle-label .toggle-text-manual {
+    opacity: 0;
+}
+
+.toggle-switch input:checked ~ .toggle-label .toggle-text-auto {
+    opacity: 1;
+}
+
+/* Main Content */
+.main-content {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    max-width: 1800px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* Left Column */
+.left-column {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* Right Column */
+.right-column {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* Panels - Matching dashboard card style */
+.camera-panel,
+.telemetry-panel,
+.servo-controls-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;  /* Dashboard border radius */
+    box-shadow: var(--shadow-sm);  /* Dashboard shadow */
+    overflow: hidden;
+    transition: var(--transition);
+}
+
+.camera-panel:hover,
+.telemetry-panel:hover,
+.servo-controls-panel:hover {
+    box-shadow: var(--shadow-md);
+}
+
+.panel-header {
+    background-color: #f8f9fa;  /* Dashboard card header style */
+    color: var(--text-primary);
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.panel-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.panel-header h2 i {
+    color: var(--primary-color);
+}
+
+/* Camera Container */
+.camera-container {
+    aspect-ratio: 16 / 9;
+    background: #000;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.camera-placeholder {
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.camera-placeholder i {
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.camera-placeholder p {
+    font-size: 0.9rem;
+}
+
+/* Telemetry */
+.telemetry-content {
+    padding: 1.5rem;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+.telemetry-item {
+    padding: 1rem;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    transition: var(--transition);
+}
+
+.telemetry-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+
+.telemetry-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.telemetry-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+/* Control Buttons - Matching dashboard card style */
+.control-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.75rem;
+    padding: 1.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;  /* Dashboard border radius */
+    box-shadow: var(--shadow-sm);  /* Dashboard shadow */
+}
+
+.btn {
+    padding: 0.75rem 1rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-secondary {
+    background: var(--secondary-color);
+    color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #5a6268;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-success {
+    background: var(--success-color);
+    color: white;
+    border-color: var(--success-color);
+}
+
+.btn-success:hover:not(:disabled) {
+    background: #218838;
+    border-color: #1e7e34;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-warning {
+    background: var(--warning-color);
+    color: #212529;
+}
+
+.btn-warning:hover:not(:disabled) {
+    background: #e0a800;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.btn-danger {
+    background: var(--danger-color);
+    color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: #c82333;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+/* Servo Controls */
+.servo-controls {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    max-height: calc(100vh - 300px);
+    overflow-y: auto;
+}
+
+.servo-controls::-webkit-scrollbar {
+    width: 8px;
+}
+
+.servo-controls::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+    border-radius: 4px;
+}
+
+.servo-controls::-webkit-scrollbar-thumb {
+    background: var(--slider-track);
+    border-radius: 4px;
+}
+
+.servo-controls::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}
+
+.servo-control-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.servo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.servo-label {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.servo-label i {
+    color: var(--primary-color);
+    width: 20px;
+}
+
+.servo-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary-color);
+    min-width: 50px;
+    text-align: right;
+}
+
+/* Slider */
+.slider-container {
+    position: relative;
+    height: 40px;
+    display: flex;
+    align-items: center;
+}
+
+.servo-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: transparent;
+    outline: none;
+    position: relative;
+    z-index: 2;
+    cursor: pointer;
+}
+
+.servo-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    background: var(--slider-thumb);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+    transition: var(--transition);
+    border: 3px solid white;
+}
+
+.servo-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: var(--shadow-lg);
+}
+
+.servo-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    background: var(--slider-thumb);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: var(--shadow-md);
+    transition: var(--transition);
+    border: 3px solid white;
+}
+
+.servo-slider::-moz-range-thumb:hover {
+    transform: scale(1.2);
+}
+
+.slider-track {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 6px;
+    background: var(--slider-track);
+    border-radius: 3px;
+    transform: translateY(-50%);
+    z-index: 1;
+}
+
+.slider-fill {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    height: 6px;
+    background: linear-gradient(90deg, var(--slider-fill), #0056b3);
+    border-radius: 3px;
+    transform: translateY(-50%);
+    transition: width 0.1s ease;
+    z-index: 1;
+}
+
+.speed-control {
+    border-top: 2px solid var(--border-color);
+    padding-top: 1.5rem;
+    margin-top: 0.5rem;
+}
+
+.speed-control .servo-label i {
+    color: var(--warning-color);
+}
+
+.speed-control .servo-value {
+    color: var(--warning-color);
+}
+
+.speed-slider::-webkit-slider-thumb {
+    background: var(--warning-color);
+}
+
+.speed-slider::-moz-range-thumb {
+    background: var(--warning-color);
+}
+
+.speed-control .slider-fill {
+    background: linear-gradient(90deg, var(--warning-color), #e0a800);
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .main-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .telemetry-content {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .app-header {
+        padding: 1rem;
+    }
+    
+    .header-content {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .main-content {
+        padding: 1rem;
+        gap: 1rem;
+    }
+    
+    .control-buttons {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .servo-controls {
+        max-height: none;
+    }
+}
+
+@media (max-width: 480px) {
+    .control-buttons {
+        grid-template-columns: 1fr;
+    }
+    
+    .btn {
+        width: 100%;
+    }
+}
+

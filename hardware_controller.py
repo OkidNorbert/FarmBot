@@ -15,6 +15,15 @@ from datetime import datetime
 import sys
 from pathlib import Path
 
+# Suppress OpenCV warnings globally
+os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
+# Note: cv2.setLogLevel() may not be available in all OpenCV versions
+try:
+    if hasattr(cv2, 'setLogLevel'):
+        cv2.setLogLevel(3)  # 3 = LOG_LEVEL_SILENT in newer versions
+except:
+    pass
+
 # Add project root to path for imports
 sys.path.append(str(Path(__file__).parent))
 
@@ -461,24 +470,41 @@ class HardwareController:
         available = []
         self.logger.info("Scanning for available cameras (built-in and USB)...")
         
+        # Suppress OpenCV warnings during camera detection
+        import os
+        import sys
+        import warnings
+        
+        # Save original stderr
+        original_stderr = sys.stderr
+        
         # Test indices 0-9 to find all available cameras
         for idx in range(10):
             try:
-                test_cap = cv2.VideoCapture(idx)
-                if test_cap.isOpened():
-                    # Try to read a frame to verify it works
-                    ret, frame = test_cap.read()
-                    if ret and frame is not None:
-                        # Get camera info if available
-                        backend = test_cap.getBackendName()
-                        width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        available.append(idx)
-                        self.logger.info(f"Found camera at index {idx}: {backend}, {width}x{height}")
-                test_cap.release()
+                # Suppress stderr for this operation to hide OpenCV warnings
+                with open(os.devnull, 'w') as devnull:
+                    sys.stderr = devnull
+                    test_cap = cv2.VideoCapture(idx)
+                    sys.stderr = original_stderr
+                    
+                    if test_cap.isOpened():
+                        # Try to read a frame to verify it works
+                        ret, frame = test_cap.read()
+                        if ret and frame is not None:
+                            # Get camera info if available
+                            backend = test_cap.getBackendName()
+                            width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                            height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            available.append(idx)
+                            self.logger.info(f"Found camera at index {idx}: {backend}, {width}x{height}")
+                    test_cap.release()
             except Exception as e:
-                # Camera doesn't exist or failed
+                # Camera doesn't exist or failed - silently continue
+                sys.stderr = original_stderr
                 pass
+        
+        # Restore stderr
+        sys.stderr = original_stderr
         
         if available:
             self.logger.info(f"Detected {len(available)} camera(s): {available}")
@@ -495,20 +521,27 @@ class HardwareController:
                 self.camera.release()
                 self.camera = None
             
-            self.camera = cv2.VideoCapture(camera_index)
-            if self.camera.isOpened():
-                # Test if we can actually read a frame
-                ret, frame = self.camera.read()
-                if ret and frame is not None:
-                    self.camera_index = camera_index
-                    self.camera_connected = True
-                    # Start frame reading thread
-                    threading.Thread(target=self._update_frame, daemon=True).start()
-                    return True
+            # Suppress OpenCV warnings during connection
+            import os
+            import sys
+            original_stderr = sys.stderr
+            with open(os.devnull, 'w') as devnull:
+                sys.stderr = devnull
+                self.camera = cv2.VideoCapture(camera_index)
+                sys.stderr = original_stderr
+                if self.camera.isOpened():
+                    # Test if we can actually read a frame
+                    ret, frame = self.camera.read()
+                    if ret and frame is not None:
+                        self.camera_index = camera_index
+                        self.camera_connected = True
+                        # Start frame reading thread
+                        threading.Thread(target=self._update_frame, daemon=True).start()
+                        return True
                 else:
                     self.camera.release()
                     self.camera = None
-            return False
+                return False
         except Exception as e:
             self.logger.error(f"Failed to connect camera {camera_index}: {e}")
             if self.camera:
@@ -533,23 +566,35 @@ class HardwareController:
     def get_available_cameras(self):
         """Get list of available cameras with details"""
         cameras = []
+        import os
+        import sys
+        original_stderr = sys.stderr
+        
         for idx in self.available_cameras:
             try:
-                test_cap = cv2.VideoCapture(idx)
-                if test_cap.isOpened():
-                    width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                    height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    backend = test_cap.getBackendName()
-                    cameras.append({
-                        'index': idx,
-                        'name': f"Camera {idx}",
-                        'backend': backend,
-                        'resolution': f"{width}x{height}",
-                        'current': idx == self.camera_index
-                    })
-                test_cap.release()
+                # Suppress OpenCV warnings
+                with open(os.devnull, 'w') as devnull:
+                    sys.stderr = devnull
+                    test_cap = cv2.VideoCapture(idx)
+                    sys.stderr = original_stderr
+                    
+                    if test_cap.isOpened():
+                        width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        backend = test_cap.getBackendName()
+                        cameras.append({
+                            'index': idx,
+                            'name': f"Camera {idx}",
+                            'backend': backend,
+                            'resolution': f"{width}x{height}",
+                            'current': idx == self.camera_index
+                        })
+                    test_cap.release()
             except:
+                sys.stderr = original_stderr
                 pass
+        
+        sys.stderr = original_stderr
         return cameras
 
     def _update_frame(self):

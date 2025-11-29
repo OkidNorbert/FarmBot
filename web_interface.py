@@ -709,6 +709,189 @@ def handle_pick_result(data):
     socketio.emit('pick_complete', data, namespace='/arduino')
     log_detection(data) # Log result
 
+# Modern Controller WebSocket Handlers (no namespace - default)
+# Note: These handlers work alongside the /arduino namespace handlers
+@socketio.on('connect')
+def handle_controller_connect(auth=None):
+    """Handle client connection for modern controller"""
+    print(f'✅ Client connected to modern controller (SID: {request.sid})')
+    emit('status', {'message': 'Connected to server', 'connected': True})
+
+@socketio.on('disconnect')
+def handle_controller_disconnect():
+    """Handle client disconnection"""
+    print(f'❌ Client disconnected from modern controller (SID: {request.sid})')
+
+@socketio.on('servo_command')
+def handle_servo_command(data):
+    """Handle servo commands from modern controller"""
+    print(f'📨 Received servo command: {data}')
+    try:
+        cmd = data.get('cmd', '').lower()
+        
+        if cmd == 'connect':
+            # Initialize connection
+            if HARDWARE_AVAILABLE and hw_controller:
+                emit('status', {'message': 'Hardware controller available', 'connected': True})
+            else:
+                emit('status', {'message': 'Hardware controller not available', 'connected': False})
+        
+        elif cmd == 'disconnect':
+            emit('status', {'message': 'Disconnected', 'connected': False})
+        
+        elif cmd == 'move':
+            # Move individual servo with optional dynamic speed
+            servo_name = data.get('servo', '').lower()
+            angle = data.get('angle', 90)
+            speed = data.get('speed', None)  # Optional dynamic speed (0-100%)
+            
+            # Map servo names to hardware controller methods
+            servo_map = {
+                'base': 'base',
+                'forearm': 'forearm',
+                'arm': 'shoulder',  # Arm is shoulder in hardware
+                'wrist_yaw': 'elbow',  # Wrist yaw is elbow
+                'wrist_pitch': 'pitch',
+                'claw': 'claw'
+            }
+            
+            if servo_name in servo_map and HARDWARE_AVAILABLE and hw_controller:
+                # Send ANGLE command to Arduino
+                servo_index_map = {
+                    'base': 0,
+                    'shoulder': 1,
+                    'forearm': 2,
+                    'elbow': 3,
+                    'pitch': 4,
+                    'claw': 5
+                }
+                
+                hw_servo = servo_map[servo_name]
+                if hw_servo in servo_index_map:
+                    # Only send SPEED command if speed changed (optimization to reduce lag)
+                    # Speed is sent separately and cached to avoid redundant commands
+                    if speed is not None:
+                        # Check if we need to update speed (only if different from last)
+                        if not hasattr(hw_controller, '_last_speed') or hw_controller._last_speed != speed:
+                            speed_command = f"SPEED {int(speed)}"
+                            if hw_controller.arduino_connected:
+                                if hw_controller.ble_client and hw_controller.ble_client.connected:
+                                    hw_controller.ble_client.send_command(speed_command)
+                                elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                                    hw_controller.arduino.write(f"{speed_command}\n".encode())
+                            hw_controller._last_speed = speed
+                    
+                    # Build ANGLE command: ANGLE base shoulder forearm elbow pitch claw
+                    # Use -1 for servos we don't want to change
+                    angles = [-1, -1, -1, -1, -1, -1]
+                    angles[servo_index_map[hw_servo]] = int(angle)
+                    
+                    command = f"ANGLE {' '.join(str(a) for a in angles)}"
+                    if hw_controller.arduino_connected:
+                        if hw_controller.ble_client and hw_controller.ble_client.connected:
+                            hw_controller.ble_client.send_command(command)
+                        elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                            hw_controller.arduino.write(f"{command}\n".encode())
+                    
+                    # Don't emit status for every command to reduce overhead
+                    # emit('status', {'message': f'{servo_name} moved to {angle}°'})
+        
+        elif cmd == 'start':
+            # Start automatic mode
+            if HARDWARE_AVAILABLE and hw_controller:
+                hw_controller.auto_mode = True
+                emit('status', {'message': 'Automatic mode started'})
+                emit('telemetry', {'mode': 'auto', 'status': 'running'})
+        
+        elif cmd == 'set_mode':
+            # Set manual/auto mode
+            mode = data.get('mode', 'manual')
+            if HARDWARE_AVAILABLE and hw_controller:
+                hw_controller.auto_mode = (mode == 'auto')
+                emit('telemetry', {'mode': mode, 'status': 'idle' if mode == 'manual' else 'running'})
+        
+        elif cmd == 'set_speed':
+            # Set movement speed (0-100%)
+            speed = data.get('speed', 50)
+            if HARDWARE_AVAILABLE and hw_controller:
+                # Convert percentage to a value the Arduino can use
+                # Arduino expects speed in degrees per second or similar
+                # For now, we'll send it as a SPEED command if the firmware supports it
+                # Otherwise, store it for use in motion planning
+                if hasattr(hw_controller, 'motion_speed'):
+                    hw_controller.motion_speed = speed
+                
+                # Send SPEED command to Arduino if connected
+                if hw_controller.arduino_connected:
+                    # Format: SPEED <value> where value is 0-100
+                    command = f"SPEED {int(speed)}"
+                    if hw_controller.ble_client and hw_controller.ble_client.connected:
+                        hw_controller.ble_client.send_command(command)
+                    elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                        hw_controller.arduino.write(f"{command}\n".encode())
+                
+                emit('status', {'message': f'Speed set to {speed}%'})
+        
+        elif cmd == 'save':
+            # Save current pose
+            pose = data.get('pose', {})
+            # Could save to file or database here
+            emit('status', {'message': 'Pose saved successfully'})
+        
+        elif cmd == 'reset':
+            # Reset to home position
+            if HARDWARE_AVAILABLE and hw_controller:
+                if hw_controller.arduino_connected:
+                    if hw_controller.ble_client and hw_controller.ble_client.connected:
+                        hw_controller.ble_client.send_command("HOME")
+                    elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                        hw_controller.arduino.write(b"HOME\n")
+                emit('status', {'message': 'Arm reset to home position'})
+                emit('telemetry', {'status': 'idle'})
+        
+    except Exception as e:
+        print(f"Error handling servo command: {e}")
+        emit('error', {'message': str(e)})
+
+# Telemetry update thread for modern controller
+def controller_telemetry_thread():
+    """Background thread to send telemetry updates to modern controller"""
+    import time
+    while True:
+        try:
+            if HARDWARE_AVAILABLE and hw_controller:
+                # Get ToF distance if available
+                distance = None
+                if hasattr(hw_controller, 'tof_sensor') and hw_controller.tof_sensor:
+                    try:
+                        distance = hw_controller.tof_sensor.getDistance()
+                    except:
+                        pass
+                
+                # Get status
+                status = 'idle'
+                if hw_controller.auto_mode:
+                    status = 'running'
+                if not hw_controller.arduino_connected:
+                    status = 'disconnected'
+                
+                # Emit telemetry to all connected clients (no namespace = default)
+                telemetry_data = {
+                    'distance_mm': distance if distance else 0,
+                    'status': status,
+                    'mode': 'auto' if hw_controller.auto_mode else 'manual'
+                }
+                socketio.emit('telemetry', telemetry_data)
+            
+            time.sleep(0.5)  # Update every 500ms
+        except Exception as e:
+            print(f"Controller telemetry thread error: {e}")
+            time.sleep(1)
+
+# Start telemetry thread for modern controller
+controller_telemetry_thread_instance = threading.Thread(target=controller_telemetry_thread, daemon=True)
+controller_telemetry_thread_instance.start()
+
 @socketio.on('yolo_detection', namespace='/arduino')
 def handle_yolo_detection(data):
     """Handle YOLO detection from detection service"""
@@ -790,13 +973,19 @@ def pi_dashboard():
 
 @app.route('/control')
 def control():
-    """Control panel"""
-    return render_template('pi_control.html')
+    """Modern robotic arm controller interface"""
+    return render_template('controller.html')
 
 @app.route('/arm-control')
 def arm_control():
-    """Advanced arm control with sliders and 3D visualization"""
-    return render_template('arm_control.html')
+    """Modern robotic arm controller interface"""
+    return render_template('controller.html')
+
+@app.route('/controller')
+def controller():
+    """Modern robotic arm controller interface"""
+    return render_template('controller.html')
+
 
 @app.route('/monitor')
 def monitor():

@@ -55,8 +55,8 @@ if [ ! -f ".setup_completed" ] || [ $(find .setup_completed -mtime +1 2>/dev/nul
     print_info "Updating system packages..."
     if sudo -n true 2>/dev/null; then
         # Sudo available without password
-        sudo apt update && sudo apt upgrade -y
-        print_status "System packages updated"
+    sudo apt update && sudo apt upgrade -y
+    print_status "System packages updated"
     else
         print_warning "Sudo requires password - skipping system package update"
         print_info "You can manually run: sudo apt update && sudo apt upgrade -y"
@@ -86,8 +86,8 @@ if [ ${#missing_packages[@]} -gt 0 ]; then
     print_info "Installing missing packages: ${missing_packages[*]}"
     if sudo -n true 2>/dev/null; then
         # Sudo available without password
-        sudo apt install -y "${missing_packages[@]}"
-        print_status "Essential packages installed"
+    sudo apt install -y "${missing_packages[@]}"
+    print_status "Essential packages installed"
     else
         print_warning "Sudo requires password - skipping package installation"
         print_info "You can manually run: sudo apt install -y ${missing_packages[*]}"
@@ -111,7 +111,7 @@ else
     print_info "Creating new virtual environment '$VENV_NAME'..."
     python3 -m venv "$VENV_NAME"
     if [ $? -eq 0 ]; then
-        print_status "Virtual environment created"
+    print_status "Virtual environment created"
     else
         print_error "Failed to create virtual environment"
         exit 1
@@ -128,7 +128,7 @@ fi
 print_info "Activating virtual environment..."
 source "$VENV_NAME/bin/activate"
 if [ $? -eq 0 ]; then
-    print_status "Virtual environment activated"
+print_status "Virtual environment activated"
 else
     print_error "Failed to activate virtual environment"
     exit 1

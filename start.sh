@@ -5,7 +5,7 @@ echo "🌐 Starting AI Tomato Sorter"
 echo "================================"
 
 # Activate virtual environment
-source tomato_sorter_env/bin/activate
+source farmbot_env/bin/activate
 
 # Check if virtual environment is active
 if [[ "$VIRTUAL_ENV" != "" ]]; then
@@ -20,7 +20,7 @@ python --version
 
 # Check required packages
 echo "🔍 Checking dependencies..."
-python -c "import torch, cv2, flask, yaml; print('✅ All dependencies available')" || {
+python -c "import torch, cv2, flask, yaml, flask_socketio; print('✅ All dependencies available')" || {
     echo "❌ Missing dependencies, please run setup.sh again"
     exit 1
 }
