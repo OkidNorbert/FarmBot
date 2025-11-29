@@ -340,14 +340,16 @@ class RoboticArmController {
         
         // Visual feedback
         const btn = document.getElementById('btnSave');
-        const originalText = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-check"></i> Saved';
-        btn.style.background = 'var(--success-color)';
-        
-        setTimeout(() => {
-            btn.innerHTML = originalText;
-            btn.style.background = '';
-        }, 2000);
+        if (btn) {
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i><span>Saved</span>';
+            btn.style.background = 'var(--success)';
+            
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.style.background = '';
+            }, 2000);
+        }
     }
     
     reset() {
@@ -393,7 +395,6 @@ class RoboticArmController {
     updateConnectionStatus(connected) {
         const statusEl = document.getElementById('connectionStatus');
         const statusText = statusEl.querySelector('.status-text');
-        const statusIndicator = statusEl.querySelector('.status-indicator');
         
         if (connected) {
             statusEl.classList.remove('disconnected');
@@ -406,11 +407,17 @@ class RoboticArmController {
         }
         
         // Update button states
-        document.getElementById('btnConnect').disabled = connected;
-        document.getElementById('btnDisconnect').disabled = !connected;
-        document.getElementById('btnStart').disabled = !connected;
-        document.getElementById('btnSave').disabled = !connected;
-        document.getElementById('btnReset').disabled = !connected;
+        const btnConnect = document.getElementById('btnConnect');
+        const btnDisconnect = document.getElementById('btnDisconnect');
+        const btnStart = document.getElementById('btnStart');
+        const btnSave = document.getElementById('btnSave');
+        const btnReset = document.getElementById('btnReset');
+        
+        if (btnConnect) btnConnect.disabled = connected;
+        if (btnDisconnect) btnDisconnect.disabled = !connected;
+        if (btnStart) btnStart.disabled = !connected;
+        if (btnSave) btnSave.disabled = !connected;
+        if (btnReset) btnReset.disabled = !connected;
     }
     
     updateMode() {
