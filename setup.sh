@@ -1,11 +1,19 @@
 #!/bin/bash
 # AI Tomato Sorter - Improved Setup Script
 # Handles PyTorch installation issues and preserves existing environments
+#
+# SAFETY: This script NEVER deletes existing virtual environments
+# It will only create a new environment if one doesn't exist
 
-set -e  # Exit on any error
+# Don't exit on error - we'll handle errors gracefully
+set +e
 
 echo "🌐 AI Tomato Sorter - Improved Setup"
 echo "===================================="
+echo ""
+echo "⚠️  SAFETY: This script preserves your existing virtual environment"
+echo "   It will NOT delete or recreate farmbot_env if it already exists"
+echo ""
 
 # Colors for output
 RED='\033[0;31m'
@@ -45,8 +53,14 @@ print_info "Project directory: $PROJECT_DIR"
 print_info "Checking system packages..."
 if [ ! -f ".setup_completed" ] || [ $(find .setup_completed -mtime +1 2>/dev/null | wc -l) -gt 0 ]; then
     print_info "Updating system packages..."
-    sudo apt update && sudo apt upgrade -y
-    print_status "System packages updated"
+    if sudo -n true 2>/dev/null; then
+        # Sudo available without password
+        sudo apt update && sudo apt upgrade -y
+        print_status "System packages updated"
+    else
+        print_warning "Sudo requires password - skipping system package update"
+        print_info "You can manually run: sudo apt update && sudo apt upgrade -y"
+    fi
 else
     print_info "System packages recently updated, skipping..."
 fi
@@ -70,27 +84,55 @@ done
 
 if [ ${#missing_packages[@]} -gt 0 ]; then
     print_info "Installing missing packages: ${missing_packages[*]}"
-    sudo apt install -y "${missing_packages[@]}"
-    print_status "Essential packages installed"
+    if sudo -n true 2>/dev/null; then
+        # Sudo available without password
+        sudo apt install -y "${missing_packages[@]}"
+        print_status "Essential packages installed"
+    else
+        print_warning "Sudo requires password - skipping package installation"
+        print_info "You can manually run: sudo apt install -y ${missing_packages[*]}"
+        print_warning "Some features may not work without these packages"
+    fi
 else
     print_info "All essential packages already installed"
 fi
 
 # Step 3: Create or preserve virtual environment
 print_info "Setting up Python virtual environment..."
-if [ -d "tomato_sorter_env" ]; then
-    print_warning "Virtual environment already exists, preserving it..."
-    print_info "To recreate environment, delete tomato_sorter_env folder first"
+VENV_NAME="farmbot_env"
+
+# SAFETY CHECK: Never delete existing environment
+if [ -d "$VENV_NAME" ]; then
+    print_warning "Virtual environment '$VENV_NAME' already exists - PRESERVING IT"
+    print_info "The existing environment will be used as-is"
+    print_info "All packages in the existing environment will be preserved"
+    print_info "To recreate environment, manually delete $VENV_NAME folder first (NOT RECOMMENDED)"
 else
-    print_info "Creating new virtual environment..."
-    python3 -m venv tomato_sorter_env
-    print_status "Virtual environment created"
+    print_info "Creating new virtual environment '$VENV_NAME'..."
+    python3 -m venv "$VENV_NAME"
+    if [ $? -eq 0 ]; then
+        print_status "Virtual environment created"
+    else
+        print_error "Failed to create virtual environment"
+        exit 1
+    fi
+fi
+
+# Verify environment still exists (safety check)
+if [ ! -d "$VENV_NAME" ]; then
+    print_error "CRITICAL: Virtual environment was deleted or not found!"
+    exit 1
 fi
 
 # Step 4: Activate virtual environment
 print_info "Activating virtual environment..."
-source tomato_sorter_env/bin/activate
-print_status "Virtual environment activated"
+source "$VENV_NAME/bin/activate"
+if [ $? -eq 0 ]; then
+    print_status "Virtual environment activated"
+else
+    print_error "Failed to activate virtual environment"
+    exit 1
+fi
 
 # Step 5: Upgrade pip
 print_info "Upgrading pip..."
@@ -221,7 +263,7 @@ else
 fi
 
 # Create or update startup script
-cat > start.sh << 'EOF'
+cat > start.sh << EOF
 #!/bin/bash
 # AI Tomato Sorter Startup Script
 
@@ -229,7 +271,7 @@ echo "🌐 Starting AI Tomato Sorter"
 echo "================================"
 
 # Activate virtual environment
-source tomato_sorter_env/bin/activate
+source $VENV_NAME/bin/activate
 
 # Check if virtual environment is active
 if [[ "$VIRTUAL_ENV" != "" ]]; then
@@ -309,18 +351,23 @@ After=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$PROJECT_DIR
-ExecStart=$PROJECT_DIR/tomato_sorter_env/bin/python web_interface.py
+ExecStart=$PROJECT_DIR/$VENV_NAME/bin/python web_interface.py
 Restart=always
 RestartSec=10
-Environment=PATH=$PROJECT_DIR/tomato_sorter_env/bin
+Environment=PATH=$PROJECT_DIR/$VENV_NAME/bin
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-    sudo cp tomato-sorter.service /etc/systemd/system/ 2>/dev/null || print_warning "Could not copy service file (may need sudo)"
-    sudo systemctl daemon-reload 2>/dev/null || print_warning "Could not reload systemd (may need sudo)"
-    sudo systemctl enable tomato-sorter 2>/dev/null || print_warning "Could not enable service (may need sudo)"
+    if sudo -n true 2>/dev/null; then
+        sudo cp tomato-sorter.service /etc/systemd/system/ 2>/dev/null || print_warning "Could not copy service file"
+        sudo systemctl daemon-reload 2>/dev/null || print_warning "Could not reload systemd"
+        sudo systemctl enable tomato-sorter 2>/dev/null || print_warning "Could not enable service"
+    else
+        print_warning "Sudo requires password - skipping systemd service setup"
+        print_info "You can manually install the service later"
+    fi
     print_status "System service created"
     print_info "To start service: sudo systemctl start tomato-sorter"
     print_info "To check status: sudo systemctl status tomato-sorter"
@@ -342,7 +389,7 @@ for file in "${required_files[@]}"; do
 done
 
 # Check virtual environment
-if [ -d "tomato_sorter_env" ]; then
+if [ -d "$VENV_NAME" ]; then
     print_status "Virtual environment exists"
 else
     print_error "Virtual environment not found"
@@ -365,8 +412,8 @@ echo "🎉 AI Tomato Sorter Setup Complete!"
 echo "=================================="
 echo ""
 echo "📁 Project Directory: $PROJECT_DIR"
-echo "🐍 Virtual Environment: tomato_sorter_env"
-echo "🌐 Web Interface: http://localhost:5001"
+echo "🐍 Virtual Environment: $VENV_NAME"
+echo "🌐 Web Interface: http://localhost:5000"
 echo ""
 echo "🚀 To start the system:"
 echo "   ./start.sh"

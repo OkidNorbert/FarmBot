@@ -341,7 +341,7 @@ def api_stop_system():
 
 @app.route('/api/arm/move', methods=['POST'])
 def api_move_arm():
-    """API endpoint to move arm"""
+    """API endpoint to move arm - supports both absolute and relative movement"""
     if not HARDWARE_AVAILABLE or not hw_controller:
         return jsonify({'success': False, 'message': 'Hardware not available'})
     
@@ -350,20 +350,96 @@ def api_move_arm():
         return jsonify({'success': False, 'message': 'Invalid request: JSON data required'}), 400
     
     data = request.json
-    x = data.get('x', 0)
-    y = data.get('y', 0)
-    z = data.get('z', 0)
     
-    hw_controller.move_arm(x, y, z)
-    return jsonify({'success': True, 'message': f'Arm moved to ({x}, {y}, {z})'})
+    # Check if this is a relative movement (axis + value format)
+    if 'axis' in data and 'value' in data:
+        # Relative movement - need to track current position
+        # For now, use a simple approach: send relative movement as absolute
+        # This is a simplified implementation - in production, track actual position
+        axis = data.get('axis', 'x').lower()
+        value = data.get('value', 0)
+        relative = data.get('relative', True)
+        
+        # Initialize position tracking if not exists
+        if not hasattr(api_move_arm, 'current_pos'):
+            api_move_arm.current_pos = {'x': 0, 'y': 0, 'z': 0}
+        
+        # Update position based on axis
+        if relative:
+            api_move_arm.current_pos[axis] += value
+        else:
+            api_move_arm.current_pos[axis] = value
+        
+        x = api_move_arm.current_pos['x']
+        y = api_move_arm.current_pos['y']
+        z = api_move_arm.current_pos['z']
+        
+        hw_controller.move_arm(x, y, z)
+        return jsonify({'success': True, 'message': f'Arm moved {axis} by {value} to ({x}, {y}, {z})'})
+    else:
+        # Absolute movement (x, y, z format)
+        x = data.get('x', 0)
+        y = data.get('y', 0)
+        z = data.get('z', 0)
+        
+        # Update tracked position
+        if not hasattr(api_move_arm, 'current_pos'):
+            api_move_arm.current_pos = {'x': 0, 'y': 0, 'z': 0}
+        api_move_arm.current_pos['x'] = x
+        api_move_arm.current_pos['y'] = y
+        api_move_arm.current_pos['z'] = z
+        
+        hw_controller.move_arm(x, y, z)
+        return jsonify({'success': True, 'message': f'Arm moved to ({x}, {y}, {z})'})
 
 @app.route('/api/arm/home', methods=['POST'])
 def api_home_arm():
     """API endpoint to home arm"""
     if HARDWARE_AVAILABLE and hw_controller:
+        # Reset tracked position
+        if hasattr(api_move_arm, 'current_pos'):
+            api_move_arm.current_pos = {'x': 0, 'y': 0, 'z': 0}
         hw_controller.home_arm()
         return jsonify({'success': True, 'message': 'Arm homed'})
     return jsonify({'success': False, 'message': 'Hardware not available'})
+
+@app.route('/api/servo/set', methods=['POST'])
+def api_set_servo():
+    """API endpoint to set individual servo angle"""
+    if not HARDWARE_AVAILABLE or not hw_controller:
+        return jsonify({'success': False, 'message': 'Hardware not available'})
+    
+    if not request.is_json or request.json is None:
+        return jsonify({'success': False, 'message': 'Invalid request: JSON data required'}), 400
+    
+    data = request.json
+    servo = data.get('servo', '').lower()
+    angle = data.get('angle', 90)
+    
+    # Map servo names to indices: 0=base, 1=shoulder, 2=forearm, 3=elbow, 4=pitch, 5=claw
+    servo_map = {
+        'base': 0,
+        'shoulder': 1,
+        'forearm': 2,
+        'elbow': 3,
+        'pitch': 4,
+        'claw': 5
+    }
+    
+    if servo not in servo_map:
+        return jsonify({'success': False, 'message': f'Invalid servo name: {servo}'}), 400
+    
+    # Send ANGLE command with -1 for servos we don't want to change
+    # Format: ANGLE base shoulder forearm elbow pitch claw
+    # Use -1 to keep current angle for other servos
+    angles = [-1, -1, -1, -1, -1, -1]
+    angles[servo_map[servo]] = int(angle)
+    
+    # Build ANGLE command
+    angle_cmd = f"ANGLE {' '.join(map(str, angles))}"
+    hw_controller.send_command(angle_cmd)
+    
+    return jsonify({'success': True, 'message': f'Servo {servo} set to {angle}°'})
 
 @app.route('/api/bluetooth/scan', methods=['POST'])
 def api_bluetooth_scan():
@@ -441,6 +517,46 @@ def api_bluetooth_status():
             'ble_connected': status.get('ble_connected', False),
             'ble_address': status.get('ble_address', None)
         })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/camera/list', methods=['GET'])
+def api_list_cameras():
+    """API endpoint to list all available cameras (built-in and USB)"""
+    try:
+        if not HARDWARE_AVAILABLE or not hw_controller:
+            return jsonify({'success': False, 'message': 'Hardware controller not available'}), 500
+        
+        cameras = hw_controller.get_available_cameras()
+        return jsonify({
+            'success': True, 
+            'cameras': cameras, 
+            'current': hw_controller.camera_index if hw_controller.camera_connected else None
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/camera/switch', methods=['POST'])
+def api_switch_camera():
+    """API endpoint to switch to a different camera"""
+    try:
+        if not HARDWARE_AVAILABLE or not hw_controller:
+            return jsonify({'success': False, 'message': 'Hardware controller not available'}), 500
+        
+        data = request.json
+        camera_index = data.get('index')
+        
+        if camera_index is None:
+            return jsonify({'success': False, 'message': 'Camera index required'}), 400
+        
+        if hw_controller.switch_camera(camera_index):
+            return jsonify({
+                'success': True, 
+                'message': f'Switched to camera {camera_index}', 
+                'current': camera_index
+            })
+        else:
+            return jsonify({'success': False, 'message': f'Failed to switch to camera {camera_index}'}), 500
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -676,6 +792,11 @@ def pi_dashboard():
 def control():
     """Control panel"""
     return render_template('pi_control.html')
+
+@app.route('/arm-control')
+def arm_control():
+    """Advanced arm control with sliders and 3D visualization"""
+    return render_template('arm_control.html')
 
 @app.route('/monitor')
 def monitor():

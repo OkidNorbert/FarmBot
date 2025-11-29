@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FarmBOT - Arm Control</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f5f5f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .connection-status {
+            background-color: #d4a574;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+            text-align: center;
+            margin: 10px 0;
+        }
+        
+        .connection-status.connected {
+            background-color: #28a745;
+        }
+        
+        .control-container {
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+        }
+        
+        .arm-visualization {
+            flex: 1;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            min-height: 500px;
+            position: relative;
+        }
+        
+        .controls-panel {
+            flex: 0 0 350px;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .servo-control {
+            margin-bottom: 25px;
+        }
+        
+        .servo-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .servo-value {
+            background: #e9ecef;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .slider-container {
+            position: relative;
+        }
+        
+        .slider {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: #dee2e6;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #6c757d;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #6c757d;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .slider:active::-webkit-slider-thumb {
+            background: #007bff;
+        }
+        
+        .slider:active::-moz-range-thumb {
+            background: #007bff;
+        }
+        
+        .slider-track {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 8px;
+            background: #8b7355;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+        
+        .speed-control {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #dee2e6;
+        }
+        
+        .speed-slider {
+            width: 100%;
+            height: 8px;
+            border-radius: 5px;
+            background: linear-gradient(to right, #dc3545 0%, #6c757d 100%);
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        
+        .speed-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #6c757d;
+            cursor: pointer;
+        }
+        
+        .speed-slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #6c757d;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn-action {
+            flex: 1;
+            padding: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+        }
+        
+        /* 3D Arm Visualization */
+        #arm-canvas {
+            width: 100%;
+            height: 100%;
+            min-height: 450px;
+        }
+        
+        .servo-highlight {
+            stroke: #ff6b6b;
+            stroke-width: 3;
+            animation: pulse 1s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .connection-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .btn-connect {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- Connection Status -->
+        <div class="row mt-3">
+            <div class="col-12">
+                <div class="connection-buttons">
+                    <button class="btn btn-primary btn-connect" onclick="connectArduino()">
+                        <i class="fas fa-link"></i> Connect
+                    </button>
+                    <div class="connection-status" id="connection-status">NOT CONNECTED</div>
+                    <button class="btn btn-secondary btn-connect" onclick="disconnectArduino()">
+                        <i class="fas fa-unlink"></i> Disconnect
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="window.location.href='/control'">
+                        <i class="fas fa-cogs"></i> Basic Control
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-container">
+            <!-- 3D Arm Visualization -->
+            <div class="arm-visualization">
+                <h5 class="mb-3"><i class="fas fa-robot"></i> Robotic Arm</h5>
+                <svg id="arm-canvas" viewBox="0 0 400 500" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Base -->
+                    <g id="base-group" class="arm-part">
+                        <rect x="150" y="450" width="100" height="50" fill="#6c757d" rx="5"/>
+                        <circle cx="200" cy="475" r="15" fill="#495057"/>
+                    </g>
+                    
+                    <!-- Main Arm -->
+                    <g id="shoulder-group" class="arm-part" transform="rotate(0 200 450)">
+                        <rect x="190" y="300" width="20" height="150" fill="#007bff" rx="3"/>
+                        <circle cx="200" cy="450" r="12" fill="#0056b3"/>
+                        <circle cx="200" cy="300" r="12" fill="#0056b3"/>
+                    </g>
+                    
+                    <!-- Forearm -->
+                    <g id="forearm-group" class="arm-part" transform="rotate(0 200 300)">
+                        <rect x="190" y="200" width="20" height="100" fill="#17a2b8" rx="3"/>
+                        <circle cx="200" cy="300" r="10" fill="#138496"/>
+                        <circle cx="200" cy="200" r="10" fill="#138496"/>
+                    </g>
+                    
+                    <!-- Elbow/Wrist -->
+                    <g id="elbow-group" class="arm-part" transform="rotate(0 200 200)">
+                        <rect x="195" y="150" width="10" height="50" fill="#28a745" rx="2"/>
+                        <circle cx="200" cy="200" r="8" fill="#1e7e34"/>
+                        <circle cx="200" cy="150" r="8" fill="#1e7e34"/>
+                    </g>
+                    
+                    <!-- Wrist Pitch -->
+                    <g id="pitch-group" class="arm-part" transform="rotate(0 200 150)">
+                        <rect x="195" y="120" width="10" height="30" fill="#ffc107" rx="2"/>
+                        <circle cx="200" cy="150" r="6" fill="#e0a800"/>
+                        <circle cx="200" cy="120" r="6" fill="#e0a800"/>
+                    </g>
+                    
+                    <!-- Claw -->
+                    <g id="claw-group" class="arm-part" transform="translate(200, 120)">
+                        <rect x="-15" y="-5" width="30" height="10" fill="#dc3545" rx="2"/>
+                        <rect x="-20" y="0" width="8" height="25" fill="#c82333" rx="2"/>
+                        <rect x="12" y="0" width="8" height="25" fill="#c82333" rx="2"/>
+                    </g>
+                    
+                    <!-- Connection Lines to Controls -->
+                    <line id="line-base" x1="200" y1="475" x2="350" y2="100" stroke="#000" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" style="display: none;"/>
+                    <line id="line-shoulder" x1="200" y1="375" x2="350" y2="150" stroke="#000" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" style="display: none;"/>
+                    <line id="line-forearm" x1="200" y1="250" x2="350" y2="200" stroke="#000" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" style="display: none;"/>
+                    <line id="line-elbow" x1="200" y1="175" x2="350" y2="250" stroke="#000" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" style="display: none;"/>
+                    <line id="line-pitch" x1="200" y1="135" x2="350" y2="300" stroke="#000" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" style="display: none;"/>
+                    <line id="line-claw" x1="200" y1="120" x2="350" y2="350" stroke="#000" stroke-width="1" stroke-dasharray="3,3" opacity="0.3" style="display: none;"/>
+                </svg>
+            </div>
+
+            <!-- Controls Panel -->
+            <div class="controls-panel">
+                <h5 class="mb-4"><i class="fas fa-sliders-h"></i> Servo Controls</h5>
+                
+                <!-- Claw -->
+                <div class="servo-control" data-servo="claw">
+                    <div class="servo-label">
+                        <span><i class="fas fa-hand-rock"></i> Claw (0°=Closed, 90°=Open)</span>
+                        <span class="servo-value" id="value-claw">0°</span>
+                    </div>
+                    <div class="slider-container">
+                        <div class="slider-track" id="track-claw" style="width: 0%;"></div>
+                        <input type="range" class="slider" id="slider-claw" min="0" max="90" value="0" 
+                               oninput="updateServo('claw', this.value)" 
+                               onmousedown="highlightServo('claw')" 
+                               onmouseup="unhighlightServo('claw')">
+                    </div>
+                </div>
+
+                <!-- Wrist Pitch -->
+                <div class="servo-control" data-servo="pitch">
+                    <div class="servo-label">
+                        <span><i class="fas fa-arrows-alt-v"></i> Wrist Pitch</span>
+                        <span class="servo-value" id="value-pitch">90°</span>
+                    </div>
+                    <div class="slider-container">
+                        <div class="slider-track" id="track-pitch" style="width: 50%;"></div>
+                        <input type="range" class="slider" id="slider-pitch" min="20" max="160" value="90" 
+                               oninput="updateServo('pitch', this.value)" 
+                               onmousedown="highlightServo('pitch')" 
+                               onmouseup="unhighlightServo('pitch')">
+                    </div>
+                </div>
+
+                <!-- Elbow -->
+                <div class="servo-control" data-servo="elbow">
+                    <div class="servo-label">
+                        <span><i class="fas fa-angle-double-up"></i> Elbow</span>
+                        <span class="servo-value" id="value-elbow">90°</span>
+                    </div>
+                    <div class="slider-container">
+                        <div class="slider-track" id="track-elbow" style="width: 50%;"></div>
+                        <input type="range" class="slider" id="slider-elbow" min="15" max="165" value="90" 
+                               oninput="updateServo('elbow', this.value)" 
+                               onmousedown="highlightServo('elbow')" 
+                               onmouseup="unhighlightServo('elbow')">
+                    </div>
+                </div>
+
+                <!-- Forearm -->
+                <div class="servo-control" data-servo="forearm">
+                    <div class="servo-label">
+                        <span><i class="fas fa-hand-point-up"></i> Forearm</span>
+                        <span class="servo-value" id="value-forearm">90°</span>
+                    </div>
+                    <div class="slider-container">
+                        <div class="slider-track" id="track-forearm" style="width: 50%;"></div>
+                        <input type="range" class="slider" id="slider-forearm" min="10" max="170" value="90" 
+                               oninput="updateServo('forearm', this.value)" 
+                               onmousedown="highlightServo('forearm')" 
+                               onmouseup="unhighlightServo('forearm')">
+                    </div>
+                </div>
+
+                <!-- Shoulder -->
+                <div class="servo-control" data-servo="shoulder">
+                    <div class="servo-label">
+                        <span><i class="fas fa-arrows-alt"></i> Shoulder</span>
+                        <span class="servo-value" id="value-shoulder">90°</span>
+                    </div>
+                    <div class="slider-container">
+                        <div class="slider-track" id="track-shoulder" style="width: 50%;"></div>
+                        <input type="range" class="slider" id="slider-shoulder" min="15" max="165" value="90" 
+                               oninput="updateServo('shoulder', this.value)" 
+                               onmousedown="highlightServo('shoulder')" 
+                               onmouseup="unhighlightServo('shoulder')">
+                    </div>
+                </div>
+
+                <!-- Base -->
+                <div class="servo-control" data-servo="base">
+                    <div class="servo-label">
+                        <span><i class="fas fa-sync-alt"></i> Base</span>
+                        <span class="servo-value" id="value-base">90°</span>
+                    </div>
+                    <div class="slider-container">
+                        <div class="slider-track" id="track-base" style="width: 50%;"></div>
+                        <input type="range" class="slider" id="slider-base" min="0" max="180" value="90" 
+                               oninput="updateServo('base', this.value)" 
+                               onmousedown="highlightServo('base')" 
+                               onmouseup="unhighlightServo('base')">
+                    </div>
+                </div>
+
+                <!-- Speed Control -->
+                <div class="speed-control">
+                    <div class="servo-label">
+                        <span><i class="fas fa-tachometer-alt"></i> SPEED</span>
+                        <span class="servo-value" id="value-speed">50%</span>
+                    </div>
+                    <input type="range" class="speed-slider" id="slider-speed" min="10" max="100" value="50" 
+                           oninput="updateSpeed(this.value)">
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button class="btn btn-primary btn-action" onclick="saveMovement()">
+                        <i class="fas fa-save"></i> SAVE
+                    </button>
+                    <button class="btn btn-dark btn-action" onclick="playMovement()">
+                        <i class="fas fa-play"></i> START
+                    </button>
+                    <button class="btn btn-primary btn-action" onclick="resetArm()">
+                        <i class="fas fa-undo"></i> RESET
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Servo configuration
+        const servoConfig = {
+            base: { min: 0, max: 180, default: 90, group: 'base-group', line: 'line-base' },
+            shoulder: { min: 15, max: 165, default: 90, group: 'shoulder-group', line: 'line-shoulder' },
+            forearm: { min: 10, max: 170, default: 90, group: 'forearm-group', line: 'line-forearm' },
+            elbow: { min: 15, max: 165, default: 90, group: 'elbow-group', line: 'line-elbow' },
+            pitch: { min: 20, max: 160, default: 90, group: 'pitch-group', line: 'line-pitch' },
+            claw: { min: 0, max: 90, default: 0, group: 'claw-group', line: 'line-claw' }  // 0°=Closed, 90°=Open
+        };
+
+        // Current servo positions
+        let currentPositions = {};
+        let savedMovement = null;
+        let isPlaying = false;
+        let updateTimeout = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize all servos to default positions
+            Object.keys(servoConfig).forEach(servo => {
+                currentPositions[servo] = servoConfig[servo].default;
+                updateSliderTrack(servo, servoConfig[servo].default);
+                // Update slider value
+                const slider = document.getElementById(`slider-${servo}`);
+                if (slider) {
+                    slider.value = servoConfig[servo].default;
+                }
+            });
+            
+            checkConnection();
+            setInterval(checkConnection, 2000);
+        });
+
+        function updateSliderTrack(servo, value) {
+            const config = servoConfig[servo];
+            const percentage = ((value - config.min) / (config.max - config.min)) * 100;
+            const track = document.getElementById(`track-${servo}`);
+            if (track) {
+                track.style.width = percentage + '%';
+            }
+        }
+
+        function updateServo(servo, value) {
+            value = parseInt(value);
+            currentPositions[servo] = value;
+            
+            // Update display
+            document.getElementById(`value-${servo}`).textContent = value + '°';
+            updateSliderTrack(servo, value);
+            
+            // Update 3D visualization
+            updateArmVisualization(servo, value);
+            
+            // Debounce API calls
+            clearTimeout(updateTimeout);
+            updateTimeout = setTimeout(() => {
+                sendServoCommand(servo, value);
+            }, 100);
+        }
+
+        function updateArmVisualization(servo, angle) {
+            const config = servoConfig[servo];
+            const group = document.getElementById(config.group);
+            
+            if (!group) return;
+            
+            // Calculate rotation based on servo type
+            let rotation = 0;
+            const centerX = 200;
+            let centerY = 0;
+            
+            switch(servo) {
+                case 'base':
+                    centerY = 475;
+                    rotation = angle - 90; // 90° is center
+                    break;
+                case 'shoulder':
+                    centerY = 450;
+                    rotation = angle - 90;
+                    break;
+                case 'forearm':
+                    centerY = 300;
+                    rotation = angle - 90;
+                    break;
+                case 'elbow':
+                    centerY = 200;
+                    rotation = angle - 90;
+                    break;
+                case 'pitch':
+                    centerY = 150;
+                    rotation = angle - 90;
+                    break;
+                case 'claw':
+                    // Claw opens/closes, not rotates
+                    // angle: 0 = closed, 90 = open
+                    const openAmount = angle / 90; // 0 = closed, 1 = open
+                    const clawGroup = document.getElementById('claw-group');
+                    if (clawGroup) {
+                        const fingers = clawGroup.querySelectorAll('rect');
+                        if (fingers.length >= 3) {
+                            fingers[1].setAttribute('x', -20 - (openAmount * 10));
+                            fingers[2].setAttribute('x', 12 + (openAmount * 10));
+                        }
+                    }
+                    return;
+            }
+            
+            group.setAttribute('transform', `rotate(${rotation} ${centerX} ${centerY})`);
+        }
+
+        function highlightServo(servo) {
+            const config = servoConfig[servo];
+            const group = document.getElementById(config.group);
+            const line = document.getElementById(config.line);
+            
+            if (group) {
+                group.classList.add('servo-highlight');
+            }
+            if (line) {
+                line.style.display = 'block';
+            }
+        }
+
+        function unhighlightServo(servo) {
+            const config = servoConfig[servo];
+            const group = document.getElementById(config.group);
+            const line = document.getElementById(config.line);
+            
+            if (group) {
+                group.classList.remove('servo-highlight');
+            }
+            if (line) {
+                line.style.display = 'none';
+            }
+        }
+
+        async function sendServoCommand(servo, angle) {
+            try {
+                const response = await fetch('/api/servo/set', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ servo: servo, angle: angle })
+                });
+                const result = await response.json();
+                if (!result.success) {
+                    console.error('Servo command failed:', result.message);
+                }
+            } catch (e) {
+                console.error('Error sending servo command:', e);
+            }
+        }
+
+        function updateSpeed(value) {
+            document.getElementById('value-speed').textContent = value + '%';
+            // Speed control can be implemented later
+        }
+
+        function saveMovement() {
+            savedMovement = JSON.parse(JSON.stringify(currentPositions));
+            alert('Movement saved! You can replay it using START button.');
+        }
+
+        async function playMovement() {
+            if (!savedMovement) {
+                alert('No movement saved. Move the servos and click SAVE first.');
+                return;
+            }
+            
+            if (isPlaying) {
+                alert('Movement is already playing.');
+                return;
+            }
+            
+            isPlaying = true;
+            const startBtn = event.target.closest('button');
+            startBtn.disabled = true;
+            startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> PLAYING...';
+            
+            // Play movement with delays
+            const servos = Object.keys(savedMovement);
+            for (let i = 0; i < servos.length; i++) {
+                const servo = servos[i];
+                const targetAngle = savedMovement[servo];
+                
+                // Animate slider
+                const slider = document.getElementById(`slider-${servo}`);
+                if (slider) {
+                    slider.value = targetAngle;
+                    updateServo(servo, targetAngle);
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            
+            isPlaying = false;
+            startBtn.disabled = false;
+            startBtn.innerHTML = '<i class="fas fa-play"></i> START';
+        }
+
+        async function resetArm() {
+            if (confirm('Reset all servos to home position (90°)?')) {
+                try {
+                    const response = await fetch('/api/arm/home', { method: 'POST' });
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                    // Reset all servos: most to 90°, claw to 0° (closed)
+                    Object.keys(servoConfig).forEach(servo => {
+                        const config = servoConfig[servo];
+                        const defaultAngle = config.default;
+                        const slider = document.getElementById(`slider-${servo}`);
+                        if (slider) {
+                            slider.value = defaultAngle;
+                            updateServo(servo, defaultAngle);
+                        }
+                    });
+                        alert('Arm reset to home position');
+                    } else {
+                        alert('Reset failed: ' + result.message);
+                    }
+                } catch (e) {
+                    alert('Error resetting arm: ' + e.message);
+                }
+            }
+        }
+
+        async function connectArduino() {
+            try {
+                const response = await fetch('/api/bluetooth/scan', { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.success && result.devices && result.devices.length > 0) {
+                    const device = result.devices.find(d => d.name.includes('FarmBot')) || result.devices[0];
+                    const connectResponse = await fetch('/api/bluetooth/connect', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ address: device.address })
+                    });
+                    const connectResult = await connectResponse.json();
+                    
+                    if (connectResult.success) {
+                        checkConnection();
+                    } else {
+                        alert('Connection failed: ' + connectResult.message);
+                    }
+                } else {
+                    alert('No Arduino devices found. Make sure your Arduino is powered on and BLE is enabled.');
+                }
+            } catch (e) {
+                alert('Error connecting: ' + e.message);
+            }
+        }
+
+        async function disconnectArduino() {
+            // Disconnect logic can be added here
+            checkConnection();
+        }
+
+        async function checkConnection() {
+            try {
+                const response = await fetch('/api/bluetooth/status');
+                const data = await response.json();
+                
+                const statusDiv = document.getElementById('connection-status');
+                if (data.success && (data.ble_connected || data.connected)) {
+                    statusDiv.textContent = 'CONNECTED';
+                    statusDiv.classList.add('connected');
+                } else {
+                    statusDiv.textContent = 'NOT CONNECTED';
+                    statusDiv.classList.remove('connected');
+                }
+            } catch (e) {
+                console.error('Error checking connection:', e);
+            }
+        }
+    </script>
+</body>
+</html>
+

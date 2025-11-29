@@ -28,10 +28,24 @@ except ImportError:
     print("Warning: Bleak library not available. Bluetooth support disabled.")
 
 try:
+    # Try importing from the models directory
     from models.tomato.tomato_inference import TomatoClassifier
-except ImportError:
-    print("Warning: Could not import TomatoClassifier. Using dummy.")
-    TomatoClassifier = None
+    TOMATO_CLASSIFIER_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Could not import TomatoClassifier: {e}")
+    print("Attempting alternative import path...")
+    try:
+        # Try adding the project root to path and importing
+        import sys
+        project_root = Path(__file__).parent.absolute()
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        from models.tomato.tomato_inference import TomatoClassifier
+        TOMATO_CLASSIFIER_AVAILABLE = True
+    except ImportError as e2:
+        print(f"Warning: Could not import TomatoClassifier (alternative path also failed): {e2}")
+        TomatoClassifier = None
+        TOMATO_CLASSIFIER_AVAILABLE = False
 
 class BLEClient:
     """Bluetooth Low Energy client for Arduino R4 WiFi"""
@@ -162,6 +176,9 @@ class HardwareController:
         """
         self.setup_logging()
         
+        # Get project root directory (where this file is located)
+        self.project_root = Path(__file__).parent.absolute()
+        
         # Components
         self.arduino = None
         self.ble_client = None
@@ -195,16 +212,39 @@ class HardwareController:
 
     def initialize_classifier(self):
         """Initialize AI Model"""
-        if TomatoClassifier:
-            try:
-                model_path = "models/tomato/best_model.pth"
-                if os.path.exists(model_path):
-                    self.classifier = TomatoClassifier(model_path)
-                    self.logger.info("AI Model Loaded")
-                else:
-                    self.logger.warning("Model file not found. Using dummy.")
-            except Exception as e:
-                self.logger.error(f"Failed to load AI model: {e}")
+        if not TOMATO_CLASSIFIER_AVAILABLE or not TomatoClassifier:
+            self.logger.warning("TomatoClassifier not available. Model detection disabled.")
+            self.logger.warning("Make sure PyTorch and the model files are installed.")
+            return
+        
+        try:
+            # Use absolute path from project root
+            model_path = self.project_root / "models" / "tomato" / "best_model.pth"
+            model_path_str = str(model_path)
+            
+            self.logger.info(f"Looking for model at: {model_path_str}")
+            
+            if model_path.exists():
+                self.logger.info(f"Model file found: {model_path_str}")
+                try:
+                    self.classifier = TomatoClassifier(model_path_str)
+                    self.logger.info("✅ AI Model Loaded successfully")
+                except Exception as load_error:
+                    self.logger.error(f"Failed to load model (file exists but load failed): {load_error}")
+                    import traceback
+                    self.logger.error(traceback.format_exc())
+            else:
+                self.logger.warning(f"❌ Model file not found at: {model_path_str}")
+                self.logger.warning("Using dummy classifier. Model detection will not work.")
+                # List what's in the models directory for debugging
+                models_dir = self.project_root / "models" / "tomato"
+                if models_dir.exists():
+                    files = list(models_dir.glob("*"))
+                    self.logger.info(f"Files in models/tomato: {[f.name for f in files]}")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize AI model: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
 
     def _auto_loop(self):
         """Main Autonomous Loop"""
@@ -222,7 +262,7 @@ class HardwareController:
             time.sleep(0.1) # Prevent CPU hogging
 
     def process_auto_cycle(self):
-        """Single cycle of autonomous logic"""
+        """Single cycle of autonomous logic - Only picks 'ready' tomatoes"""
         frame = self.get_frame()
         if frame is None:
             return
@@ -230,44 +270,61 @@ class HardwareController:
         # 1. Detect
         detections = self.detect_tomatoes(frame)
         
-        # 2. Decide
-        if detections:
-            # Pick the most confident detection
-            target = max(detections, key=lambda x: x['confidence'])
-            self.logger.info(f"[AUTO] Found {target['class']} tomato ({target['confidence']:.2f})")
-            
-            # 3. Act (if connected)
-            if self.arduino_connected:
-                # Calculate coordinates (Simplified mapping)
-                # In real usage, map pixels to mm
-                center_x, center_y = target['center']
-                
-                # Get Depth from VL53L0X sensor
-                z_depth = self.get_distance_sensor()
-                
-                # Use default distance if sensor fails to prevent command parsing errors
-                DEFAULT_DISTANCE_MM = 50  # Safe default distance
-                if z_depth is None:
-                    self.logger.warning(f"[AUTO] Distance sensor unavailable, using default {DEFAULT_DISTANCE_MM}mm")
-                    z_depth = DEFAULT_DISTANCE_MM
-                
-                self.logger.info(f"[AUTO] Picking at {center_x}, {center_y}, {z_depth}mm")
-                
-                # Send Pick Command
-                # Format: PICK <x> <y> <z> <class_id>
-                # class_id: 0=Unripe, 1=Ripe (example)
-                class_id = 1 if target['class'] == 'ripe' else 0
-                self.send_command(f"PICK {center_x} {center_y} {z_depth} {class_id}")
-                
-                # Wait for operation to complete
-                time.sleep(5) 
+        # 2. Filter: Only pick "ready" tomatoes in automatic mode
+        # Lower confidence threshold for Ugandan tomatoes (they may have different appearance)
+        ready_tomatoes = [d for d in detections if d['class'].lower() in ['ready', 'ripe']]
+        
+        if not ready_tomatoes:
+            # No ready tomatoes found - skip this cycle
+            if detections:
+                self.logger.info(f"[AUTO] Found {len(detections)} tomatoes, but none are ready. Classes: {[d['class'] for d in detections]}")
             else:
-                self.logger.info("[AUTO] Simulation: Pick command sent")
+                self.logger.debug("[AUTO] No tomatoes detected in frame")
+            return
+        
+        # 3. Decide: Pick the most confident ready tomato
+        target = max(ready_tomatoes, key=lambda x: x['confidence'])
+        self.logger.info(f"[AUTO] Picking ready tomato (confidence: {target['confidence']:.2f}, class: {target['class']})")
+        
+        # 4. Act (if connected)
+        if self.arduino_connected:
+            # Calculate coordinates (Simplified mapping)
+            # In real usage, map pixels to mm
+            center_x, center_y = target['center']
+            
+            # Get Depth from VL53L0X sensor
+            z_depth = self.get_distance_sensor()
+            
+            # Use default distance if sensor fails to prevent command parsing errors
+            DEFAULT_DISTANCE_MM = 50  # Safe default distance
+            if z_depth is None:
+                self.logger.warning(f"[AUTO] Distance sensor unavailable, using default {DEFAULT_DISTANCE_MM}mm")
+                z_depth = DEFAULT_DISTANCE_MM
+            
+            self.logger.info(f"[AUTO] Picking ready tomato at {center_x}, {center_y}, {z_depth}mm")
+            
+            # Send Pick Command
+            # Format: PICK <x> <y> <z> <class_id>
+            # class_id: 1=Ready/Ripe (goes to right), 0=Other (goes to left)
+            # Since we only pick ready tomatoes, always use class_id=1 (right bin)
+            class_id = 1  # Ready tomatoes go to the right
+            self.send_command(f"PICK {center_x} {center_y} {z_depth} {class_id}")
+            
+            # Wait for operation to complete
+            time.sleep(5) 
+        else:
+            self.logger.info("[AUTO] Simulation: Pick command sent")
 
     def detect_tomatoes(self, frame):
-        """Run detection on frame"""
+        """Run detection on frame with enhanced support for Ugandan tomatoes"""
         if self.classifier:
-            return self.classifier.detect_tomatoes(frame)
+            # Use lower confidence threshold for Ugandan tomatoes (0.3 instead of default 0.5)
+            # Enable image enhancement optimized for Ugandan tomato varieties
+            return self.classifier.detect_tomatoes(
+                frame, 
+                confidence_threshold=0.3,  # Lower threshold for better detection
+                enhance_for_ugandan=True   # Apply color/brightness enhancement
+            )
         else:
             # Dummy detection for simulation
             # Randomly find a tomato every few seconds
@@ -383,37 +440,117 @@ class HardwareController:
                 self.logger.error(f"Arduino connection failed: {e}")
                 self.arduino_connected = False
 
-        # Connect Camera - try multiple indices
+        # Connect Camera - detect all available cameras (built-in and USB)
         self.camera_connected = False
-        for camera_idx in range(5):  # Try indices 0-4
-            try:
-                self.camera = cv2.VideoCapture(camera_idx)
-                if self.camera.isOpened():
-                    # Test if we can actually read a frame
-                    ret, frame = self.camera.read()
-                    if ret and frame is not None:
-                        self.camera_index = camera_idx
-                        self.camera_connected = True
-                        self.logger.info(f"Camera connected at index {camera_idx}")
-                        # Start frame reading thread
-                        threading.Thread(target=self._update_frame, daemon=True).start()
-                        break
-                    else:
-                        self.camera.release()
-                        self.logger.debug(f"Camera {camera_idx} opened but cannot read frames")
-                else:
-                    self.logger.debug(f"Camera {camera_idx} not available")
-            except Exception as e:
-                self.logger.debug(f"Camera {camera_idx} error: {e}")
-                if self.camera:
-                    try:
-                        self.camera.release()
-                    except:
-                        pass
+        self.available_cameras = self._detect_available_cameras()
         
-        if not self.camera_connected:
-            self.logger.warning("No working camera found - Simulation Mode")
+        # Try to connect to the first available camera (or use configured index)
+        if self.available_cameras:
+            # Use first available camera by default, or configured index if valid
+            target_index = self.camera_index if self.camera_index in self.available_cameras else self.available_cameras[0]
+            if self._connect_camera(target_index):
+                self.logger.info(f"Camera connected at index {target_index} ({len(self.available_cameras)} cameras available)")
+            else:
+                self.logger.warning("Failed to connect to any camera")
+        else:
+            self.logger.warning("No cameras detected - Simulation Mode")
             self.camera = None
+
+    def _detect_available_cameras(self):
+        """Detect all available cameras (both built-in and USB)"""
+        available = []
+        self.logger.info("Scanning for available cameras (built-in and USB)...")
+        
+        # Test indices 0-9 to find all available cameras
+        for idx in range(10):
+            try:
+                test_cap = cv2.VideoCapture(idx)
+                if test_cap.isOpened():
+                    # Try to read a frame to verify it works
+                    ret, frame = test_cap.read()
+                    if ret and frame is not None:
+                        # Get camera info if available
+                        backend = test_cap.getBackendName()
+                        width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        available.append(idx)
+                        self.logger.info(f"Found camera at index {idx}: {backend}, {width}x{height}")
+                test_cap.release()
+            except Exception as e:
+                # Camera doesn't exist or failed
+                pass
+        
+        if available:
+            self.logger.info(f"Detected {len(available)} camera(s): {available}")
+        else:
+            self.logger.warning("No cameras detected")
+        
+        return available
+    
+    def _connect_camera(self, camera_index):
+        """Connect to a specific camera index"""
+        try:
+            # Release existing camera if any
+            if self.camera:
+                self.camera.release()
+                self.camera = None
+            
+            self.camera = cv2.VideoCapture(camera_index)
+            if self.camera.isOpened():
+                # Test if we can actually read a frame
+                ret, frame = self.camera.read()
+                if ret and frame is not None:
+                    self.camera_index = camera_index
+                    self.camera_connected = True
+                    # Start frame reading thread
+                    threading.Thread(target=self._update_frame, daemon=True).start()
+                    return True
+                else:
+                    self.camera.release()
+                    self.camera = None
+            return False
+        except Exception as e:
+            self.logger.error(f"Failed to connect camera {camera_index}: {e}")
+            if self.camera:
+                self.camera.release()
+                self.camera = None
+            return False
+    
+    def switch_camera(self, camera_index):
+        """Switch to a different camera"""
+        if camera_index not in self.available_cameras:
+            self.logger.error(f"Camera index {camera_index} not available. Available: {self.available_cameras}")
+            return False
+        
+        old_index = self.camera_index
+        if self._connect_camera(camera_index):
+            self.logger.info(f"Switched from camera {old_index} to camera {camera_index}")
+            return True
+        else:
+            self.logger.error(f"Failed to switch to camera {camera_index}")
+            return False
+    
+    def get_available_cameras(self):
+        """Get list of available cameras with details"""
+        cameras = []
+        for idx in self.available_cameras:
+            try:
+                test_cap = cv2.VideoCapture(idx)
+                if test_cap.isOpened():
+                    width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    backend = test_cap.getBackendName()
+                    cameras.append({
+                        'index': idx,
+                        'name': f"Camera {idx}",
+                        'backend': backend,
+                        'resolution': f"{width}x{height}",
+                        'current': idx == self.camera_index
+                    })
+                test_cap.release()
+            except:
+                pass
+        return cameras
 
     def _update_frame(self):
         """Background thread to keep reading frames"""
@@ -578,6 +715,8 @@ class HardwareController:
         status = {
             'arduino_connected': arduino_conn,
             'camera_connected': self.camera_connected,
+            'camera_index': self.camera_index if self.camera_connected else None,
+            'available_cameras': len(self.available_cameras) if hasattr(self, 'available_cameras') else 0,
             'auto_mode': self.auto_mode,
             'connection_type': connection_type,
             'classifier_loaded': self.classifier is not None

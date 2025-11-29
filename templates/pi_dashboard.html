@@ -146,6 +146,12 @@
                         <h5><i class="fas fa-camera"></i> Camera Feed</h5>
                     </div>
                     <div class="card-body">
+                        <div class="mb-2">
+                            <label class="form-label fw-bold">Camera Selection</label>
+                            <select id="camera-select" class="form-select" onchange="switchCamera()">
+                                <option value="">Loading cameras...</option>
+                            </select>
+                        </div>
                         <div class="camera-feed">
                             <img id="camera-feed" src="/api/camera/feed" alt="Camera Feed"
                                 style="width: 100%; height: 300px; object-fit: cover;">
@@ -219,6 +225,7 @@
             updateStatus();
             updateLogs();
             getSystemInfo();
+            loadCameraList(); // Load available cameras
 
             // Set up intervals
             statusInterval = setInterval(updateStatus, 1000);
@@ -393,6 +400,65 @@
                 showAlert(result.message, 'info');
             } catch (error) {
                 showAlert('Error homing arm', 'danger');
+            }
+        }
+
+        async function loadCameraList() {
+            try {
+                const response = await fetch('/api/camera/list');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const select = document.getElementById('camera-select');
+                    if (!select) return;
+                    
+                    select.innerHTML = '';
+                    
+                    if (result.cameras && result.cameras.length > 0) {
+                        result.cameras.forEach(camera => {
+                            const option = document.createElement('option');
+                            option.value = camera.index;
+                            option.textContent = `${camera.name} (${camera.resolution})${camera.current ? ' [Current]' : ''}`;
+                            if (camera.current) {
+                                option.selected = true;
+                            }
+                            select.appendChild(option);
+                        });
+                    } else {
+                        const option = document.createElement('option');
+                        option.textContent = 'No cameras available';
+                        select.appendChild(option);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading camera list:', error);
+            }
+        }
+
+        async function switchCamera() {
+            const select = document.getElementById('camera-select');
+            if (!select) return;
+            
+            const cameraIndex = parseInt(select.value);
+            if (isNaN(cameraIndex)) return;
+            
+            try {
+                const response = await fetch('/api/camera/switch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ index: cameraIndex })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert(`Switched to camera ${cameraIndex}`, 'success');
+                    setTimeout(loadCameraList, 500);
+                } else {
+                    showAlert('Failed to switch camera: ' + result.message, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error switching camera: ' + error.message, 'danger');
             }
         }
 

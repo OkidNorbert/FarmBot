@@ -52,45 +52,84 @@
             <div class="col-md-6">
                 <div class="card mb-4">
                     <div class="card-header bg-primary text-white">
-                        <h5><i class="fas fa-gamepad"></i> Manual Arm Control</h5>
+                        <h5><i class="fas fa-cogs"></i> Manual Servo Control</h5>
                     </div>
                     <div class="card-body">
-                        <div class="control-pad text-center">
-                            <div class="axis-control">
-                                <div class="axis-label">X Axis (Base)</div>
-                                <button class="btn btn-outline-primary direction-btn" onclick="moveAxis('x', -10)">
-                                    <i class="fas fa-chevron-left"></i>
-                                </button>
-                                <button class="btn btn-outline-primary direction-btn" onclick="moveAxis('x', 10)">
-                                    <i class="fas fa-chevron-right"></i>
-                                </button>
+                        <!-- Base Servo (Pin 7) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Base (Pin 7) - 0° to 180°</label>
+                            <div class="input-group">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('base', -5)">-5°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('base', -1)">-1°</button>
+                                <input type="number" id="servo-base" class="form-control text-center" value="90" min="0" max="180" onchange="setServoAngle('base', this.value)">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('base', 1)">+1°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('base', 5)">+5°</button>
                             </div>
+                        </div>
 
-                            <div class="axis-control">
-                                <div class="axis-label">Y Axis (Reach)</div>
-                                <button class="btn btn-outline-primary direction-btn" onclick="moveAxis('y', 10)">
-                                    <i class="fas fa-chevron-up"></i>
-                                </button>
-                                <br>
-                                <button class="btn btn-outline-primary direction-btn" onclick="moveAxis('y', -10)">
-                                    <i class="fas fa-chevron-down"></i>
-                                </button>
+                        <!-- Shoulder Servo (Pin 6) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Shoulder (Pin 6) - 15° to 165°</label>
+                            <div class="input-group">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('shoulder', -5)">-5°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('shoulder', -1)">-1°</button>
+                                <input type="number" id="servo-shoulder" class="form-control text-center" value="90" min="15" max="165" onchange="setServoAngle('shoulder', this.value)">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('shoulder', 1)">+1°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('shoulder', 5)">+5°</button>
                             </div>
+                        </div>
 
-                            <div class="axis-control">
-                                <div class="axis-label">Z Axis (Height)</div>
-                                <button class="btn btn-outline-primary direction-btn" onclick="moveAxis('z', 10)">
-                                    <i class="fas fa-arrow-up"></i>
-                                </button>
-                                <button class="btn btn-outline-primary direction-btn" onclick="moveAxis('z', -10)">
-                                    <i class="fas fa-arrow-down"></i>
-                                </button>
+                        <!-- Forearm Servo (Pin 5) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Forearm (Pin 5) - 10° to 170°</label>
+                            <div class="input-group">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('forearm', -5)">-5°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('forearm', -1)">-1°</button>
+                                <input type="number" id="servo-forearm" class="form-control text-center" value="90" min="10" max="170" onchange="setServoAngle('forearm', this.value)">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('forearm', 1)">+1°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('forearm', 5)">+5°</button>
+                            </div>
+                        </div>
+
+                        <!-- Elbow Servo (Pin 4) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Elbow (Pin 4) - 15° to 165°</label>
+                            <div class="input-group">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('elbow', -5)">-5°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('elbow', -1)">-1°</button>
+                                <input type="number" id="servo-elbow" class="form-control text-center" value="90" min="15" max="165" onchange="setServoAngle('elbow', this.value)">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('elbow', 1)">+1°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('elbow', 5)">+5°</button>
+                            </div>
+                        </div>
+
+                        <!-- Pitch Servo (Pin 3) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Pitch (Pin 3) - 20° to 160°</label>
+                            <div class="input-group">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('pitch', -5)">-5°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('pitch', -1)">-1°</button>
+                                <input type="number" id="servo-pitch" class="form-control text-center" value="90" min="20" max="160" onchange="setServoAngle('pitch', this.value)">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('pitch', 1)">+1°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('pitch', 5)">+5°</button>
+                            </div>
+                        </div>
+
+                        <!-- Claw Servo (Pin 2) -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Claw (Pin 2) - 0° (Closed) to 90° (Open)</label>
+                            <div class="input-group">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('claw', -5)">-5°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('claw', -1)">-1°</button>
+                                <input type="number" id="servo-claw" class="form-control text-center" value="0" min="0" max="90" onchange="setServoAngle('claw', this.value)">
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('claw', 1)">+1°</button>
+                                <button class="btn btn-outline-secondary" onclick="adjustServo('claw', 5)">+5°</button>
                             </div>
                         </div>
 
                         <div class="mt-3 text-center">
                             <button class="btn btn-warning" onclick="homeArm()">
-                                <i class="fas fa-home"></i> Home Position
+                                <i class="fas fa-home"></i> Home All Servos
                             </button>
                         </div>
                     </div>
@@ -206,20 +245,60 @@
 
         async function homeArm() {
             try {
-                log('Homing arm...');
+                log('Homing all servos...');
                 const response = await fetch('/api/arm/home', { method: 'POST' });
                 const result = await response.json();
                 log(result.message);
+                // Reset all servo inputs: most to 90°, claw to 0° (closed)
+                ['base', 'shoulder', 'forearm', 'elbow', 'pitch'].forEach(s => {
+                    document.getElementById(`servo-${s}`).value = 90;
+                });
+                document.getElementById('servo-claw').value = 0;  // Claw closed at 0°
             } catch (e) {
                 log('Error: ' + e.message);
             }
+        }
+
+        async function setServoAngle(servo, angle) {
+            try {
+                angle = parseInt(angle);
+                log(`Setting ${servo} to ${angle}°`);
+                const response = await fetch('/api/servo/set', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ servo: servo, angle: angle })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    log(`${servo} set to ${angle}°`);
+                } else {
+                    log(`Failed: ${result.message}`);
+                }
+            } catch (e) {
+                log('Error: ' + e.message);
+            }
+        }
+
+        async function adjustServo(servo, delta) {
+            const input = document.getElementById(`servo-${servo}`);
+            const current = parseInt(input.value) || 90;
+            const min = parseInt(input.min) || 0;
+            const max = parseInt(input.max) || 180;
+            const newAngle = Math.max(min, Math.min(max, current + delta));
+            input.value = newAngle;
+            await setServoAngle(servo, newAngle);
         }
 
         document.querySelectorAll('input[name="gripper"]').forEach(radio => {
             radio.addEventListener('change', async (e) => {
                 const state = e.target.id === 'gripper-open' ? 'open' : 'close';
                 log(`Setting gripper to ${state}`);
-                // API call would go here
+                try {
+                    const angle = state === 'open' ? 0 : 90;  // 0 = open, 90 = closed
+                    await setServoAngle('claw', angle);
+                } catch (e) {
+                    log('Gripper error: ' + e.message);
+                }
             });
         });
 
