@@ -24,8 +24,32 @@ from werkzeug.utils import secure_filename
 import yaml
 import cv2
 import numpy as np
-from flask_socketio import SocketIO, emit
-import eventlet
+
+# Try to import flask_socketio (required for WebSocket support)
+# Note: These imports are optional - if not installed, fallback classes are used
+# The linter warning about unresolved imports is expected and can be safely ignored
+try:
+    from flask_socketio import SocketIO, emit  # noqa: F401  # pyright: ignore
+    import eventlet  # noqa: F401  # pyright: ignore
+    SOCKETIO_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: flask_socketio not available: {e}")
+    print("Install with: pip install flask-socketio eventlet")
+    # Create dummy classes to prevent errors
+    class SocketIO:
+        def __init__(self, *args, **kwargs):
+            pass
+        def on(self, *args, **kwargs):
+            def decorator(func):
+                return func
+            return decorator
+        def emit(self, *args, **kwargs):
+            pass
+        def run(self, *args, **kwargs):
+            pass
+    def emit(*args, **kwargs):
+        pass
+    SOCKETIO_AVAILABLE = False
 
 # Try to import hardware controller (optional for non-Pi systems)
 try:
@@ -52,7 +76,15 @@ except ImportError:
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # Change this in production
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
+# Initialize SocketIO if available
+if SOCKETIO_AVAILABLE:
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+else:
+    socketio = SocketIO(app)  # Dummy instance
+
+# WebSocket client tracking
+arduino_clients = set()  # Track connected Arduino WebSocket clients
 
 # Configuration
 UPLOAD_FOLDER = 'datasets'
@@ -2007,6 +2039,14 @@ if __name__ == '__main__':
         print("  ✅ Hardware Control (Arduino + Camera)")
         print("  ✅ Robotic Arm Control")
     print("  ✅ System Monitoring")
+    if SOCKETIO_AVAILABLE:
+        print("  ✅ WebSocket Support (Real-time communication)")
+    else:
+        print("  ⚠️  WebSocket Support (Not available - install flask-socketio)")
     print("=" * 60)
     
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    if SOCKETIO_AVAILABLE:
+        socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+    else:
+        # Fallback to regular Flask if SocketIO not available
+        app.run(host='0.0.0.0', port=5000, debug=False)
