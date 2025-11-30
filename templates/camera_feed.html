@@ -283,20 +283,30 @@ function stopCamera() {
     
     // Stop the camera feed by removing the src attribute
     // This stops the browser from making requests to the video feed
-    cameraFeed.removeAttribute('src');
-    cameraFeed.src = ''; // Clear src completely
+    if (cameraFeed) {
+        cameraFeed.removeAttribute('src');
+        cameraFeed.src = ''; // Clear src completely
+        
+        // Force the image to stop loading
+        try {
+            cameraFeed.load(); // This forces the browser to stop loading
+        } catch (e) {
+            // Ignore errors
+        }
+    }
     
     // Show placeholder
     if (placeholder) {
-            placeholder.style.display = 'block';
+        placeholder.style.display = 'block';
     }
     
-    // Force the image to stop loading
-    try {
-        cameraFeed.load(); // This forces the browser to stop loading
-    } catch (e) {
-        // Ignore errors
+    // Stop auto-capture if running
+    if (cameraInterval) {
+        clearInterval(cameraInterval);
+        cameraInterval = null;
     }
+    
+    isCameraRunning = false;
     
     isCameraRunning = false;
     
@@ -313,6 +323,15 @@ function stopCamera() {
     
     updateStatus('Camera stopped', 'warning');
 }
+
+// Stop camera feed when page is unloaded
+window.addEventListener('beforeunload', function() {
+    stopCamera();
+});
+
+window.addEventListener('pagehide', function() {
+    stopCamera();
+});
 
 function captureImage() {
     // Create a canvas to capture the current frame

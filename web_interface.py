@@ -29,8 +29,12 @@ import numpy as np
 # Note: These imports are optional - if not installed, fallback classes are used
 # The linter warning about unresolved imports is expected and can be safely ignored
 try:
+    import warnings
+    # Suppress eventlet deprecation warning
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        import eventlet  # noqa: F401  # pyright: ignore
     from flask_socketio import SocketIO, emit  # noqa: F401  # pyright: ignore
-    import eventlet  # noqa: F401  # pyright: ignore
     SOCKETIO_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: flask_socketio not available: {e}")
@@ -77,6 +81,23 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # Change this in production
 
+# Disable caching for static files in development
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # Disable browser caching
+
+# Add context processor to inject timestamp into all templates for cache-busting
+@app.context_processor
+def inject_timestamp():
+    return dict(timestamp=int(time.time()))
+
+# Disable caching for all responses
+@app.after_request
+def add_no_cache_headers(response):
+    """Add no-cache headers to prevent browser caching"""
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
 # Initialize SocketIO if available
 if SOCKETIO_AVAILABLE:
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
@@ -119,6 +140,14 @@ system_state = {
     'current_frame': None,
     'session_start': datetime.now().isoformat()
 }
+
+# Global variable for camera index (fallback when hardware controller is not available)
+CURRENT_CAMERA_INDEX = 0
+
+# Camera list cache
+CAMERA_LIST_CACHE = None
+LAST_CAMERA_SCAN_TIME = 0
+CAMERA_CACHE_TTL = 60  # Cache for 60 seconds
 
 # Statistics storage file
 STATS_FILE = 'monitoring_stats.json'
@@ -742,35 +771,153 @@ def api_bluetooth_status():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/camera/list', methods=['GET'])
+@app.route('/api/camera/list', methods=['GET'])
 def api_list_cameras():
     """API endpoint to list all available cameras (built-in and USB)"""
+    global CAMERA_LIST_CACHE, LAST_CAMERA_SCAN_TIME
+    
     try:
-        if not HARDWARE_AVAILABLE or not hw_controller:
-            return jsonify({'success': False, 'message': 'Hardware controller not available'}), 500
+        force_refresh = request.args.get('refresh', 'false').lower() == 'true'
         
-        cameras = hw_controller.get_available_cameras()
-        return jsonify({
-            'success': True, 
-            'cameras': cameras, 
-            'current': hw_controller.camera_index if hw_controller.camera_connected else None
-        })
+        # ALWAYS use cache first if available (don't try to refresh if cameras are in use)
+        if CAMERA_LIST_CACHE is not None:
+            # Update current status in cached list
+            for cam in CAMERA_LIST_CACHE:
+                cam['current'] = (cam['index'] == CURRENT_CAMERA_INDEX)
+                if HARDWARE_AVAILABLE and hw_controller and hw_controller.camera_connected:
+                     cam['current'] = (cam['index'] == hw_controller.camera_index)
+            
+            return jsonify({
+                'success': True, 
+                'cameras': CAMERA_LIST_CACHE, 
+                'current': hw_controller.camera_index if (HARDWARE_AVAILABLE and hw_controller and hw_controller.camera_connected) else CURRENT_CAMERA_INDEX
+            })
+
+        # If no cache, build from hardware controller's available_cameras (fast, no camera opening)
+        if HARDWARE_AVAILABLE and hw_controller:
+            # Use available_cameras list from hardware controller (already detected, no need to open cameras)
+            if hasattr(hw_controller, 'available_cameras') and hw_controller.available_cameras:
+                # Build camera list from available_cameras (already detected, no camera opening)
+                cameras = []
+                for idx in hw_controller.available_cameras:
+                    try:
+                        camera_info = {
+                            'index': idx,
+                            'name': f"Camera {idx}",
+                            'type': 'Built-in' if idx == 0 else 'USB',
+                            'backend': 'V4L2',
+                            'resolution': '640x480',
+                            'current': idx == (hw_controller.camera_index if hw_controller.camera_connected else None)
+                        }
+                        cameras.append(camera_info)
+                    except:
+                        pass
+                current = hw_controller.camera_index if hw_controller.camera_connected else None
+                
+                # Cache the result
+                CAMERA_LIST_CACHE = cameras
+                LAST_CAMERA_SCAN_TIME = time.time()
+                
+                return jsonify({
+                    'success': True, 
+                    'cameras': cameras, 
+                    'current': current
+                })
+            else:
+                # No available_cameras list, return empty (don't try to open cameras - can hang)
+                return jsonify({
+                    'success': True,
+                    'cameras': [],
+                    'current': None,
+                    'message': 'Camera list not yet initialized'
+                })
+        else:
+            # Fallback: Just list /dev/video* devices without opening cameras (fast, no hanging)
+            cameras = []
+            
+            # Check for /dev/video* devices (don't open them - can hang if in use)
+            if os.path.exists('/dev'):
+                for item in sorted(os.listdir('/dev')):
+                    if item.startswith('video'):
+                        try:
+                            idx = int(item.replace('video', ''))
+                            
+                            # Build camera info without opening the camera (prevents hanging)
+                            camera_name = f"Camera {idx}"
+                            camera_type = "Built-in" if idx == 0 else "USB"
+                            
+                            cameras.append({
+                                'index': idx,
+                                'name': camera_name,
+                                'type': camera_type,
+                                'backend': 'V4L2',
+                                'resolution': '640x480',  # Default, don't try to read
+                                'current': idx == CURRENT_CAMERA_INDEX
+                            })
+                        except ValueError:
+                            pass
+            
+            current = CURRENT_CAMERA_INDEX
+            
+            # Cache the result
+            CAMERA_LIST_CACHE = cameras
+            LAST_CAMERA_SCAN_TIME = time.time()
+            
+            return jsonify({
+                'success': True, 
+                'cameras': cameras, 
+                'current': current
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/camera/stop', methods=['POST'])
+def api_stop_camera():
+    """API endpoint to stop camera feed"""
+    try:
+        if HARDWARE_AVAILABLE and hw_controller:
+            hw_controller.stop_camera_feed()
+            return jsonify({'success': True, 'message': 'Camera feed stopped'})
+        else:
+            return jsonify({'success': True, 'message': 'Camera feed stopped (no hardware controller)'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/camera/switch', methods=['POST'])
 def api_switch_camera():
     """API endpoint to switch to a different camera"""
+    global CURRENT_CAMERA_INDEX
     try:
-        if not HARDWARE_AVAILABLE or not hw_controller:
-            return jsonify({'success': False, 'message': 'Hardware controller not available'}), 500
-        
-        data = request.json
+        data = request.get_json()
         camera_index = data.get('index')
         
         if camera_index is None:
             return jsonify({'success': False, 'message': 'Camera index required'}), 400
+            
+        success = False
+        error_message = None
+        if HARDWARE_AVAILABLE and hw_controller:
+            try:
+                if hw_controller.switch_camera(camera_index):
+                    success = True
+                else:
+                    error_message = f"Hardware controller failed to switch to camera {camera_index}"
+            except Exception as e:
+                error_message = f"Error switching camera: {str(e)}"
+                print(f"Camera switch error: {e}")
+        else:
+            # Fallback: Just update the index for the generator
+            # Verify if camera exists first
+            import cv2
+            cap = cv2.VideoCapture(camera_index)
+            if cap.isOpened():
+                ret, _ = cap.read()
+                if ret:
+                    CURRENT_CAMERA_INDEX = camera_index
+                    success = True
+                cap.release()
         
-        if hw_controller.switch_camera(camera_index):
+        if success:
             # Save camera preference to file
             try:
                 camera_pref_file = 'camera_preference.json'
@@ -785,7 +932,8 @@ def api_switch_camera():
                 'current': camera_index
             })
         else:
-            return jsonify({'success': False, 'message': f'Failed to switch to camera {camera_index}'}), 500
+            error_msg = error_message or f'Failed to switch to camera {camera_index}'
+            return jsonify({'success': False, 'message': error_msg}), 500
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -959,8 +1107,24 @@ def handle_servo_command(data):
         cmd = data.get('cmd', '').lower()
         
         if cmd == 'connect':
+            # Try to re-initialize hardware controller if it's missing
+            global hw_controller, HARDWARE_AVAILABLE
+            if not HARDWARE_AVAILABLE or hw_controller is None:
+                try:
+                    from hardware_controller import HardwareController
+                    print("Attempting to re-initialize hardware controller...")
+                    hw_controller = HardwareController(connection_type='auto', ble_device_name="FarmBot")
+                    HARDWARE_AVAILABLE = True
+                    print("Hardware controller re-initialized successfully")
+                except Exception as e:
+                    print(f"Failed to re-initialize hardware controller: {e}")
+            
             # Initialize connection and check hardware status
             if HARDWARE_AVAILABLE and hw_controller:
+                # Try to connect if not connected
+                if not hw_controller.arduino_connected:
+                    hw_controller.connect_hardware()
+                    
                 # Get actual connection status
                 status = hw_controller.get_status()
                 arduino_connected = status.get('arduino_connected', False)
@@ -2079,31 +2243,41 @@ def api_camera_feed():
         def generate_frames():
             """Video streaming generator function using hardware controller."""
             frame_count = 0
-            while True:
-                frame = hw_controller.get_frame()
-                if frame is None:
-                    time.sleep(0.1)  # Wait a bit if no frame
-                    continue
+            try:
+                while True:
+                    # Check if camera is still connected
+                    if not hw_controller.camera_connected or not hw_controller.frame_update_running:
+                        break
                     
-                # Add timestamp (only every 10th frame to reduce CPU)
-                if frame_count % 10 == 0:
-                    cv2.putText(frame, f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", (10, 30), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                       
-                # Encode with lower quality for calibration page (faster)
-                # Use higher quality JPEG compression for smaller file size
-                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-                if not ret:
-                    continue  # Skip this frame if encoding failed
-                
-                frame_bytes = buffer.tobytes()
-                
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                
-                frame_count += 1
-                # Limit to ~10 FPS for calibration page (reduces CPU/network load)
-                time.sleep(0.1)
+                    frame = hw_controller.get_frame()
+                    if frame is None:
+                        time.sleep(0.1)  # Wait a bit if no frame
+                        continue
+                        
+                    # Add timestamp (only every 10th frame to reduce CPU)
+                    if frame_count % 10 == 0:
+                        cv2.putText(frame, f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", (10, 30), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                           
+                    # Encode with lower quality for calibration page (faster)
+                    # Use higher quality JPEG compression for smaller file size
+                    ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                    if not ret:
+                        continue  # Skip this frame if encoding failed
+                    
+                    frame_bytes = buffer.tobytes()
+                    
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                    
+                    frame_count += 1
+                    # Limit to ~10 FPS for calibration page (reduces CPU/network load)
+                    time.sleep(0.1)
+            except GeneratorExit:
+                # Client disconnected, stop gracefully
+                pass
+            except Exception as e:
+                print(f"Camera feed error: {e}")
         
         return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
     else:
@@ -2163,7 +2337,15 @@ def gen_frames():
         return
     
     # Fallback to direct camera access
-    cap = cv2.VideoCapture(0)
+    global CURRENT_CAMERA_INDEX
+    
+    # Try to open the selected camera
+    cap = cv2.VideoCapture(CURRENT_CAMERA_INDEX)
+    if not cap.isOpened():
+        # Try default 0 if selected fails
+        if CURRENT_CAMERA_INDEX != 0:
+            cap = cv2.VideoCapture(0)
+            
     if not cap.isOpened():
         # If no camera available, generate a placeholder image
         while True:
@@ -2190,10 +2372,24 @@ def gen_frames():
     while True:
         success, frame = cap.read()
         if not success:
+            # Try to reconnect
             cap.release()
-            cap = cv2.VideoCapture(0)
+            time.sleep(1)
+            cap = cv2.VideoCapture(CURRENT_CAMERA_INDEX)
+            if not cap.isOpened() and CURRENT_CAMERA_INDEX != 0:
+                cap = cv2.VideoCapture(0)
+            
             if not cap.isOpened():
-                break
+                # Show placeholder if reconnection fails
+                placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(placeholder, "Camera Disconnected", (150, 240), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                ret, buffer = cv2.imencode('.jpg', placeholder)
+                if ret:
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                time.sleep(1)
+                continue
             continue
         
         # Add timestamp (only update every 10 frames)
@@ -2613,6 +2809,28 @@ def not_found(error):
 def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
+# Initialize camera list cache on startup (non-blocking)
+def init_camera_cache():
+    """Initialize camera list cache in background"""
+    global CAMERA_LIST_CACHE, LAST_CAMERA_SCAN_TIME
+    try:
+        if HARDWARE_AVAILABLE and hw_controller and hasattr(hw_controller, 'available_cameras') and hw_controller.available_cameras:
+            cameras = []
+            for idx in hw_controller.available_cameras:
+                cameras.append({
+                    'index': idx,
+                    'name': f"Camera {idx}",
+                    'type': 'Built-in' if idx == 0 else 'USB',
+                    'backend': 'V4L2',
+                    'resolution': '640x480',
+                    'current': idx == (hw_controller.camera_index if hw_controller.camera_connected else None)
+                })
+            CAMERA_LIST_CACHE = cameras
+            LAST_CAMERA_SCAN_TIME = time.time()
+            print(f"📷 Camera list cache initialized: {len(cameras)} camera(s)")
+    except Exception as e:
+        print(f"⚠️  Could not initialize camera cache: {e}")
+
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -2642,6 +2860,9 @@ if __name__ == '__main__':
     else:
         print("  ⚠️  WebSocket Support (Not available - install flask-socketio)")
     print("=" * 60)
+    
+    # Initialize camera cache in background thread (non-blocking)
+    threading.Thread(target=init_camera_cache, daemon=True).start()
     
     if SOCKETIO_AVAILABLE:
         socketio.run(app, host='0.0.0.0', port=5000, debug=False)

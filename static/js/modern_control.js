@@ -27,7 +27,8 @@ function initializeSocketIO() {
             reconnectionDelay: 1000,
             reconnectionAttempts: 10,
             timeout: 20000,
-            forceNew: false
+            forceNew: false,
+            autoConnect: true
         });
         
         setupSocketHandlers();
@@ -57,7 +58,7 @@ function setupSocketHandlers() {
     socket.on('connect', () => {
         console.log('✅ Socket.IO connected');
         isConnected = true;
-        updateConnectionStatus(true);
+        updateConnectionStatus(true, 'Socket.IO Connected');
     });
     
     socket.on('disconnect', (reason) => {
@@ -88,46 +89,6 @@ function setupSocketHandlers() {
         console.error('Socket.IO reconnection failed');
         showNotification('Failed to reconnect. Please refresh the page.', 'danger');
     });
-
-// Servo configuration
-const servoConfig = {
-    base: { min: 0, max: 180, default: 90 },
-    forearm: { min: 10, max: 170, default: 90 },
-    shoulder: { min: 15, max: 165, default: 90 },
-    elbow: { min: 15, max: 165, default: 90 },
-    pitch: { min: 20, max: 160, default: 90 },
-    claw: { min: 0, max: 90, default: 0 },
-    speed: { min: 33, max: 100, default: 100 }
-};
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function () {
-    try {
-        // Initialize SocketIO first - wait a bit for SocketIO library to load
-        setTimeout(() => {
-            if (!initializeSocketIO()) {
-                console.warn('SocketIO initialization failed, but continuing with page setup');
-                updateConnectionStatus(false, 'SocketIO init failed');
-            }
-        }, 100);
-        
-        if (typeof initializeSliders === 'function') {
-            initializeSliders();
-        }
-        if (typeof setupEventListeners === 'function') {
-            setupEventListeners();
-        }
-        if (typeof initializeCamera === 'function') {
-            initializeCamera();
-        }
-    } catch (error) {
-        console.error('Error initializing control page:', error);
-    }
-});
-
-// Socket.IO event handlers (set up in setupSocketHandlers)
-function setupSocketHandlers() {
-    if (!socket) return;
     
     socket.on('status', (data) => {
         console.log('Status update:', data);
@@ -151,9 +112,57 @@ function setupSocketHandlers() {
     });
 }
 
-// Update telemetry display function is defined later in the file
+// Servo configuration
+const servoConfig = {
+    base: { min: 0, max: 180, default: 90 },
+    forearm: { min: 10, max: 170, default: 90 },
+    shoulder: { min: 15, max: 165, default: 90 },
+    elbow: { min: 15, max: 165, default: 90 },
+    pitch: { min: 20, max: 160, default: 90 },
+    claw: { min: 0, max: 90, default: 0 },
+    speed: { min: 33, max: 100, default: 100 }
+};
 
-// Socket error handler is in setupSocketHandlers
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function () {
+    try {
+        // Initialize SocketIO first - wait a bit for SocketIO library to load
+        setTimeout(() => {
+            if (!initializeSocketIO()) {
+                console.warn('SocketIO initialization failed, but continuing with page setup');
+                updateConnectionStatus(false, 'SocketIO init failed');
+            } else {
+                // Wait for socket connection before enabling connect button
+                const checkConnection = setInterval(() => {
+                    if (socket && socket.connected) {
+                        clearInterval(checkConnection);
+                        console.log('SocketIO connected, ready for commands');
+                    } else if (socket && socket.disconnected) {
+                        // Socket initialized but not connected yet, keep waiting
+                        console.log('Waiting for SocketIO connection...');
+                    }
+                }, 100);
+                
+                // Stop checking after 10 seconds
+                setTimeout(() => clearInterval(checkConnection), 10000);
+            }
+        }, 100);
+        
+        if (typeof initializeSliders === 'function') {
+            initializeSliders();
+        }
+        if (typeof setupEventListeners === 'function') {
+            setupEventListeners();
+        }
+        if (typeof initializeCamera === 'function') {
+            initializeCamera();
+        }
+    } catch (error) {
+        console.error('Error initializing control page:', error);
+    }
+});
+
+// Update telemetry display function is defined later in the file
 
 // Initialize sliders
 function initializeSliders() {
@@ -426,16 +435,50 @@ function setupEventListeners() {
 
 // Connect to Arduino
 function connectArduino() {
-    if (!socket || !socket.connected) {
-        showNotification('Socket.IO not connected. Please wait...', 'warning');
-        // Try to reconnect
-        if (socket) {
-            socket.connect();
+    // Check if socket is initialized
+    if (!socket) {
+        showNotification('Socket.IO not initialized. Initializing...', 'warning');
+        if (initializeSocketIO()) {
+            // Wait a bit for connection
+            setTimeout(() => {
+                if (socket && socket.connected) {
+                    socket.emit('servo_command', { cmd: 'connect' });
+                    showNotification('Connecting to Arduino...', 'info');
+                } else {
+                    showNotification('Socket.IO connection failed. Please refresh the page.', 'danger');
+                }
+            }, 1000);
         } else {
-            initializeSocketIO();
+            showNotification('Failed to initialize Socket.IO. Please refresh the page.', 'danger');
         }
         return;
     }
+    
+    // Check if socket is connected
+    if (!socket.connected) {
+        showNotification('Socket.IO not connected. Attempting to connect...', 'warning');
+        socket.connect();
+        // Wait for connection and retry
+        const retryConnect = () => {
+            if (socket.connected) {
+                socket.emit('servo_command', { cmd: 'connect' });
+                showNotification('Connecting to Arduino...', 'info');
+            } else {
+                setTimeout(() => {
+                    if (socket.connected) {
+                        socket.emit('servo_command', { cmd: 'connect' });
+                        showNotification('Connecting to Arduino...', 'info');
+                    } else {
+                        showNotification('Socket.IO connection timeout. Please check server status.', 'danger');
+                    }
+                }, 2000);
+            }
+        };
+        socket.once('connect', retryConnect);
+        return;
+    }
+    
+    // Socket is connected, proceed with connect command
     socket.emit('servo_command', { cmd: 'connect' });
     showNotification('Connecting to Arduino...', 'info');
 }

@@ -133,7 +133,7 @@
     <!-- Camera View -->
     <div class="col-lg-8">
                 <div class="card mb-4">
-            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="fas fa-camera"></i> Live Camera Feed</h5>
                 <div class="d-flex gap-2 align-items-center">
                     <select class="form-select form-select-sm" id="camera-selector" onchange="switchCamera()" style="width: auto; min-width: 150px;">
@@ -141,6 +141,12 @@
                     </select>
                     <button class="btn btn-sm btn-outline-light" onclick="refreshCameraList()" title="Refresh Camera List">
                         <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button id="btnStartCamera" class="btn btn-sm btn-success" onclick="startCameraFeed()" title="Start Camera">
+                        <i class="fas fa-play"></i> Start
+                    </button>
+                    <button id="btnStopCamera" class="btn btn-sm btn-danger" onclick="stopCameraFeed()" title="Stop Camera" style="display: none;">
+                        <i class="fas fa-stop"></i> Stop
                     </button>
                     <button class="btn btn-sm btn-outline-light" onclick="refreshCamera()" title="Refresh Camera">
                         <i class="fas fa-redo"></i>
@@ -151,9 +157,13 @@
                 </div>
                     </div>
                     <div class="card-body p-0">
-                        <div class="camera-view" id="camera-container">
-                    <img src="/api/camera/feed" id="camera-feed" alt="Camera Feed" 
+                        <div class="camera-view" id="camera-container" style="position: relative; background: #000; min-height: 480px; display: flex; align-items: center; justify-content: center;">
+                    <img id="camera-feed" alt="Camera Feed" style="display: none; width: 100%; height: auto;"
                          onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'640\' height=\'480\'%3E%3Crect fill=\'%23333\' width=\'640\' height=\'480\'/%3E%3Ctext fill=\'%23fff\' x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\'%3ECamera not available%3C/text%3E%3C/svg%3E'">
+                    <div id="camera-placeholder" style="color: #fff; text-align: center; position: absolute;">
+                        <i class="fas fa-camera" style="font-size: 3rem; opacity: 0.5;"></i>
+                        <p>Click "Start" to begin camera feed</p>
+                    </div>
                         </div>
                     </div>
                     <div class="card-footer">
@@ -839,6 +849,68 @@
         }
     }
 
+    // Camera feed control
+    let isCameraFeedRunning = false;
+    
+    function startCameraFeed() {
+        if (isCameraFeedRunning) return;
+        
+        const cameraFeed = document.getElementById('camera-feed');
+        const placeholder = document.getElementById('camera-placeholder');
+        const btnStart = document.getElementById('btnStartCamera');
+        const btnStop = document.getElementById('btnStopCamera');
+        
+        if (cameraFeed && placeholder) {
+            placeholder.style.display = 'none';
+            cameraFeed.style.display = 'block';
+            cameraFeed.src = "/api/camera/feed?" + new Date().getTime();
+            isCameraFeedRunning = true;
+            
+            if (btnStart) btnStart.style.display = 'none';
+            if (btnStop) btnStop.style.display = 'inline-block';
+        }
+    }
+    
+    function stopCameraFeed() {
+        if (!isCameraFeedRunning) return;
+        
+        const cameraFeed = document.getElementById('camera-feed');
+        const placeholder = document.getElementById('camera-placeholder');
+        const btnStart = document.getElementById('btnStartCamera');
+        const btnStop = document.getElementById('btnStopCamera');
+        
+        if (cameraFeed) {
+            cameraFeed.src = '';
+            cameraFeed.removeAttribute('src');
+            cameraFeed.style.display = 'none';
+            try {
+                cameraFeed.load();
+            } catch (e) {}
+        }
+        
+        if (placeholder) {
+            placeholder.style.display = 'block';
+        }
+        
+        isCameraFeedRunning = false;
+        
+        if (btnStart) btnStart.style.display = 'inline-block';
+        if (btnStop) btnStop.style.display = 'none';
+    }
+    
+    // Stop camera feed when page is unloaded
+    window.addEventListener('beforeunload', function() {
+        stopCameraFeed();
+    });
+    
+    window.addEventListener('pagehide', function() {
+        stopCameraFeed();
+    });
+    
+    // Make functions globally accessible
+    window.startCameraFeed = startCameraFeed;
+    window.stopCameraFeed = stopCameraFeed;
+    
     // Load calibration and camera list on page load
     document.addEventListener('DOMContentLoaded', function() {
         loadCalibration();

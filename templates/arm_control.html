@@ -7,7 +7,7 @@
     <title>FarmBOT - Arm Control</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/modern_control.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/modern_control.css') }}?v={{ timestamp }}" rel="stylesheet">
     <style>
         /* Ensure footer stays at bottom */
         html, body {
@@ -157,15 +157,21 @@
                             <button class="btn btn-sm btn-outline-light" onclick="refreshCameraList()" title="Refresh Camera List">
                                 <i class="fas fa-sync-alt"></i>
                             </button>
+                            <button id="btnStartCamera" class="btn btn-sm btn-success" onclick="startCameraFeed()" title="Start Camera">
+                                <i class="fas fa-play"></i> Start
+                            </button>
+                            <button id="btnStopCamera" class="btn btn-sm btn-danger" onclick="stopCameraFeed()" title="Stop Camera" style="display: none;">
+                                <i class="fas fa-stop"></i> Stop
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="camera-feed" id="cameraContainer">
-                            <img id="cameraFeed" src="/api/camera/feed" alt="Camera Feed"
+                            <img id="cameraFeed" alt="Camera Feed"
                                 style="display: none; width: 100%; height: auto;">
                             <div class="camera-placeholder" id="cameraPlaceholder">
                                 <i class="fas fa-camera"></i>
-                                <p>Camera feed will appear here</p>
+                                <p>Click "Start" to begin camera feed</p>
                             </div>
                         </div>
                     </div>
@@ -352,39 +358,35 @@
             }
         }, true);
     </script>
-    <script src="{{ url_for('static', filename='js/modern_control.js') }}" onerror="console.error('Failed to load modern_control.js')"></script>
+    <script src="{{ url_for('static', filename='js/modern_control.js') }}?v={{ timestamp }}" onerror="console.error('Failed to load modern_control.js')"></script>
     <script>
-        // Show notification function (if not defined in modern_control.js)
-        function showNotification(message, type = 'info') {
-            if (typeof window.showNotification === 'function') {
-                window.showNotification(message, type);
-                return;
-            }
-            // Fallback notification
-            const alertDiv = document.createElement('div');
-            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
-            alertDiv.style.zIndex = '9999';
-            alertDiv.style.minWidth = '300px';
-            alertDiv.innerHTML = `
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            document.body.appendChild(alertDiv);
-            setTimeout(() => alertDiv.remove(), 3000);
+        // Show notification function (fallback if not defined in modern_control.js)
+        if (typeof showNotification !== 'function') {
+            window.showNotification = function(message, type = 'info') {
+                // Fallback notification
+                const alertDiv = document.createElement('div');
+                alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
+                alertDiv.style.zIndex = '9999';
+                alertDiv.style.minWidth = '300px';
+                alertDiv.innerHTML = `
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.body.appendChild(alertDiv);
+                setTimeout(() => alertDiv.remove(), 3000);
+            };
         }
         
-        // Update connection status function (if not defined in modern_control.js)
-        function updateConnectionStatus(connected, message = null) {
-            if (typeof window.updateConnectionStatus === 'function') {
-                window.updateConnectionStatus(connected, message);
-                return;
-            }
-            const statusBadge = document.getElementById('connectionStatus');
-            if (statusBadge) {
-                statusBadge.className = connected ? 'connection-badge connected' : 'connection-badge disconnected';
-                const statusText = statusBadge.querySelector('span:last-child');
-                if (statusText) statusText.textContent = message || (connected ? 'Connected' : 'Disconnected');
-            }
+        // Update connection status function (fallback if not defined in modern_control.js)
+        if (typeof updateConnectionStatus !== 'function') {
+            window.updateConnectionStatus = function(connected, message = null) {
+                const statusBadge = document.getElementById('connectionStatus');
+                if (statusBadge) {
+                    statusBadge.className = connected ? 'connection-badge connected' : 'connection-badge disconnected';
+                    const statusText = statusBadge.querySelector('span:last-child');
+                    if (statusText) statusText.textContent = message || (connected ? 'Connected' : 'Disconnected');
+                }
+            };
         }
         
         // Check SocketIO server status on page load
@@ -402,26 +404,70 @@
             }
         }
         
+        // Track current camera to prevent unnecessary switches
+        let currentCameraIndex = null;
+        
         // Camera management functions
+        let cameraListLoading = false;
+        let cameraListAbortController = null;
+        
         async function loadCameraList() {
+            // Prevent multiple simultaneous loads
+            if (cameraListLoading) {
+                console.log('Camera list already loading, skipping...');
+                return;
+            }
+            
             try {
+                cameraListLoading = true;
                 console.log('Loading camera list...');
-                const response = await fetch('/api/camera/list');
+                const selector = document.getElementById('camera-selector');
+                if (!selector) {
+                    console.warn('Camera selector element not found');
+                    cameraListLoading = false;
+                    return;
+                }
+                
+                // Abort any previous request
+                if (cameraListAbortController) {
+                    cameraListAbortController.abort();
+                }
+                cameraListAbortController = new AbortController();
+                
+                // Set loading state
+                selector.innerHTML = '<option value="">Loading cameras...</option>';
+                selector.disabled = true;
+                
+                // Add timeout to prevent hanging
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('Request timeout')), 5000); // Reduced to 5 seconds
+                });
+                
+                const fetchPromise = fetch('/api/camera/list', {
+                    signal: cameraListAbortController.signal
+                });
+                const response = await Promise.race([fetchPromise, timeoutPromise]);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const result = await response.json();
                 
                 console.log('Camera list response:', result);
                 
+                selector.disabled = false;
+                
                 if (result.success && result.cameras) {
-                    const selector = document.getElementById('camera-selector');
-                    if (!selector) {
-                        console.warn('Camera selector element not found');
-                        return;
-                    }
+                    // Temporarily remove onchange handler to prevent triggering during update
+                    const originalOnchange = selector.onchange;
+                    selector.onchange = null;
                     
                     selector.innerHTML = '';
                     
                     if (result.cameras.length === 0) {
                         selector.innerHTML = '<option value="">No cameras found</option>';
+                        selector.onchange = originalOnchange; // Restore handler
                         return;
                     }
                     
@@ -432,26 +478,67 @@
                         option.textContent = `${camera.name}${typeLabel} (${camera.resolution})${camera.current ? ' [Current]' : ''}`;
                         if (camera.current) {
                             option.selected = true;
+                            // Update tracked current camera index
+                            currentCameraIndex = camera.index;
                         }
                         selector.appendChild(option);
                     });
                     
+                    // Restore onchange handler
+                    selector.onchange = originalOnchange;
+                    
                     console.log(`Loaded ${result.cameras.length} camera(s)`);
                 } else {
                     console.error('Failed to load cameras:', result.message || 'Unknown error');
-                    const selector = document.getElementById('camera-selector');
-                    if (selector) {
-                        selector.innerHTML = `<option value="">Error: ${result.message || 'Failed to load'}</option>`;
-                    }
+                    selector.innerHTML = `<option value="">Error: ${result.message || 'Failed to load'}</option>`;
                 }
             } catch (error) {
+                if (error.name === 'AbortError') {
+                    console.log('Camera list load aborted');
+                    return;
+                }
                 console.error('Error loading camera list:', error);
                 const selector = document.getElementById('camera-selector');
                 if (selector) {
+                    selector.disabled = false;
                     selector.innerHTML = `<option value="">Error: ${error.message}</option>`;
                 }
+            } finally {
+                cameraListLoading = false;
+                cameraListAbortController = null;
             }
         }
+        
+        // Abort camera list loading and stop camera feed on page unload
+        window.addEventListener('beforeunload', function() {
+            // Abort camera list loading
+            if (cameraListAbortController) {
+                cameraListAbortController.abort();
+            }
+            // Stop camera feed
+            if (isCameraFeedRunning) {
+                try {
+                    navigator.sendBeacon('/api/camera/stop', '');
+                } catch (e) {
+                    console.error('Error sending stop beacon:', e);
+                }
+                stopCameraFeed();
+            }
+        });
+        
+        window.addEventListener('pagehide', function() {
+            if (isCameraFeedRunning) {
+                try {
+                    navigator.sendBeacon('/api/camera/stop', '');
+                } catch (e) {
+                    console.error('Error sending stop beacon:', e);
+                }
+                stopCameraFeed();
+            }
+        });
+        
+        // Track current camera to prevent unnecessary switches
+        let currentCameraIndex = null;
         
         async function switchCamera() {
             const selector = document.getElementById('camera-selector');
@@ -459,6 +546,12 @@
             
             const cameraIndex = parseInt(selector.value);
             if (isNaN(cameraIndex)) return;
+            
+            // Don't switch if we're already on this camera
+            if (currentCameraIndex === cameraIndex) {
+                console.log(`Already on camera ${cameraIndex}, skipping switch`);
+                return;
+            }
             
             try {
                 const response = await fetch('/api/camera/switch', {
@@ -469,9 +562,19 @@
                 
                 const result = await response.json();
                 if (result.success) {
+                    currentCameraIndex = cameraIndex; // Update tracked index
                     showNotification(`Switched to camera ${cameraIndex}`, 'success');
-                    // Refresh camera list to update current indicator
-                    setTimeout(loadCameraList, 500);
+                    // Refresh camera list to update current indicator (but don't trigger switch again)
+                    setTimeout(() => {
+                        loadCameraList().then(() => {
+                            // Update tracked index from the loaded list
+                            const cameras = result.cameras || [];
+                            const currentCam = cameras.find(c => c.current);
+                            if (currentCam) {
+                                currentCameraIndex = currentCam.index;
+                            }
+                        });
+                    }, 500);
                     // Refresh camera feed
                     const cameraFeed = document.getElementById('cameraFeed');
                     if (cameraFeed) {
@@ -504,4 +607,5 @@
     </script>
 </body>
 
+</html>
 </html>

@@ -202,6 +202,8 @@ class HardwareController:
         self.last_frame = None
         self.connection_type = connection_type
         self.ble_device_name = ble_device_name
+        self.frame_update_thread = None
+        self.frame_update_running = False
         
         # Configuration
         self.arduino_port = '/dev/ttyUSB0'
@@ -506,7 +508,6 @@ class HardwareController:
         # Suppress OpenCV warnings during camera detection
         import os
         import sys
-        import warnings
         
         # First, check which /dev/video* devices exist to limit our search
         video_devices = []
@@ -520,69 +521,70 @@ class HardwareController:
                     except ValueError:
                         pass
         
-        # Save original stderr and stdout
-        original_stderr = sys.stderr
-        original_stdout = sys.stdout
+        # Determine indices to test
+        if video_devices:
+            # If we found video devices, ONLY test those
+            # This avoids trying to open non-existent cameras which causes warnings and delays
+            indices_to_test = sorted(list(set(video_devices)))
+        else:
+            # Fallback for non-Linux or if /dev/video* detection failed
+            indices_to_test = list(range(10))
         
-        # Test indices - prioritize /dev/video* devices, then test 0-9
-        indices_to_test = list(set(video_devices + list(range(10))))
-        indices_to_test.sort()
+        # Save original stderr file descriptor
+        original_stderr_fd = sys.stderr.fileno()
+        saved_stderr_fd = os.dup(original_stderr_fd)
         
-        for idx in indices_to_test:
-            test_cap = None
-            try:
-                # Suppress both stderr and stdout to hide OpenCV warnings completely
-                with open(os.devnull, 'w') as devnull:
-                    sys.stderr = devnull
-                    sys.stdout = devnull
-                    
-                    # Try to open camera with a short timeout
-                    test_cap = cv2.VideoCapture(idx, cv2.CAP_V4L2 if idx in video_devices else cv2.CAP_ANY)
-                    
-                    # Restore stderr/stdout immediately after opening
-                    sys.stderr = original_stderr
-                    sys.stdout = original_stdout
-                    
-                    if test_cap is not None and test_cap.isOpened():
-                        # Try to read a frame to verify it works
-                        ret, frame = test_cap.read()
-                        if ret and frame is not None:
-                            # Get camera info if available
-                            try:
-                                backend = test_cap.getBackendName()
-                            except:
-                                backend = "Unknown"
-                            
-                            try:
-                                width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
-                                height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
-                            except:
-                                width, height = 640, 480
-                            
-                            available.append(idx)
-                            self.logger.info(f"Found camera at index {idx}: {backend}, {width}x{height}")
-                    else:
-                        sys.stderr = original_stderr
-                        sys.stdout = original_stdout
-                    
-                    if test_cap:
-                        test_cap.release()
-            except Exception as e:
-                # Camera doesn't exist or failed - silently continue
-                sys.stderr = original_stderr
-                sys.stdout = original_stdout
-                if test_cap:
+        try:
+            # Open /dev/null
+            with open(os.devnull, 'w') as devnull:
+                # Redirect stderr to /dev/null at the OS level
+                os.dup2(devnull.fileno(), original_stderr_fd)
+                
+                for idx in indices_to_test:
+                    test_cap = None
                     try:
-                        test_cap.release()
-                    except:
-                        pass
-                # Don't log errors for missing cameras - this is expected
-                continue
+                        # Try to open camera with a short timeout
+                        # Use V4L2 backend if we know it's a V4L2 device, otherwise ANY
+                        backend = cv2.CAP_V4L2 if idx in video_devices else cv2.CAP_ANY
+                        test_cap = cv2.VideoCapture(idx, backend)
+                        
+                        if test_cap is not None and test_cap.isOpened():
+                            # Try to read a frame to verify it works
+                            ret, frame = test_cap.read()
+                            if ret and frame is not None:
+                                # Get camera info if available
+                                try:
+                                    backend_name = test_cap.getBackendName()
+                                except:
+                                    backend_name = "Unknown"
+                                
+                                try:
+                                    width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
+                                    height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
+                                except:
+                                    width, height = 640, 480
+                                
+                                available.append(idx)
+                                # We can't log here because stderr is redirected (and logging might use it)
+                                # So we'll log after restoring stderr
+                            
+                            test_cap.release()
+                    except Exception:
+                        if test_cap:
+                            try:
+                                test_cap.release()
+                            except:
+                                pass
+                        continue
+        finally:
+            # Restore stderr
+            os.dup2(saved_stderr_fd, original_stderr_fd)
+            os.close(saved_stderr_fd)
         
-        # Restore stderr and stdout
-        sys.stderr = original_stderr
-        sys.stdout = original_stdout
-        
+        # Log results now that stderr is restored
+        for idx in available:
+            self.logger.info(f"Found camera at index {idx}: V4L2, 640x480") # Simplified log
+            
         if available:
             self.logger.info(f"Detected {len(available)} camera(s): {available}")
         else:
@@ -597,9 +599,12 @@ class HardwareController:
             if self.camera:
                 try:
                     self.camera.release()
+                    # Give the camera a moment to fully release
+                    time.sleep(0.2)
                 except:
                     pass
                 self.camera = None
+                self.camera_connected = False
             
             # Suppress OpenCV warnings during connection
             import os
@@ -621,33 +626,69 @@ class HardwareController:
             # Use V4L2 backend if it's a /dev/video* device
             backend = cv2.CAP_V4L2 if camera_index in video_devices else cv2.CAP_ANY
             
+            # Try multiple backends if V4L2 fails
+            self.camera = None
+            backends_to_try = []
+            if camera_index in video_devices:
+                backends_to_try = [cv2.CAP_V4L2, cv2.CAP_ANY]
+            else:
+                backends_to_try = [cv2.CAP_ANY, cv2.CAP_V4L2]
+            
             with open(os.devnull, 'w') as devnull:
                 sys.stderr = devnull
                 sys.stdout = devnull
-                try:
-                    self.camera = cv2.VideoCapture(camera_index, backend)
-                except:
-                    # Fallback to default backend
-                    self.camera = cv2.VideoCapture(camera_index)
+                for backend_to_try in backends_to_try:
+                    try:
+                        self.camera = cv2.VideoCapture(camera_index, backend_to_try)
+                        if self.camera and self.camera.isOpened():
+                            break
+                        elif self.camera:
+                            self.camera.release()
+                            self.camera = None
+                    except Exception as e:
+                        self.logger.debug(f"Backend {backend_to_try} failed for camera {camera_index}: {e}")
+                        if self.camera:
+                            try:
+                                self.camera.release()
+                            except:
+                                pass
+                            self.camera = None
+                        continue
                 sys.stderr = original_stderr
                 sys.stdout = original_stdout
                 
-                if self.camera.isOpened():
-                    # Test if we can actually read a frame
-                    ret, frame = self.camera.read()
+                if self.camera and self.camera.isOpened():
+                    # Test if we can actually read a frame (try multiple times)
+                    ret = False
+                    frame = None
+                    for attempt in range(3):
+                        ret, frame = self.camera.read()
+                        if ret and frame is not None:
+                            break
+                        time.sleep(0.1)  # Wait a bit between attempts
+                    
                     if ret and frame is not None:
                         self.camera_index = camera_index
                         self.camera_connected = True
                         # Start frame reading thread
-                        threading.Thread(target=self._update_frame, daemon=True).start()
+                        self.frame_update_running = True
+                        self.frame_update_thread = threading.Thread(target=self._update_frame, daemon=True)
+                        self.frame_update_thread.start()
+                        self.logger.info(f"Camera {camera_index} connected successfully")
                         return True
                     else:
                         # Camera opened but can't read frames
-                        self.camera.release()
+                        self.logger.warning(f"Camera {camera_index} opened but cannot read frames")
+                        if self.camera:
+                            try:
+                                self.camera.release()
+                            except:
+                                pass
                         self.camera = None
                         return False
                 else:
                     # Camera didn't open
+                    self.logger.warning(f"Camera {camera_index} failed to open")
                     if self.camera:
                         try:
                             self.camera.release()
@@ -667,16 +708,42 @@ class HardwareController:
     
     def switch_camera(self, camera_index):
         """Switch to a different camera"""
-        if camera_index not in self.available_cameras:
-            self.logger.error(f"Camera index {camera_index} not available. Available: {self.available_cameras}")
+        # Convert to int if it's a string
+        try:
+            camera_index = int(camera_index)
+        except (ValueError, TypeError):
+            self.logger.error(f"Invalid camera index: {camera_index}")
             return False
         
+        # Check if camera is in available list
+        if not hasattr(self, 'available_cameras') or not self.available_cameras:
+            self.logger.warning("Available cameras list not initialized, attempting to detect...")
+            self.available_cameras = self._detect_available_cameras()
+        
+        if camera_index not in self.available_cameras:
+            self.logger.error(f"Camera index {camera_index} not available. Available: {self.available_cameras}")
+            # Try to detect again in case a new camera was connected
+            self.logger.info("Re-detecting cameras...")
+            self.available_cameras = self._detect_available_cameras()
+            if camera_index not in self.available_cameras:
+                self.logger.error(f"Camera index {camera_index} still not available after re-detection. Available: {self.available_cameras}")
+                return False
+            else:
+                self.logger.info(f"Camera {camera_index} found after re-detection")
+        
+        # Don't switch if we're already on this camera
+        if self.camera_connected and self.camera_index == camera_index:
+            self.logger.debug(f"Already on camera {camera_index}, skipping switch")
+            return True
+        
         old_index = self.camera_index
+        self.logger.info(f"Attempting to switch from camera {old_index} to camera {camera_index}")
+        
         if self._connect_camera(camera_index):
-            self.logger.info(f"Switched from camera {old_index} to camera {camera_index}")
+            self.logger.info(f"Successfully switched from camera {old_index} to camera {camera_index}")
             return True
         else:
-            self.logger.error(f"Failed to switch to camera {camera_index}")
+            self.logger.error(f"Failed to switch to camera {camera_index} - connection failed")
             return False
     
     def get_available_cameras(self):
@@ -745,12 +812,32 @@ class HardwareController:
 
     def _update_frame(self):
         """Background thread to keep reading frames"""
-        while self.camera_connected:
-            ret, frame = self.camera.read()
-            if ret:
-                with self.camera_lock:
-                    self.last_frame = frame
+        while self.camera_connected and self.frame_update_running:
+            if not self.camera or not self.camera.isOpened():
+                break
+            try:
+                ret, frame = self.camera.read()
+                if ret:
+                    with self.camera_lock:
+                        self.last_frame = frame
+            except Exception as e:
+                self.logger.error(f"Error reading frame: {e}")
+                break
             time.sleep(0.03) # ~30 FPS
+        self.logger.debug("Frame update thread stopped")
+    
+    def stop_camera_feed(self):
+        """Stop camera feed and frame update thread"""
+        self.logger.info("Stopping camera feed...")
+        self.frame_update_running = False
+        self.camera_connected = False
+        
+        # Wait a moment for thread to stop
+        if self.frame_update_thread and self.frame_update_thread.is_alive():
+            time.sleep(0.1)
+        
+        # Note: We don't release the camera here because it might be needed by other components
+        # The camera will be released when switching cameras or on shutdown
 
     def get_frame(self):
         """Get the latest camera frame"""

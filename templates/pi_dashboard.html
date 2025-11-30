@@ -170,12 +170,22 @@
                             <button class="btn btn-sm btn-outline-light" onclick="refreshCameraList()" title="Refresh Camera List">
                                 <i class="fas fa-sync-alt"></i>
                             </button>
+                            <button id="btnStartCamera" class="btn btn-sm btn-success" onclick="startCameraFeed()" title="Start Camera">
+                                <i class="fas fa-play"></i> Start
+                            </button>
+                            <button id="btnStopCamera" class="btn btn-sm btn-danger" onclick="stopCameraFeed()" title="Stop Camera" style="display: none;">
+                                <i class="fas fa-stop"></i> Stop
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="camera-feed">
-                            <img id="camera-feed" src="/api/camera/feed" alt="Camera Feed"
-                                style="width: 100%; height: 300px; object-fit: cover;">
+                        <div class="camera-feed" style="min-height: 300px; display: flex; align-items: center; justify-content: center; background: #000;">
+                            <img id="camera-feed" alt="Camera Feed"
+                                style="display: none; width: 100%; height: 300px; object-fit: cover;">
+                            <div id="camera-placeholder" style="color: #fff; text-align: center;">
+                                <i class="fas fa-camera" style="font-size: 3rem; opacity: 0.5;"></i>
+                                <p>Click "Start" to begin camera feed</p>
+                            </div>
                         </div>
                         <div class="mt-2">
                             <button id="capture-btn" class="btn btn-primary">
@@ -493,6 +503,68 @@
         function refreshCameraList() {
             loadCameraList();
         }
+        
+        // Camera feed control
+        let isCameraFeedRunning = false;
+        
+        function startCameraFeed() {
+            if (isCameraFeedRunning) return;
+            
+            const cameraFeed = document.getElementById('camera-feed');
+            const placeholder = document.getElementById('camera-placeholder');
+            const btnStart = document.getElementById('btnStartCamera');
+            const btnStop = document.getElementById('btnStopCamera');
+            
+            if (cameraFeed && placeholder) {
+                placeholder.style.display = 'none';
+                cameraFeed.style.display = 'block';
+                cameraFeed.src = "/api/camera/feed?" + new Date().getTime();
+                isCameraFeedRunning = true;
+                
+                if (btnStart) btnStart.style.display = 'none';
+                if (btnStop) btnStop.style.display = 'inline-block';
+            }
+        }
+        
+        function stopCameraFeed() {
+            if (!isCameraFeedRunning) return;
+            
+            const cameraFeed = document.getElementById('camera-feed');
+            const placeholder = document.getElementById('camera-placeholder');
+            const btnStart = document.getElementById('btnStartCamera');
+            const btnStop = document.getElementById('btnStopCamera');
+            
+            if (cameraFeed) {
+                cameraFeed.src = '';
+                cameraFeed.removeAttribute('src');
+                cameraFeed.style.display = 'none';
+                try {
+                    cameraFeed.load();
+                } catch (e) {}
+            }
+            
+            if (placeholder) {
+                placeholder.style.display = 'block';
+            }
+            
+            isCameraFeedRunning = false;
+            
+            if (btnStart) btnStart.style.display = 'inline-block';
+            if (btnStop) btnStop.style.display = 'none';
+        }
+        
+        // Stop camera feed when page is unloaded
+        window.addEventListener('beforeunload', function() {
+            stopCameraFeed();
+        });
+        
+        window.addEventListener('pagehide', function() {
+            stopCameraFeed();
+        });
+        
+        // Make functions globally accessible
+        window.startCameraFeed = startCameraFeed;
+        window.stopCameraFeed = stopCameraFeed;
 
         async function startCalibration() {
             try {
