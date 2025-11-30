@@ -101,6 +101,7 @@ function setupSocketHandlers() {
     });
     
     socket.on('telemetry', (data) => {
+        console.log('📡 Received telemetry event:', data);
         updateTelemetry(data);
     });
     
@@ -684,21 +685,41 @@ function updateConnectionStatus(connected, message = null) {
 
 // Update telemetry
 function updateTelemetry(data) {
-    if (data.distance_mm !== undefined) {
-        document.getElementById('distanceValue').textContent = `${data.distance_mm} mm`;
+    console.log('📊 Telemetry update received:', data);
+    
+    // Update distance (ToF)
+    const distanceElement = document.getElementById('distanceValue');
+    if (distanceElement) {
+        if (data.distance_mm !== undefined && data.distance_mm !== null && data.distance_mm > 0) {
+            distanceElement.textContent = `${data.distance_mm} mm`;
+        } else {
+            distanceElement.textContent = '-- mm';
+        }
+    } else {
+        console.warn('distanceValue element not found');
     }
 
+    // Update status
     if (data.status) {
-        document.getElementById('statusValue').textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+        const statusElement = document.getElementById('statusValue');
+        if (statusElement) {
+            statusElement.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+        } else {
+            console.warn('statusValue element not found');
+        }
     }
 
+    // Update connection status
     if (data.arduino_connected !== undefined) {
         updateConnectionStatus(data.arduino_connected);
     }
 
+    // Update mode toggle
     if (data.mode) {
         const modeToggle = document.getElementById('modeToggle');
-        modeToggle.checked = (data.mode === 'auto');
+        if (modeToggle) {
+            modeToggle.checked = (data.mode === 'auto');
+        }
     }
     
     // Update arm orientation from backend
@@ -710,9 +731,14 @@ function updateTelemetry(data) {
         }
     }
 
-    // Update last update time
-    const now = new Date();
-    document.getElementById('lastUpdate').textContent = now.toLocaleTimeString();
+    // Always update last update time when telemetry is received
+    const lastUpdateElement = document.getElementById('lastUpdate');
+    if (lastUpdateElement) {
+        const now = new Date();
+        lastUpdateElement.textContent = now.toLocaleTimeString();
+    } else {
+        console.warn('lastUpdate element not found');
+    }
 }
 
 // Initialize camera feed

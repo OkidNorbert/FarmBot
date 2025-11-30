@@ -526,6 +526,22 @@ void processTextCommand(String command) {
     else if (command.startsWith("STATUS")) {
         sendStatus();
     }
+    else if (command.startsWith("DISTANCE")) {
+        // DISTANCE - Read distance from ToF sensor
+        int distance = tofManager.getDistance();
+        if (distance < 0) {
+            // Sensor not initialized or out of range
+            Serial.println("DISTANCE: OUT_OF_RANGE");
+        } else {
+            // Check if distance is in valid range
+            if (tofManager.isRangeValid(distance)) {
+                Serial.print("DISTANCE: ");
+                Serial.println(distance);
+            } else {
+                Serial.println("DISTANCE: OUT_OF_RANGE");
+            }
+        }
+    }
     else {
         Serial.print("Unknown text command: ");
         Serial.println(command);

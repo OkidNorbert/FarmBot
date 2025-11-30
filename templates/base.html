@@ -126,6 +126,20 @@
             border-color: #28a745;
             background-color: #f8fff9;
         }
+
+        /* Ensure dropdown menus work properly */
+        .navbar .dropdown-menu {
+            z-index: 1050;
+            position: absolute;
+        }
+
+        .navbar .dropdown-toggle {
+            cursor: pointer;
+        }
+
+        .navbar .dropdown-toggle:focus {
+            outline: none;
+        }
     </style>
 </head>
 
@@ -148,10 +162,10 @@
                     </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="trainingDropdown" role="button"
-                            data-bs-toggle="dropdown">
+                            data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="fas fa-brain"></i> AI Training
                         </a>
-                        <ul class="dropdown-menu">
+                        <ul class="dropdown-menu" aria-labelledby="trainingDropdown">
                             <li><a class="dropdown-item" href="{{ url_for('training_dashboard') }}">
                                     <i class="fas fa-tachometer-alt"></i> Training Dashboard
                                 </a></li>
@@ -165,10 +179,10 @@
                     </li>
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="controlDropdown" role="button"
-                            data-bs-toggle="dropdown">
+                            data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="fas fa-cogs"></i> Control
                         </a>
-                        <ul class="dropdown-menu">
+                        <ul class="dropdown-menu" aria-labelledby="controlDropdown">
                             <li><a class="dropdown-item" href="{{ url_for('control') }}">
                                     <i class="fas fa-gamepad"></i> Control Panel
                                 </a></li>
@@ -238,7 +252,6 @@
         (function() {
             function initDropdowns() {
                 if (typeof bootstrap === 'undefined') {
-                    console.warn('Bootstrap not loaded yet, retrying...');
                     setTimeout(initDropdowns, 100);
                     return;
                 }
@@ -246,6 +259,14 @@
                 // Initialize all dropdowns that aren't already initialized
                 document.querySelectorAll('.dropdown-toggle').forEach(function(element) {
                     try {
+                        // Ensure proper attributes for accessibility
+                        if (!element.hasAttribute('aria-expanded')) {
+                            element.setAttribute('aria-expanded', 'false');
+                        }
+                        if (!element.hasAttribute('aria-haspopup')) {
+                            element.setAttribute('aria-haspopup', 'true');
+                        }
+                        
                         // Check if dropdown is already initialized
                         var existingDropdown = bootstrap.Dropdown.getInstance(element);
                         if (!existingDropdown) {
@@ -258,15 +279,20 @@
                 });
             }
             
-            // Initialize on DOM ready
+            // Initialize when DOM is ready
             if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initDropdowns);
+                document.addEventListener('DOMContentLoaded', function() {
+                    initDropdowns();
+                    // Re-initialize after a delay to catch any late-loading content
+                    setTimeout(initDropdowns, 300);
+                });
             } else {
                 initDropdowns();
+                setTimeout(initDropdowns, 300);
             }
             
-            // Also re-initialize after a short delay to catch any late-loading content
-            setTimeout(initDropdowns, 500);
+            // Also ensure dropdowns work after page navigation (for SPA-like behavior)
+            window.addEventListener('load', initDropdowns);
         })();
     </script>
 

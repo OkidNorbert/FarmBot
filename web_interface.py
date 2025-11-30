@@ -1395,7 +1395,7 @@ def controller_telemetry_thread():
                 
                 # Emit telemetry to all connected clients (no namespace = default)
                 telemetry_data = {
-                    'distance_mm': distance if distance else 0,
+                    'distance_mm': distance if distance is not None else None,
                     'status': status,
                     'mode': 'auto' if hw_controller.auto_mode else 'manual',
                     'arduino_connected': hw_status.get('arduino_connected', False),
@@ -1404,17 +1404,24 @@ def controller_telemetry_thread():
                     'arm_orientation': hw_status.get('arm_orientation', 'unknown'),
                     'servo_angles': hw_status.get('servo_angles', {})
                 }
-                socketio.emit('telemetry', telemetry_data)
+                # Use app context for emit in background thread
+                # Emit to all clients in default namespace
+                with app.app_context():
+                    socketio.emit('telemetry', telemetry_data)
             else:
                 # Emit default telemetry when hardware not available
-                socketio.emit('telemetry', {
-                    'distance_mm': 0,
+                default_telemetry = {
+                    'distance_mm': None,
                     'status': 'unavailable',
                     'mode': 'manual',
                     'arduino_connected': False,
                     'camera_connected': False,
                     'connection_type': 'none'
-                })
+                }
+                # Use app context for emit in background thread
+                # Emit to all clients in default namespace
+                with app.app_context():
+                    socketio.emit('telemetry', default_telemetry)
             
             time.sleep(0.5)  # Update every 500ms
         except Exception as e:
