@@ -9,8 +9,12 @@ function initializeSocketIO() {
         // Check if Socket.IO library is loaded
         if (typeof io === 'undefined') {
             console.error('Socket.IO library not loaded. Please check if the CDN script is loaded.');
-            showNotification('Socket.IO library not found. Please refresh the page.', 'danger');
-            updateConnectionStatus(false, 'Socket.IO library not loaded');
+            if (typeof showNotification === 'function') {
+                showNotification('Socket.IO library not found. Please refresh the page.', 'danger');
+            }
+            if (typeof updateConnectionStatus === 'function') {
+                updateConnectionStatus(false, 'Socket.IO library not loaded');
+            }
             return false;
         }
         
@@ -29,13 +33,19 @@ function initializeSocketIO() {
         setupSocketHandlers();
         
         // Set initial connection status
-        updateConnectionStatus(false, 'Connecting...');
+        if (typeof updateConnectionStatus === 'function') {
+            updateConnectionStatus(false, 'Connecting...');
+        }
         
         return true;
     } catch (error) {
         console.error('Failed to initialize SocketIO:', error);
-        showNotification('Failed to connect to server: ' + error.message, 'danger');
-        updateConnectionStatus(false, 'Connection failed');
+        if (typeof showNotification === 'function') {
+            showNotification('Failed to connect to server: ' + error.message, 'danger');
+        }
+        if (typeof updateConnectionStatus === 'function') {
+            updateConnectionStatus(false, 'Connection failed');
+        }
         return false;
     }
 }
@@ -93,10 +103,13 @@ const servoConfig = {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function () {
     try {
-        // Initialize SocketIO first
-        if (!initializeSocketIO()) {
-            console.warn('SocketIO initialization failed, but continuing with page setup');
-        }
+        // Initialize SocketIO first - wait a bit for SocketIO library to load
+        setTimeout(() => {
+            if (!initializeSocketIO()) {
+                console.warn('SocketIO initialization failed, but continuing with page setup');
+                updateConnectionStatus(false, 'SocketIO init failed');
+            }
+        }, 100);
         
         if (typeof initializeSliders === 'function') {
             initializeSliders();

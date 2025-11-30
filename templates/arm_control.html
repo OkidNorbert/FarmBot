@@ -405,12 +405,18 @@
         // Camera management functions
         async function loadCameraList() {
             try {
+                console.log('Loading camera list...');
                 const response = await fetch('/api/camera/list');
                 const result = await response.json();
                 
+                console.log('Camera list response:', result);
+                
                 if (result.success && result.cameras) {
                     const selector = document.getElementById('camera-selector');
-                    if (!selector) return;
+                    if (!selector) {
+                        console.warn('Camera selector element not found');
+                        return;
+                    }
                     
                     selector.innerHTML = '';
                     
@@ -429,12 +435,20 @@
                         }
                         selector.appendChild(option);
                     });
+                    
+                    console.log(`Loaded ${result.cameras.length} camera(s)`);
+                } else {
+                    console.error('Failed to load cameras:', result.message || 'Unknown error');
+                    const selector = document.getElementById('camera-selector');
+                    if (selector) {
+                        selector.innerHTML = `<option value="">Error: ${result.message || 'Failed to load'}</option>`;
+                    }
                 }
             } catch (error) {
                 console.error('Error loading camera list:', error);
                 const selector = document.getElementById('camera-selector');
                 if (selector) {
-                    selector.innerHTML = '<option value="">Error loading cameras</option>';
+                    selector.innerHTML = `<option value="">Error: ${error.message}</option>`;
                 }
             }
         }
@@ -455,6 +469,7 @@
                 
                 const result = await response.json();
                 if (result.success) {
+                    showNotification(`Switched to camera ${cameraIndex}`, 'success');
                     // Refresh camera list to update current indicator
                     setTimeout(loadCameraList, 500);
                     // Refresh camera feed
@@ -465,15 +480,21 @@
                     }
                 } else {
                     console.error('Failed to switch camera:', result.message);
+                    showNotification('Failed to switch camera: ' + result.message, 'danger');
                 }
             } catch (error) {
                 console.error('Error switching camera:', error);
+                showNotification('Error switching camera: ' + error.message, 'danger');
             }
         }
         
-        function refreshCameraList() {
+        // Make functions globally accessible for onclick handlers
+        window.refreshCameraList = function() {
             loadCameraList();
-        }
+        };
+        
+        window.switchCamera = switchCamera;
+        window.loadCameraList = loadCameraList;
         
         // Load camera list and check SocketIO on page load
         document.addEventListener('DOMContentLoaded', function() {
