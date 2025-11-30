@@ -157,6 +157,13 @@ document.addEventListener('DOMContentLoaded', function () {
         if (typeof initializeCamera === 'function') {
             initializeCamera();
         }
+        
+        // Initialize arm orientation display after sliders are initialized
+        setTimeout(() => {
+            if (typeof updateArmOrientation === 'function') {
+                updateArmOrientation();
+            }
+        }, 200);
     } catch (error) {
         console.error('Error initializing control page:', error);
     }
@@ -191,6 +198,11 @@ function initializeSliders() {
         slider.addEventListener('input', function () {
             const value = parseInt(this.value);
             updateSliderDisplay(servo, value);
+            
+            // Update arm orientation when shoulder or forearm changes
+            if (servo === 'shoulder' || servo === 'forearm') {
+                updateArmOrientation();
+            }
 
             if (servo === 'speed') {
                 currentSpeed = value;
@@ -249,6 +261,53 @@ function unhighlightServo(servo) {
     }
 }
 
+// Determine arm orientation (front/back) based on shoulder and forearm angles
+function determineArmOrientation() {
+    const shoulderSlider = document.getElementById('shoulderSlider');
+    const forearmSlider = document.getElementById('forearmSlider');
+    
+    if (!shoulderSlider || !forearmSlider) {
+        return null;
+    }
+    
+    const shoulderAngle = parseInt(shoulderSlider.value);
+    const forearmAngle = parseInt(forearmSlider.value);
+    
+    // Front: shoulder and forearm are 90-180 degrees
+    // Back: shoulder and forearm are 90-0 degrees
+    const isShoulderFront = shoulderAngle >= 90 && shoulderAngle <= 180;
+    const isForearmFront = forearmAngle >= 90 && forearmAngle <= 180;
+    const isShoulderBack = shoulderAngle >= 0 && shoulderAngle <= 90;
+    const isForearmBack = forearmAngle >= 0 && forearmAngle <= 90;
+    
+    // Determine orientation based on both servos
+    if (isShoulderFront && isForearmFront) {
+        return 'front';
+    } else if (isShoulderBack && isForearmBack) {
+        return 'back';
+    } else {
+        // Mixed orientation - determine based on which is more dominant
+        const shoulderFrontness = (shoulderAngle - 90) / 90; // 0 to 1 for front
+        const forearmFrontness = (forearmAngle - 90) / 90; // 0 to 1 for front
+        const avgFrontness = (shoulderFrontness + forearmFrontness) / 2;
+        
+        return avgFrontness > 0 ? 'front' : 'back';
+    }
+}
+
+// Update arm orientation display
+function updateArmOrientation() {
+    const orientation = determineArmOrientation();
+    const orientationElement = document.getElementById('armOrientation');
+    
+    if (orientationElement && orientation) {
+        orientationElement.textContent = orientation === 'front' ? 'Front' : 'Back';
+        orientationElement.className = orientation === 'front' 
+            ? 'badge bg-success' 
+            : 'badge bg-info';
+    }
+}
+
 // Update slider display
 function updateSliderDisplay(servo, value) {
     const valueElement = document.getElementById(`${servo}Value`);
@@ -258,6 +317,11 @@ function updateSliderDisplay(servo, value) {
         } else {
             valueElement.textContent = `${value}°`;
             updateArmVisualization(servo, value);
+            
+            // Update arm orientation when shoulder or forearm changes
+            if (servo === 'shoulder' || servo === 'forearm') {
+                updateArmOrientation();
+            }
         }
     }
 }
@@ -635,6 +699,15 @@ function updateTelemetry(data) {
     if (data.mode) {
         const modeToggle = document.getElementById('modeToggle');
         modeToggle.checked = (data.mode === 'auto');
+    }
+    
+    // Update arm orientation from backend
+    if (data.arm_orientation) {
+        const orientationElement = document.getElementById('armOrientation');
+        if (orientationElement) {
+            const orientation = data.arm_orientation === 'front' ? 'Front' : 'Back';
+            orientationElement.innerHTML = `<span class="badge ${data.arm_orientation === 'front' ? 'bg-success' : 'bg-info'}">${orientation}</span>`;
+        }
     }
 
     // Update last update time

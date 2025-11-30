@@ -231,6 +231,44 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <!-- Initialize Bootstrap dropdowns -->
+    <script>
+        // Ensure Bootstrap dropdowns work on all pages
+        (function() {
+            function initDropdowns() {
+                if (typeof bootstrap === 'undefined') {
+                    console.warn('Bootstrap not loaded yet, retrying...');
+                    setTimeout(initDropdowns, 100);
+                    return;
+                }
+                
+                // Initialize all dropdowns that aren't already initialized
+                document.querySelectorAll('.dropdown-toggle').forEach(function(element) {
+                    try {
+                        // Check if dropdown is already initialized
+                        var existingDropdown = bootstrap.Dropdown.getInstance(element);
+                        if (!existingDropdown) {
+                            // Initialize new dropdown
+                            new bootstrap.Dropdown(element);
+                        }
+                    } catch (e) {
+                        console.error('Error initializing dropdown:', e);
+                    }
+                });
+            }
+            
+            // Initialize on DOM ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initDropdowns);
+            } else {
+                initDropdowns();
+            }
+            
+            // Also re-initialize after a short delay to catch any late-loading content
+            setTimeout(initDropdowns, 500);
+        })();
+    </script>
 
     {% block scripts %}{% endblock %}
 </body>

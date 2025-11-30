@@ -205,6 +205,17 @@ class HardwareController:
         self.frame_update_thread = None
         self.frame_update_running = False
         
+        # Track current servo angles (for front/back detection)
+        # Servo indices: 0=base, 1=shoulder/arm, 2=forearm, 3=elbow/wrist_yaw, 4=pitch, 5=claw
+        self.current_servo_angles = {
+            'base': 90,
+            'shoulder': 90,  # Also called 'arm' in backend
+            'forearm': 90,
+            'elbow': 90,  # Also called 'wrist_yaw' in backend
+            'pitch': 90,  # Also called 'wrist_pitch' in backend
+            'claw': 0
+        }
+        
         # Configuration
         self.arduino_port = '/dev/ttyUSB0'
         self.arduino_baud = 115200
@@ -272,13 +283,50 @@ class HardwareController:
             
             time.sleep(0.1) # Prevent CPU hogging
 
+    def is_arm_facing_front(self):
+        """Determine if arm is facing front based on shoulder and forearm angles
+        
+        Returns:
+            bool: True if arm is facing front (shoulder and forearm 90-180°), False otherwise
+        """
+        shoulder_angle = self.current_servo_angles.get('shoulder', 90)
+        forearm_angle = self.current_servo_angles.get('forearm', 90)
+        
+        # Front: shoulder and forearm are 90-180 degrees
+        # Back: shoulder and forearm are 90-0 degrees
+        is_shoulder_front = 90 <= shoulder_angle <= 180
+        is_forearm_front = 90 <= forearm_angle <= 180
+        is_shoulder_back = 0 <= shoulder_angle <= 90
+        is_forearm_back = 0 <= forearm_angle <= 90
+        
+        # If both are clearly front or back, use that
+        if is_shoulder_front and is_forearm_front:
+            return True
+        elif is_shoulder_back and is_forearm_back:
+            return False
+        else:
+            # Mixed orientation - calculate average "frontness"
+            # Frontness: 0 (back) to 1 (front) based on how far from 90° toward 180°
+            shoulder_frontness = (shoulder_angle - 90) / 90.0  # 0 to 1 for 90-180
+            forearm_frontness = (forearm_angle - 90) / 90.0  # 0 to 1 for 90-180
+            avg_frontness = (shoulder_frontness + forearm_frontness) / 2.0
+            
+            # Consider front if average frontness > 0 (more toward 180 than 0)
+            return avg_frontness > 0
+
     def process_auto_cycle(self):
         """Single cycle of autonomous logic - Only picks 'ready' tomatoes"""
+        # Check if arm is facing front before detecting tomatoes
+        # Tomatoes are always placed in front of the arm
+        if not self.is_arm_facing_front():
+            self.logger.debug("[AUTO] Arm is facing back, skipping detection (tomatoes are in front)")
+            return
+        
         frame = self.get_frame()
         if frame is None:
             return
 
-        # 1. Detect
+        # 1. Detect (only when arm is facing front)
         detections = self.detect_tomatoes(frame)
         
         # 2. Filter: Only pick "ready" tomatoes in automatic mode
@@ -852,8 +900,45 @@ class HardwareController:
                    (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         return img
 
+    def update_servo_angle(self, servo_name, angle):
+        """Update tracked servo angle"""
+        # Map backend servo names to our tracking names
+        servo_map = {
+            'base': 'base',
+            'arm': 'shoulder',  # Backend 'arm' is frontend 'shoulder'
+            'shoulder': 'shoulder',
+            'forearm': 'forearm',
+            'wrist_yaw': 'elbow',  # Backend 'wrist_yaw' is frontend 'elbow'
+            'elbow': 'elbow',
+            'wrist_pitch': 'pitch',  # Backend 'wrist_pitch' is frontend 'pitch'
+            'pitch': 'pitch',
+            'claw': 'claw'
+        }
+        
+        tracked_name = servo_map.get(servo_name.lower(), servo_name.lower())
+        if tracked_name in self.current_servo_angles:
+            self.current_servo_angles[tracked_name] = int(angle)
+            self.logger.debug(f"Updated {tracked_name} angle to {angle}°")
+
     def send_command(self, command):
         """Send G-code style command to Arduino (via Serial or Bluetooth)"""
+        # Parse ANGLE commands to track servo angles
+        if command.startswith("ANGLE"):
+            try:
+                parts = command.split()
+                if len(parts) >= 7:  # ANGLE base shoulder forearm elbow pitch claw
+                    # Update tracked angles (skip -1 values which mean "keep current")
+                    servo_names = ['base', 'shoulder', 'forearm', 'elbow', 'pitch', 'claw']
+                    for i, angle_str in enumerate(parts[1:7]):
+                        if angle_str != '-1' and i < len(servo_names):
+                            try:
+                                angle = int(angle_str)
+                                self.update_servo_angle(servo_names[i], angle)
+                            except ValueError:
+                                pass
+            except Exception as e:
+                self.logger.debug(f"Could not parse ANGLE command for tracking: {e}")
+        
         # Check BLE connection status dynamically
         ble_connected = False
         if self.ble_client:
@@ -990,6 +1075,9 @@ class HardwareController:
         elif self.arduino_connected:
             arduino_conn = True
         
+        # Determine arm orientation
+        is_facing_front = self.is_arm_facing_front()
+        
         status = {
             'arduino_connected': arduino_conn,
             'camera_connected': self.camera_connected,
@@ -997,7 +1085,9 @@ class HardwareController:
             'available_cameras': len(self.available_cameras) if hasattr(self, 'available_cameras') else 0,
             'auto_mode': self.auto_mode,
             'connection_type': connection_type,
-            'classifier_loaded': self.classifier is not None
+            'classifier_loaded': self.classifier is not None,
+            'arm_orientation': 'front' if is_facing_front else 'back',
+            'servo_angles': self.current_servo_angles.copy()
         }
         
         if self.ble_client:

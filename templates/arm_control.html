@@ -151,12 +151,6 @@
                     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
                         <h5 class="mb-0"><i class="fas fa-camera"></i> Live Camera Feed</h5>
                         <div class="d-flex gap-2 align-items-center">
-                            <select id="camera-selector" class="form-select form-select-sm" onchange="switchCamera()" style="width: auto; min-width: 150px;">
-                                <option value="">Loading cameras...</option>
-                            </select>
-                            <button class="btn btn-sm btn-outline-light" onclick="refreshCameraList()" title="Refresh Camera List">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
                             <button id="btnStartCamera" class="btn btn-sm btn-success" onclick="startCameraFeed()" title="Start Camera">
                                 <i class="fas fa-play"></i> Start
                             </button>
@@ -166,6 +160,14 @@
                         </div>
                     </div>
                     <div class="card-body">
+                        <div class="mb-2 d-flex gap-2 align-items-center">
+                            <select id="camera-selector" class="form-select form-select-sm" onchange="switchCamera()" style="width: auto; min-width: 150px;">
+                                <option value="">Loading cameras...</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="refreshCameraList()" title="Refresh Camera List">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
                         <div class="camera-feed" id="cameraContainer">
                             <img id="cameraFeed" alt="Camera Feed"
                                 style="display: none; width: 100%; height: auto;">
@@ -186,6 +188,12 @@
                         <div class="telemetry-card">
                             <div class="telemetry-label"><i class="fas fa-ruler-vertical"></i> Distance (ToF)</div>
                             <div class="telemetry-value" id="distanceValue">-- mm</div>
+                        </div>
+                        <div class="telemetry-card">
+                            <div class="telemetry-label"><i class="fas fa-compass"></i> Arm Orientation</div>
+                            <div class="telemetry-value" id="armOrientation">
+                                <span class="badge bg-secondary">--</span>
+                            </div>
                         </div>
                         <div class="telemetry-card">
                             <div class="telemetry-label"><i class="fas fa-info-circle"></i> Status</div>
@@ -409,7 +417,6 @@
         
         // Camera management functions
         let cameraListLoading = false;
-        let cameraListAbortController = null;
         
         async function loadCameraList() {
             // Prevent multiple simultaneous loads
@@ -418,35 +425,23 @@
                 return;
             }
             
+            const selector = document.getElementById('camera-selector');
+            if (!selector) {
+                console.warn('Camera selector element not found');
+                return;
+            }
+            
             try {
                 cameraListLoading = true;
+                window.lastCameraListLoadTime = Date.now();
                 console.log('Loading camera list...');
-                const selector = document.getElementById('camera-selector');
-                if (!selector) {
-                    console.warn('Camera selector element not found');
-                    cameraListLoading = false;
-                    return;
-                }
-                
-                // Abort any previous request
-                if (cameraListAbortController) {
-                    cameraListAbortController.abort();
-                }
-                cameraListAbortController = new AbortController();
                 
                 // Set loading state
                 selector.innerHTML = '<option value="">Loading cameras...</option>';
                 selector.disabled = true;
                 
-                // Add timeout to prevent hanging
-                const timeoutPromise = new Promise((_, reject) => {
-                    setTimeout(() => reject(new Error('Request timeout')), 5000); // Reduced to 5 seconds
-                });
-                
-                const fetchPromise = fetch('/api/camera/list', {
-                    signal: cameraListAbortController.signal
-                });
-                const response = await Promise.race([fetchPromise, timeoutPromise]);
+                // Simple fetch like the working feed page - no complex timeout logic
+                const response = await fetch('/api/camera/list');
                 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -458,6 +453,12 @@
                 
                 selector.disabled = false;
                 
+                if (!result.success) {
+                    console.error('Camera list API returned error:', result.message);
+                    selector.innerHTML = `<option value="">Error: ${result.message || 'Failed to load cameras'}</option>`;
+                    return;
+                }
+                
                 if (result.success && result.cameras) {
                     // Temporarily remove onchange handler to prevent triggering during update
                     const originalOnchange = selector.onchange;
@@ -468,6 +469,8 @@
                     if (result.cameras.length === 0) {
                         selector.innerHTML = '<option value="">No cameras found</option>';
                         selector.onchange = originalOnchange; // Restore handler
+                        selector.disabled = false;
+                        console.warn('No cameras detected');
                         return;
                     }
                     
@@ -493,29 +496,95 @@
                     selector.innerHTML = `<option value="">Error: ${result.message || 'Failed to load'}</option>`;
                 }
             } catch (error) {
-                if (error.name === 'AbortError') {
-                    console.log('Camera list load aborted');
-                    return;
-                }
                 console.error('Error loading camera list:', error);
-                const selector = document.getElementById('camera-selector');
                 if (selector) {
                     selector.disabled = false;
-                    selector.innerHTML = `<option value="">Error: ${error.message}</option>`;
+                    selector.innerHTML = `<option value="">Error: ${error.message || 'Failed to load'}</option>`;
                 }
             } finally {
                 cameraListLoading = false;
-                cameraListAbortController = null;
+                window.lastCameraListLoadTime = null;
             }
         }
         
-        // Abort camera list loading and stop camera feed on page unload
-        window.addEventListener('beforeunload', function() {
-            // Abort camera list loading
-            if (cameraListAbortController) {
-                cameraListAbortController.abort();
+        // Make functions globally accessible for onclick handlers (define early)
+        window.refreshCameraList = function() {
+            loadCameraList();
+        };
+        
+        window.switchCamera = function() {
+            const selector = document.getElementById('camera-selector');
+            if (!selector) return;
+            
+            const cameraIndex = parseInt(selector.value);
+            if (isNaN(cameraIndex)) return;
+            
+            // Don't switch if we're already on this camera
+            if (currentCameraIndex === cameraIndex) {
+                console.log(`Already on camera ${cameraIndex}, skipping switch`);
+                return;
             }
-            // Stop camera feed
+            
+            switchCameraInternal(cameraIndex);
+        };
+        
+        window.loadCameraList = loadCameraList;
+        
+        // Camera feed control
+        let isCameraFeedRunning = false;
+        
+        function startCameraFeed() {
+            if (isCameraFeedRunning) return;
+            
+            const cameraFeed = document.getElementById('cameraFeed');
+            const placeholder = document.getElementById('cameraPlaceholder');
+            const btnStart = document.getElementById('btnStartCamera');
+            const btnStop = document.getElementById('btnStopCamera');
+            
+            if (cameraFeed && placeholder) {
+                placeholder.style.display = 'none';
+                cameraFeed.style.display = 'block';
+                cameraFeed.src = "/api/camera/feed?" + new Date().getTime();
+                isCameraFeedRunning = true;
+                
+                if (btnStart) btnStart.style.display = 'none';
+                if (btnStop) btnStop.style.display = 'inline-block';
+            }
+        }
+        
+        function stopCameraFeed() {
+            if (!isCameraFeedRunning) return;
+            
+            const cameraFeed = document.getElementById('cameraFeed');
+            const placeholder = document.getElementById('cameraPlaceholder');
+            const btnStart = document.getElementById('btnStartCamera');
+            const btnStop = document.getElementById('btnStopCamera');
+            
+            if (cameraFeed) {
+                cameraFeed.src = '';
+                cameraFeed.removeAttribute('src');
+                cameraFeed.style.display = 'none';
+                try {
+                    cameraFeed.load();
+                } catch (e) {}
+            }
+            
+            if (placeholder) {
+                placeholder.style.display = 'flex';
+            }
+            
+            isCameraFeedRunning = false;
+            
+            if (btnStart) btnStart.style.display = 'inline-block';
+            if (btnStop) btnStop.style.display = 'none';
+        }
+        
+        // Make camera feed functions globally accessible
+        window.startCameraFeed = startCameraFeed;
+        window.stopCameraFeed = stopCameraFeed;
+        
+        // Stop camera feed on page unload
+        window.addEventListener('beforeunload', function() {
             if (isCameraFeedRunning) {
                 try {
                     navigator.sendBeacon('/api/camera/stop', '');
@@ -537,22 +606,7 @@
             }
         });
         
-        // Track current camera to prevent unnecessary switches
-        let currentCameraIndex = null;
-        
-        async function switchCamera() {
-            const selector = document.getElementById('camera-selector');
-            if (!selector) return;
-            
-            const cameraIndex = parseInt(selector.value);
-            if (isNaN(cameraIndex)) return;
-            
-            // Don't switch if we're already on this camera
-            if (currentCameraIndex === cameraIndex) {
-                console.log(`Already on camera ${cameraIndex}, skipping switch`);
-                return;
-            }
-            
+        async function switchCameraInternal(cameraIndex) {
             try {
                 const response = await fetch('/api/camera/switch', {
                     method: 'POST',
@@ -591,19 +645,26 @@
             }
         }
         
-        // Make functions globally accessible for onclick handlers
-        window.refreshCameraList = function() {
-            loadCameraList();
-        };
-        
-        window.switchCamera = switchCamera;
-        window.loadCameraList = loadCameraList;
-        
         // Load camera list and check SocketIO on page load
-        document.addEventListener('DOMContentLoaded', function() {
+        function initializePage() {
+            console.log('Initializing page...');
             checkSocketIOStatus();
-            loadCameraList();
-        });
+            // Small delay to ensure DOM is fully ready
+            setTimeout(() => {
+                console.log('Calling loadCameraList...');
+                loadCameraList();
+            }, 100);
+        }
+        
+        if (document.readyState === 'loading') {
+            // DOM is still loading, wait for DOMContentLoaded
+            console.log('DOM still loading, waiting for DOMContentLoaded...');
+            document.addEventListener('DOMContentLoaded', initializePage);
+        } else {
+            // DOM is already loaded, call immediately
+            console.log('DOM already loaded, initializing immediately...');
+            initializePage();
+        }
     </script>
 </body>
 

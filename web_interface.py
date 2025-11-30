@@ -771,7 +771,6 @@ def api_bluetooth_status():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/camera/list', methods=['GET'])
-@app.route('/api/camera/list', methods=['GET'])
 def api_list_cameras():
     """API endpoint to list all available cameras (built-in and USB)"""
     global CAMERA_LIST_CACHE, LAST_CAMERA_SCAN_TIME
@@ -824,50 +823,57 @@ def api_list_cameras():
                     'current': current
                 })
             else:
-                # No available_cameras list, return empty (don't try to open cameras - can hang)
-                return jsonify({
-                    'success': True,
-                    'cameras': [],
-                    'current': None,
-                    'message': 'Camera list not yet initialized'
-                })
+                # No available_cameras list, fall through to /dev/video* fallback
+                pass
+        
+        # Fallback: Just list /dev/video* devices without opening cameras (fast, no hanging)
+        cameras = []
+        current = None
+        
+        # Check for /dev/video* devices (don't open them - can hang if in use)
+        if os.path.exists('/dev'):
+            for item in sorted(os.listdir('/dev')):
+                if item.startswith('video'):
+                    try:
+                        idx = int(item.replace('video', ''))
+                        
+                        # Build camera info without opening the camera (prevents hanging)
+                        camera_name = f"Camera {idx}"
+                        camera_type = "Built-in" if idx == 0 else "USB"
+                        
+                        # Determine current camera
+                        is_current = False
+                        if HARDWARE_AVAILABLE and hw_controller and hw_controller.camera_connected:
+                            is_current = (idx == hw_controller.camera_index)
+                        else:
+                            is_current = (idx == CURRENT_CAMERA_INDEX)
+                        
+                        cameras.append({
+                            'index': idx,
+                            'name': camera_name,
+                            'type': camera_type,
+                            'backend': 'V4L2',
+                            'resolution': '640x480',  # Default, don't try to read
+                            'current': is_current
+                        })
+                    except ValueError:
+                        pass
+        
+        # Determine current camera index
+        if HARDWARE_AVAILABLE and hw_controller and hw_controller.camera_connected:
+            current = hw_controller.camera_index
         else:
-            # Fallback: Just list /dev/video* devices without opening cameras (fast, no hanging)
-            cameras = []
-            
-            # Check for /dev/video* devices (don't open them - can hang if in use)
-            if os.path.exists('/dev'):
-                for item in sorted(os.listdir('/dev')):
-                    if item.startswith('video'):
-                        try:
-                            idx = int(item.replace('video', ''))
-                            
-                            # Build camera info without opening the camera (prevents hanging)
-                            camera_name = f"Camera {idx}"
-                            camera_type = "Built-in" if idx == 0 else "USB"
-                            
-                            cameras.append({
-                                'index': idx,
-                                'name': camera_name,
-                                'type': camera_type,
-                                'backend': 'V4L2',
-                                'resolution': '640x480',  # Default, don't try to read
-                                'current': idx == CURRENT_CAMERA_INDEX
-                            })
-                        except ValueError:
-                            pass
-            
             current = CURRENT_CAMERA_INDEX
-            
-            # Cache the result
-            CAMERA_LIST_CACHE = cameras
-            LAST_CAMERA_SCAN_TIME = time.time()
-            
-            return jsonify({
-                'success': True, 
-                'cameras': cameras, 
-                'current': current
-            })
+        
+        # Cache the result
+        CAMERA_LIST_CACHE = cameras
+        LAST_CAMERA_SCAN_TIME = time.time()
+        
+        return jsonify({
+            'success': True, 
+            'cameras': cameras, 
+            'current': current
+        })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -1216,6 +1222,9 @@ def handle_servo_command(data):
                                     hw_controller.arduino.write(f"{speed_command}\n".encode())
                             hw_controller._last_speed = speed
                     
+                    # Update tracked servo angle in hardware controller
+                    hw_controller.update_servo_angle(hw_servo, angle)
+                    
                     # Build ANGLE command: ANGLE base shoulder forearm elbow pitch claw
                     # Use -1 for servos we don't want to change
                     angles = [-1, -1, -1, -1, -1, -1]
@@ -1391,7 +1400,9 @@ def controller_telemetry_thread():
                     'mode': 'auto' if hw_controller.auto_mode else 'manual',
                     'arduino_connected': hw_status.get('arduino_connected', False),
                     'camera_connected': hw_status.get('camera_connected', False),
-                    'connection_type': hw_status.get('connection_type', 'none')
+                    'connection_type': hw_status.get('connection_type', 'none'),
+                    'arm_orientation': hw_status.get('arm_orientation', 'unknown'),
+                    'servo_angles': hw_status.get('servo_angles', {})
                 }
                 socketio.emit('telemetry', telemetry_data)
             else:
