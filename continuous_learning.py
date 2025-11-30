@@ -153,14 +153,35 @@ def retrain_model():
             class_dir.mkdir(exist_ok=True)
         
         # Copy images to appropriate class folders
+        # Strategy: Use images where model was wrong OR had low confidence even if correct
+        # This helps the model learn from its mistakes and uncertain predictions
         copied_count = 0
+        low_confidence_threshold = 0.7  # Consider predictions below 70% as uncertain
+        
         for entry in feedback_data:
-            if entry['predicted_class'] != entry['correct_class']:  # Only use incorrect predictions
+            predicted = entry['predicted_class']
+            correct = entry['correct_class']
+            confidence = entry.get('confidence', 1.0)
+            
+            # Include image if:
+            # 1. Prediction was wrong (predicted != correct), OR
+            # 2. Prediction was correct but confidence was low (< threshold)
+            should_include = (predicted != correct) or (predicted == correct and confidence < low_confidence_threshold)
+            
+            if should_include:
                 source_path = Path(entry['image_path'])
                 if source_path.exists():
-                    target_class = class_mapping.get(entry['correct_class'], entry['correct_class'])
+                    target_class = class_mapping.get(correct, correct)
                     target_dir = dataset_dir / target_class
+                    
+                    # Ensure unique filename to avoid overwrites
                     target_path = target_dir / source_path.name
+                    counter = 1
+                    while target_path.exists():
+                        stem = source_path.stem
+                        suffix = source_path.suffix
+                        target_path = target_dir / f"{stem}_{counter}{suffix}"
+                        counter += 1
                     
                     # Copy file
                     import shutil

@@ -104,12 +104,34 @@
                             <!-- Feedback Section -->
                             <div class="feedback-section" id="feedbackSection">
                                 <h5><i class="fas fa-comment-dots"></i> Provide Feedback</h5>
+                                <div class="alert alert-info mb-3">
+                                    <h6><i class="fas fa-lightbulb"></i> How Feedback Works:</h6>
+                                    <ul class="mb-0 small">
+                                        <li><strong>Image Path:</strong> The full path to the test image (auto-filled when you click an image above)</li>
+                                        <li><strong>Predicted Class:</strong> What the model predicted (auto-filled from metadata if available)</li>
+                                        <li><strong>Correct Class:</strong> The actual correct classification - <strong>you must select this</strong></li>
+                                        <li><strong>Confidence:</strong> The model's confidence score (0.0-1.0). Lower confidence = model was uncertain</li>
+                                    </ul>
+                                </div>
+                                <div class="alert alert-warning mb-3">
+                                    <h6><i class="fas fa-database"></i> What Happens When You Submit:</h6>
+                                    <ol class="mb-0 small">
+                                        <li><strong>Feedback is saved</strong> to <code>learning_data/feedback.json</code> with all the details</li>
+                                        <li><strong>The image path is stored</strong> (the actual image file should already exist in <code>learning_data/new_images/test_uploads/</code>)</li>
+                                        <li><strong>For retraining:</strong> When you click "Retrain Model", images are copied to <code>learning_data/retraining_dataset/</code> organized by correct class:
+                                            <ul class="mt-1">
+                                                <li>Images where prediction was <strong>wrong</strong> → copied to correct class folder</li>
+                                                <li>Images where prediction was <strong>correct but confidence &lt; 70%</strong> → also included (helps model learn from uncertainty)</li>
+                                            </ul>
+                                        </li>
+                                        <li><strong>Dataset structure:</strong> <code>retraining_dataset/unripe/</code>, <code>retraining_dataset/ripe/</code>, <code>retraining_dataset/spoilt/</code></li>
+                                    </ol>
+                                </div>
                                 <p class="mb-2">
-                                    <i class="fas fa-info-circle text-info"></i> 
-                                    <strong>Tip:</strong> Click on any recent image above to automatically fill the form. 
+                                    <i class="fas fa-hand-pointer text-primary"></i> 
+                                    <strong>Quick Start:</strong> Click on any recent image above to automatically fill the form. 
                                     Then just select the correct class and submit!
                                 </p>
-                                <p class="text-muted small mb-3">If a prediction was incorrect, help the model learn by providing the correct classification:</p>
                                 
                                 <form id="feedbackForm">
                                     <div class="row">
