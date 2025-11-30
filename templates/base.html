@@ -124,41 +124,37 @@
                         </a>
                     </li>
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="trainingDropdown" role="button" data-bs-toggle="dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="trainingDropdown" role="button"
+                            data-bs-toggle="dropdown">
                             <i class="fas fa-brain"></i> AI Training
                         </a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="{{ url_for('training_dashboard') }}">
-                                <i class="fas fa-tachometer-alt"></i> Training Dashboard
-                            </a></li>
+                                    <i class="fas fa-tachometer-alt"></i> Training Dashboard
+                                </a></li>
                             <li><a class="dropdown-item" href="{{ url_for('create_dataset') }}">
-                                <i class="fas fa-plus"></i> Create Dataset
-                            </a></li>
+                                    <i class="fas fa-plus"></i> Create Dataset
+                                </a></li>
                             <li><a class="dropdown-item" href="{{ url_for('continuous_learning_page') }}">
-                                <i class="fas fa-sync"></i> Continuous Learning
-                            </a></li>
+                                    <i class="fas fa-sync"></i> Continuous Learning
+                                </a></li>
                         </ul>
                     </li>
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="controlDropdown" role="button" data-bs-toggle="dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="controlDropdown" role="button"
+                            data-bs-toggle="dropdown">
                             <i class="fas fa-cogs"></i> Control
                         </a>
                         <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="{{ url_for('controller') }}">
-                                <i class="fas fa-robot"></i> Controller
-                            </a></li>
                             <li><a class="dropdown-item" href="{{ url_for('control') }}">
-                                <i class="fas fa-robot"></i> Control Panel
-                            </a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('arm_control') }}">
-                                <i class="fas fa-sliders-h"></i> Arm Control
-                            </a></li>
+                                    <i class="fas fa-gamepad"></i> Control Panel
+                                </a></li>
                             <li><a class="dropdown-item" href="{{ url_for('monitor') }}">
-                                <i class="fas fa-chart-line"></i> Monitor
-                            </a></li>
+                                    <i class="fas fa-chart-line"></i> Monitor
+                                </a></li>
                             <li><a class="dropdown-item" href="{{ url_for('calibrate') }}">
-                                <i class="fas fa-ruler"></i> Calibrate
-                            </a></li>
+                                    <i class="fas fa-ruler"></i> Calibrate
+                                </a></li>
                         </ul>
                     </li>
                     <li class="nav-item">

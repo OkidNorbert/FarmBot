@@ -33,6 +33,33 @@ class RoboticArmController {
         this.setupEventListeners();
         this.updateSliderFills();
         this.updateTelemetry();
+        this.setupCameraFeed();
+    }
+    
+    setupCameraFeed() {
+        // Setup camera feed
+        const cameraFeed = document.getElementById('cameraFeed');
+        const cameraPlaceholder = document.getElementById('cameraPlaceholder');
+        
+        if (cameraFeed) {
+            cameraFeed.onload = () => {
+                if (cameraPlaceholder) {
+                    cameraPlaceholder.style.display = 'none';
+                }
+                if (cameraFeed) {
+                    cameraFeed.style.display = 'block';
+                }
+            };
+            
+            cameraFeed.onerror = () => {
+                if (cameraPlaceholder) {
+                    cameraPlaceholder.style.display = 'flex';
+                }
+                if (cameraFeed) {
+                    cameraFeed.style.display = 'none';
+                }
+            };
+        }
     }
     
     setupEventListeners() {
@@ -318,31 +345,41 @@ class RoboticArmController {
     
     start() {
         if (!this.connected) {
-            alert('Please connect first');
+            this.showToast('Please connect first', 'error');
+            return;
+        }
+        
+        if (this.mode !== 'auto') {
+            this.showToast('Please switch to Auto mode first', 'error');
             return;
         }
         
         this.sendCommand({ cmd: 'start' });
+        this.showToast('Starting automatic mode...', 'info');
     }
     
     save() {
         if (!this.connected) {
-            alert('Please connect first');
+            this.showToast('Please connect first', 'error');
             return;
         }
+        
+        // Prompt for pose name
+        const poseName = prompt('Enter a name for this pose (optional):', '');
         
         // Save current pose
         const pose = { ...this.servoValues };
         this.sendCommand({ 
             cmd: 'save',
-            pose: pose
+            pose: pose,
+            name: poseName || undefined
         });
         
         // Visual feedback
         const btn = document.getElementById('btnSave');
         if (btn) {
             const originalHTML = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check"></i><span>Saved</span>';
+            btn.innerHTML = '<i class="fas fa-check"></i><span>Saving...</span>';
             btn.style.background = 'var(--success)';
             
             setTimeout(() => {
@@ -354,7 +391,7 @@ class RoboticArmController {
     
     reset() {
         if (!this.connected) {
-            alert('Please connect first');
+            this.showToast('Please connect first', 'error');
             return;
         }
         
@@ -363,11 +400,10 @@ class RoboticArmController {
         }
         
         this.sendCommand({ cmd: 'reset' });
+        this.showToast('Resetting arm to home position...', 'info');
         
-        // Reset sliders to home position
-        setTimeout(() => {
-            this.resetSliders();
-        }, 500);
+        // Reset sliders to home position immediately for visual feedback
+        this.resetSliders();
     }
     
     resetSliders() {
@@ -450,22 +486,33 @@ class RoboticArmController {
     }
     
     handleTelemetry(data) {
+        // Update distance
         if (data.distance_mm !== undefined) {
             const distanceEl = document.getElementById('distanceValue');
             if (distanceEl) {
-                distanceEl.textContent = `${data.distance_mm} mm`;
+                if (data.distance_mm > 0) {
+                    distanceEl.textContent = `${data.distance_mm} mm`;
+                } else {
+                    distanceEl.textContent = '-- mm';
+                }
             }
         }
         
+        // Update status
         if (data.status) {
             const statusEl = document.getElementById('statusValue');
             if (statusEl) {
-                statusEl.textContent = data.status;
+                const statusText = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+                statusEl.textContent = statusText;
                 
                 // Color code status
                 const statusColors = {
                     'idle': '#6c757d',
+                    'connected': '#28a745',
+                    'disconnected': '#dc3545',
+                    'unavailable': '#ffc107',
                     'moving': '#007bff',
+                    'running': '#007bff',
                     'picking': '#ffc107',
                     'error': '#dc3545',
                     'ready': '#28a745'
@@ -475,11 +522,17 @@ class RoboticArmController {
             }
         }
         
+        // Update mode
         if (data.mode) {
             const modeEl = document.getElementById('modeValue');
             if (modeEl) {
                 modeEl.textContent = data.mode === 'auto' ? 'Automatic' : 'Manual';
             }
+        }
+        
+        // Update connection status if provided
+        if (data.arduino_connected !== undefined) {
+            this.updateConnectionStatus(data.arduino_connected);
         }
         
         // Update last update time
@@ -494,9 +547,47 @@ class RoboticArmController {
         console.log('Status update:', data);
         
         if (data.message) {
-            // Could show toast notification here
             console.log('Status:', data.message);
+            
+            // Show visual feedback for important status messages
+            if (data.connected !== undefined) {
+                this.updateConnectionStatus(data.connected);
+            }
+            
+            // Show toast notification for important messages
+            if (data.message.includes('error') || data.message.includes('failed')) {
+                this.showToast(data.message, 'error');
+            } else if (data.message.includes('saved') || data.message.includes('success')) {
+                this.showToast(data.message, 'success');
+            }
         }
+    }
+    
+    showToast(message, type = 'info') {
+        // Create toast notification
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        toast.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            background: ${type === 'error' ? '#dc3545' : type === 'success' ? '#28a745' : '#007bff'};
+            color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 10000;
+            animation: slideIn 0.3s ease;
+        `;
+        
+        document.body.appendChild(toast);
+        
+        // Remove after 3 seconds
+        setTimeout(() => {
+            toast.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
     }
     
     updateTelemetry() {

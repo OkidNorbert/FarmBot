@@ -686,3 +686,44 @@
     outline: 2px solid var(--primary);
     outline-offset: 2px;
 }
+
+/* Toast Notifications */
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+.toast {
+    font-size: 0.875rem;
+    font-weight: 500;
+    animation: slideIn 0.3s ease;
+}
+
+.toast-success {
+    background: var(--success) !important;
+}
+
+.toast-error {
+    background: var(--danger) !important;
+}
+
+.toast-info {
+    background: var(--primary) !important;
+}

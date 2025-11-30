@@ -730,11 +730,41 @@ def handle_servo_command(data):
         cmd = data.get('cmd', '').lower()
         
         if cmd == 'connect':
-            # Initialize connection
+            # Initialize connection and check hardware status
             if HARDWARE_AVAILABLE and hw_controller:
-                emit('status', {'message': 'Hardware controller available', 'connected': True})
+                # Get actual connection status
+                status = hw_controller.get_status()
+                arduino_connected = status.get('arduino_connected', False)
+                connection_type = status.get('connection_type', 'none')
+                
+                if arduino_connected:
+                    emit('status', {
+                        'message': f'Connected via {connection_type}',
+                        'connected': True
+                    })
+                    emit('telemetry', {
+                        'status': 'connected',
+                        'mode': 'auto' if hw_controller.auto_mode else 'manual',
+                        'connection_type': connection_type
+                    })
+                else:
+                    emit('status', {
+                        'message': 'Hardware controller available but Arduino not connected',
+                        'connected': False
+                    })
+                    emit('telemetry', {
+                        'status': 'disconnected',
+                        'mode': 'auto' if hw_controller.auto_mode else 'manual'
+                    })
             else:
-                emit('status', {'message': 'Hardware controller not available', 'connected': False})
+                emit('status', {
+                    'message': 'Hardware controller not available',
+                    'connected': False
+                })
+                emit('telemetry', {
+                    'status': 'unavailable',
+                    'mode': 'manual'
+                })
         
         elif cmd == 'disconnect':
             emit('status', {'message': 'Disconnected', 'connected': False})
@@ -800,7 +830,14 @@ def handle_servo_command(data):
             # Start automatic mode
             if HARDWARE_AVAILABLE and hw_controller:
                 hw_controller.auto_mode = True
-                emit('status', {'message': 'Automatic mode started'})
+                # Set optimal speed for auto mode (accuracy > speed)
+                if hw_controller.arduino_connected:
+                    if hw_controller.ble_client and hw_controller.ble_client.connected:
+                        hw_controller.ble_client.send_command("SPEED 60")
+                    elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                        hw_controller.arduino.write(b"SPEED 60\n")
+                
+                emit('status', {'message': 'Automatic mode started (Speed set to 60)'})
                 emit('telemetry', {'mode': 'auto', 'status': 'running'})
         
         elif cmd == 'set_mode':
@@ -833,25 +870,68 @@ def handle_servo_command(data):
                 emit('status', {'message': f'Speed set to {speed}%'})
         
         elif cmd == 'save':
-            # Save current pose
+            # Save current pose to file
             pose = data.get('pose', {})
-            # Could save to file or database here
-            emit('status', {'message': 'Pose saved successfully'})
+            try:
+                import json
+                poses_dir = Path('saved_poses')
+                poses_dir.mkdir(exist_ok=True)
+                
+                # Create pose filename with timestamp
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                pose_file = poses_dir / f'pose_{timestamp}.json'
+                
+                pose_data = {
+                    'timestamp': timestamp,
+                    'datetime': datetime.now().isoformat(),
+                    'servo_values': pose,
+                    'name': data.get('name', f'Pose_{timestamp}')
+                }
+                
+                with open(pose_file, 'w') as f:
+                    json.dump(pose_data, f, indent=2)
+                
+                emit('status', {
+                    'message': f'Pose saved as {pose_file.name}',
+                    'pose_file': str(pose_file)
+                })
+            except Exception as e:
+                print(f"Error saving pose: {e}")
+                emit('error', {'message': f'Failed to save pose: {str(e)}'})
         
         elif cmd == 'reset':
-            # Reset to home position
+            # Reset to home position (90° all joints, claw closed)
             if HARDWARE_AVAILABLE and hw_controller:
                 if hw_controller.arduino_connected:
+                    # Send HOME command to reset all servos
                     if hw_controller.ble_client and hw_controller.ble_client.connected:
                         hw_controller.ble_client.send_command("HOME")
                     elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
                         hw_controller.arduino.write(b"HOME\n")
-                emit('status', {'message': 'Arm reset to home position'})
-                emit('telemetry', {'status': 'idle'})
+                    
+                    # Also send explicit ANGLE command to ensure all servos reset
+                    # Format: ANGLE base shoulder forearm elbow pitch claw
+                    home_command = "ANGLE 90 90 90 90 90 0"  # All 90° except claw at 0°
+                    if hw_controller.ble_client and hw_controller.ble_client.connected:
+                        hw_controller.ble_client.send_command(home_command)
+                    elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                        hw_controller.arduino.write(f"{home_command}\n".encode())
+                    
+                    emit('status', {'message': 'Arm reset to home position'})
+                    emit('telemetry', {'status': 'idle'})
+                else:
+                    emit('status', {'message': 'Arduino not connected, cannot reset'})
+                    emit('error', {'message': 'Arduino not connected'})
+            else:
+                emit('status', {'message': 'Hardware controller not available'})
+                emit('error', {'message': 'Hardware controller not available'})
         
     except Exception as e:
         print(f"Error handling servo command: {e}")
+        import traceback
+        traceback.print_exc()
         emit('error', {'message': str(e)})
+        emit('status', {'message': f'Error: {str(e)}', 'connected': False})
 
 # Telemetry update thread for modern controller
 def controller_telemetry_thread():
@@ -860,32 +940,49 @@ def controller_telemetry_thread():
     while True:
         try:
             if HARDWARE_AVAILABLE and hw_controller:
+                # Get hardware status
+                hw_status = hw_controller.get_status()
+                
                 # Get ToF distance if available
                 distance = None
-                if hasattr(hw_controller, 'tof_sensor') and hw_controller.tof_sensor:
-                    try:
-                        distance = hw_controller.tof_sensor.getDistance()
-                    except:
-                        pass
+                try:
+                    distance = hw_controller.get_distance_sensor()
+                except:
+                    pass
                 
-                # Get status
+                # Determine status
                 status = 'idle'
                 if hw_controller.auto_mode:
                     status = 'running'
-                if not hw_controller.arduino_connected:
+                if not hw_status.get('arduino_connected', False):
                     status = 'disconnected'
                 
                 # Emit telemetry to all connected clients (no namespace = default)
                 telemetry_data = {
                     'distance_mm': distance if distance else 0,
                     'status': status,
-                    'mode': 'auto' if hw_controller.auto_mode else 'manual'
+                    'mode': 'auto' if hw_controller.auto_mode else 'manual',
+                    'arduino_connected': hw_status.get('arduino_connected', False),
+                    'camera_connected': hw_status.get('camera_connected', False),
+                    'connection_type': hw_status.get('connection_type', 'none')
                 }
                 socketio.emit('telemetry', telemetry_data)
+            else:
+                # Emit default telemetry when hardware not available
+                socketio.emit('telemetry', {
+                    'distance_mm': 0,
+                    'status': 'unavailable',
+                    'mode': 'manual',
+                    'arduino_connected': False,
+                    'camera_connected': False,
+                    'connection_type': 'none'
+                })
             
             time.sleep(0.5)  # Update every 500ms
         except Exception as e:
             print(f"Controller telemetry thread error: {e}")
+            import traceback
+            traceback.print_exc()
             time.sleep(1)
 
 # Start telemetry thread for modern controller
@@ -973,18 +1070,15 @@ def pi_dashboard():
 
 @app.route('/control')
 def control():
-    """Modern robotic arm controller interface"""
-    return render_template('controller.html')
+    """Robotic arm control interface with 3D visualization"""
+    return render_template('arm_control.html')
 
 @app.route('/arm-control')
 def arm_control():
-    """Modern robotic arm controller interface"""
-    return render_template('controller.html')
+    """Robotic arm control interface with 3D visualization (backward compatibility)"""
+    return render_template('arm_control.html')
 
-@app.route('/controller')
-def controller():
-    """Modern robotic arm controller interface"""
-    return render_template('controller.html')
+# Removed /controller route - consolidated to /control and /arm-control using arm_control.html
 
 
 @app.route('/monitor')

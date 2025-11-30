@@ -53,7 +53,9 @@ const int SERVO_MAX[SERVO_COUNT] = {180, 170, 180, 180, 180, 160};
 
 // Movement parameters
 const int MOVEMENT_DELAY = 40;  // Delay between servo movements (ms)
-const int MAX_MOVEMENT_SPEED = 5;  // Max degrees per step
+const int MOVEMENT_DELAY = 40;  // Delay between servo movements (ms)
+int movement_speed = 5;  // Degrees per step (variable)
+const int MAX_SPEED_LIMIT = 120; // Absolute max speed limit (increased for manual mode)
 const int GRIPPER_OPEN = 30;
 const int GRIPPER_CLOSE = 150;
 
@@ -267,9 +269,30 @@ void processCommand(String command) {
     // Return distance sensor reading
     sendDistance();
   }
+  else if (command.startsWith("SPEED")) {
+    // SPEED <value> - Set movement speed
+    processSpeedCommand(command);
+  }
   else {
     Serial.println("Unknown command: " + command);
   }
+}
+
+void processSpeedCommand(String command) {
+  // SPEED <value>
+  int spaceIndex = command.indexOf(' ');
+  if (spaceIndex == -1) {
+    Serial.println("Invalid SPEED command format");
+    return;
+  }
+  
+  int newSpeed = command.substring(spaceIndex + 1).toInt();
+  
+  // Constrain speed to safe limits (1 to MAX_SPEED_LIMIT)
+  movement_speed = constrain(newSpeed, 1, MAX_SPEED_LIMIT);
+  
+  Serial.print("Speed set to: ");
+  Serial.println(movement_speed);
 }
 
 void processMoveCommand(String command) {
@@ -547,7 +570,7 @@ void smoothMoveServo(int servoIndex, int targetAngle) {
 
   int stepDirection = (constrainedTarget > currentAngle) ? 1 : -1;
   int remaining = abs(constrainedTarget - currentAngle);
-  int stepSize = min(MAX_MOVEMENT_SPEED, remaining);
+  int stepSize = min(movement_speed, remaining);
 
   int angle = currentAngle;
   while (angle != constrainedTarget) {

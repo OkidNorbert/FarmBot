@@ -1,0 +1,333 @@
+:root {
+    --primary: #007bff;
+    --success: #28a745;
+    --danger: #dc3545;
+    --warning: #ffc107;
+    --info: #17a2b8;
+    --light: #f8f9fa;
+    --dark: #343a40;
+}
+
+body {
+    background-color: var(--light);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.status-card {
+    transition: all 0.3s ease;
+}
+
+.status-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Connection Status Badge */
+.connection-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.connection-badge.connected {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.connection-badge.disconnected {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+}
+
+.status-dot.connected {
+    background-color: #28a745;
+}
+
+.status-dot.disconnected {
+    background-color: #dc3545;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* Mode Toggle Switch */
+.mode-switch-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.mode-switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 30px;
+}
+
+.mode-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.mode-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.4s;
+    border-radius: 30px;
+}
+
+.mode-slider:before {
+    position: absolute;
+    content: "";
+    height: 22px;
+    width: 22px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: 0.4s;
+    border-radius: 50%;
+}
+
+input:checked+.mode-slider {
+    background-color: var(--success);
+}
+
+input:checked+.mode-slider:before {
+    transform: translateX(30px);
+}
+
+/* Servo Slider Styles */
+.servo-control {
+    margin-bottom: 24px;
+}
+
+.servo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.servo-name {
+    font-weight: 600;
+    color: var(--dark);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.servo-value {
+    background: #e9ecef;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-weight: 600;
+    min-width: 60px;
+    text-align: center;
+}
+
+.slider-wrapper {
+    position: relative;
+    height: 40px;
+    display: flex;
+    align-items: center;
+}
+
+.servo-slider {
+    width: 100%;
+    height: 8px;
+    border-radius: 5px;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #dee2e6;
+    cursor: pointer;
+}
+
+.servo-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    border: 2px solid currentColor;
+}
+
+.servo-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    border: 2px solid currentColor;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Color-coded sliders */
+.servo-slider.base {
+    color: var(--primary);
+}
+
+.servo-slider.forearm {
+    color: var(--info);
+}
+
+.servo-slider.shoulder {
+    color: #6f42c1;
+}
+
+.servo-slider.elbow {
+    color: #fd7e14;
+}
+
+.servo-slider.pitch {
+    color: var(--warning);
+}
+
+.servo-slider.claw {
+    color: var(--danger);
+}
+
+.servo-slider.speed {
+    color: var(--success);
+}
+
+/* Camera Feed */
+.camera-feed {
+    border: 2px solid #dee2e6;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #000;
+    min-height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.camera-placeholder {
+    text-align: center;
+    color: #6c757d;
+}
+
+.camera-placeholder i {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+/* Telemetry Cards */
+.telemetry-card {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 12px;
+}
+
+.telemetry-label {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-bottom: 4px;
+}
+
+.telemetry-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--dark);
+}
+
+/* Action Buttons */
+.action-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.btn-action {
+    padding: 12px;
+    font-weight: 600;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+}
+
+.btn-action:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Responsive Design */
+@media (max-width: 991px) {
+    .action-buttons {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 576px) {
+    .action-buttons {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 3D Arm Visualization */
+.arm-viz-container {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.05);
+}
+
+.arm-part {
+    transition: fill 0.2s ease;
+    cursor: pointer;
+}
+
+.arm-part:hover {
+    filter: brightness(1.1);
+}
+
+.servo-highlight rect,
+.servo-highlight circle {
+    stroke: #fff;
+    stroke-width: 2px;
+    filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.3));
+}
+
+/* Claw Animation */
+.claw-finger-left,
+.claw-finger-right {
+    transition: transform 0.1s ease-out;
+}
