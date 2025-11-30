@@ -343,8 +343,65 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    <script src="{{ url_for('static', filename='js/modern_control.js') }}"></script>
     <script>
+        // Error handling for missing files
+        window.addEventListener('error', function(e) {
+            if (e.filename && e.filename.includes('modern_control')) {
+                console.error('Error loading modern_control.js:', e);
+                // Continue without the file - page should still work
+            }
+        }, true);
+    </script>
+    <script src="{{ url_for('static', filename='js/modern_control.js') }}" onerror="console.error('Failed to load modern_control.js')"></script>
+    <script>
+        // Show notification function (if not defined in modern_control.js)
+        function showNotification(message, type = 'info') {
+            if (typeof window.showNotification === 'function') {
+                window.showNotification(message, type);
+                return;
+            }
+            // Fallback notification
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
+            alertDiv.style.zIndex = '9999';
+            alertDiv.style.minWidth = '300px';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(alertDiv);
+            setTimeout(() => alertDiv.remove(), 3000);
+        }
+        
+        // Update connection status function (if not defined in modern_control.js)
+        function updateConnectionStatus(connected, message = null) {
+            if (typeof window.updateConnectionStatus === 'function') {
+                window.updateConnectionStatus(connected, message);
+                return;
+            }
+            const statusBadge = document.getElementById('connectionStatus');
+            if (statusBadge) {
+                statusBadge.className = connected ? 'connection-badge connected' : 'connection-badge disconnected';
+                const statusText = statusBadge.querySelector('span:last-child');
+                if (statusText) statusText.textContent = message || (connected ? 'Connected' : 'Disconnected');
+            }
+        }
+        
+        // Check SocketIO server status on page load
+        async function checkSocketIOStatus() {
+            try {
+                const response = await fetch('/api/socketio/status');
+                const result = await response.json();
+                if (!result.available) {
+                    console.error('SocketIO server not available:', result.message);
+                    showNotification('SocketIO server not available. Some features may not work.', 'warning');
+                    updateConnectionStatus(false, 'SocketIO not available');
+                }
+            } catch (error) {
+                console.error('Error checking SocketIO status:', error);
+            }
+        }
+        
         // Camera management functions
         async function loadCameraList() {
             try {
@@ -418,8 +475,9 @@
             loadCameraList();
         }
         
-        // Load camera list on page load
+        // Load camera list and check SocketIO on page load
         document.addEventListener('DOMContentLoaded', function() {
+            checkSocketIOStatus();
             loadCameraList();
         });
     </script>

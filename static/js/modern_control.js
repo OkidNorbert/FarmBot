@@ -1,7 +1,83 @@
 // WebSocket connection
-const socket = io();
+let socket = null;
 let isConnected = false;
 let currentSpeed = 100;
+
+// Initialize SocketIO connection with error handling
+function initializeSocketIO() {
+    try {
+        // Check if Socket.IO library is loaded
+        if (typeof io === 'undefined') {
+            console.error('Socket.IO library not loaded. Please check if the CDN script is loaded.');
+            showNotification('Socket.IO library not found. Please refresh the page.', 'danger');
+            updateConnectionStatus(false, 'Socket.IO library not loaded');
+            return false;
+        }
+        
+        console.log('Initializing Socket.IO connection...');
+        
+        // Initialize socket connection
+        socket = io({
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 10,
+            timeout: 20000,
+            forceNew: false
+        });
+        
+        setupSocketHandlers();
+        
+        // Set initial connection status
+        updateConnectionStatus(false, 'Connecting...');
+        
+        return true;
+    } catch (error) {
+        console.error('Failed to initialize SocketIO:', error);
+        showNotification('Failed to connect to server: ' + error.message, 'danger');
+        updateConnectionStatus(false, 'Connection failed');
+        return false;
+    }
+}
+
+// Setup Socket.IO event handlers
+function setupSocketHandlers() {
+    if (!socket) return;
+    
+    socket.on('connect', () => {
+        console.log('✅ Socket.IO connected');
+        isConnected = true;
+        updateConnectionStatus(true);
+    });
+    
+    socket.on('disconnect', (reason) => {
+        console.log('❌ Socket.IO disconnected:', reason);
+        isConnected = false;
+        updateConnectionStatus(false);
+    });
+    
+    socket.on('connect_error', (error) => {
+        console.error('Socket.IO connection error:', error);
+        isConnected = false;
+        updateConnectionStatus(false);
+        showNotification('Connection error. Retrying...', 'warning');
+    });
+    
+    socket.on('reconnect', (attemptNumber) => {
+        console.log('✅ Socket.IO reconnected after', attemptNumber, 'attempts');
+        isConnected = true;
+        updateConnectionStatus(true);
+        showNotification('Reconnected to server', 'success');
+    });
+    
+    socket.on('reconnect_error', (error) => {
+        console.error('Socket.IO reconnection error:', error);
+    });
+    
+    socket.on('reconnect_failed', () => {
+        console.error('Socket.IO reconnection failed');
+        showNotification('Failed to reconnect. Please refresh the page.', 'danger');
+    });
 
 // Servo configuration
 const servoConfig = {
@@ -16,56 +92,72 @@ const servoConfig = {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function () {
-    initializeSliders();
-    setupEventListeners();
-    initializeCamera();
-});
-
-// Socket.IO event handlers
-socket.on('connect', () => {
-    console.log('✅ Socket.IO connected');
-    updateConnectionStatus(true);
-});
-
-socket.on('disconnect', () => {
-    console.log('❌ Socket.IO disconnected');
-    updateConnectionStatus(false);
-});
-
-socket.on('connect_error', (error) => {
-    console.error('Socket connection error:', error);
-    updateConnectionStatus(false);
-});
-
-socket.on('status', (data) => {
-    console.log('Status update:', data);
-    if (data.connected !== undefined) {
-        updateConnectionStatus(data.connected);
-    }
-    if (data.message) {
-        showNotification(data.message, data.connected ? 'success' : 'info');
+    try {
+        // Initialize SocketIO first
+        if (!initializeSocketIO()) {
+            console.warn('SocketIO initialization failed, but continuing with page setup');
+        }
+        
+        if (typeof initializeSliders === 'function') {
+            initializeSliders();
+        }
+        if (typeof setupEventListeners === 'function') {
+            setupEventListeners();
+        }
+        if (typeof initializeCamera === 'function') {
+            initializeCamera();
+        }
+    } catch (error) {
+        console.error('Error initializing control page:', error);
     }
 });
 
-socket.on('telemetry', (data) => {
-    updateTelemetry(data);
-});
+// Socket.IO event handlers (set up in setupSocketHandlers)
+function setupSocketHandlers() {
+    if (!socket) return;
+    
+    socket.on('status', (data) => {
+        console.log('Status update:', data);
+        if (data.connected !== undefined) {
+            updateConnectionStatus(data.connected);
+        }
+        if (data.message) {
+            showNotification(data.message, data.connected ? 'success' : 'info');
+        }
+    });
+    
+    socket.on('telemetry', (data) => {
+        updateTelemetry(data);
+    });
+    
+    socket.on('error', (data) => {
+        console.error('Socket error:', data);
+        if (data.message) {
+            showNotification('Error: ' + data.message, 'danger');
+        }
+    });
+}
 
-socket.on('error', (data) => {
-    console.error('Socket error:', data);
-    showNotification(data.message || 'An error occurred', 'danger');
-});
+// Update telemetry display function is defined later in the file
+
+// Socket error handler is in setupSocketHandlers
 
 // Initialize sliders
 function initializeSliders() {
-    document.querySelectorAll('.servo-slider').forEach(slider => {
-        const servo = slider.dataset.servo;
-        const value = slider.value;
-        updateSliderDisplay(servo, value);
+    try {
+        const sliders = document.querySelectorAll('.servo-slider');
+        if (sliders.length === 0) {
+            console.warn('No servo sliders found on page');
+            return;
+        }
+        sliders.forEach(slider => {
+            const servo = slider.dataset.servo;
+            const value = slider.value;
+            updateSliderDisplay(servo, value);
 
-        // Initialize tracking variables for dynamic speed
-        slider.dataset.lastValue = value;
-        slider.dataset.lastTime = Date.now();
+            // Initialize tracking variables for dynamic speed
+            slider.dataset.lastValue = value;
+            slider.dataset.lastTime = Date.now();
 
         // Add highlight listeners
         slider.addEventListener('mousedown', () => highlightServo(servo));
@@ -116,6 +208,9 @@ function initializeSliders() {
             }, 50);
         });
     });
+    } catch (error) {
+        console.error('Error initializing sliders:', error);
+    }
 }
 
 function highlightServo(servo) {
@@ -237,6 +332,10 @@ function updateArmVisualization(servo, angle) {
 
 // Send servo command via WebSocket
 function sendServoCommand(servo, angle, speed) {
+    if (!socket || !socket.connected) {
+        console.warn('Cannot send command: Socket.IO not connected');
+        return;
+    }
     // Check if socket is connected
     if (!socket.connected) {
         console.warn('Socket not connected, cannot send command');
@@ -267,7 +366,11 @@ function sendServoCommand(servo, angle, speed) {
             speed: angle  // For speed, angle parameter is the speed value
         };
         console.log('📤 Sending speed command:', command);
-        socket.emit('servo_command', command);
+        if (socket && socket.connected) {
+            socket.emit('servo_command', command);
+        } else {
+            console.warn('Cannot send command: Socket.IO not connected');
+        }
         return;
     }
     
@@ -279,23 +382,45 @@ function sendServoCommand(servo, angle, speed) {
     };
     
     console.log('📤 Sending servo command:', command);
-    socket.emit('servo_command', command);
+    if (socket && socket.connected) {
+        socket.emit('servo_command', command);
+    } else {
+        console.warn('Cannot send command: Socket.IO not connected');
+    }
 }
 
 // Setup event listeners
 function setupEventListeners() {
-    document.getElementById('btnConnect').addEventListener('click', connectArduino);
-    document.getElementById('btnDisconnect').addEventListener('click', disconnectArduino);
-    document.getElementById('btnStart').addEventListener('click', startAutoMode);
-    document.getElementById('btnSave').addEventListener('click', savePose);
-    document.getElementById('btnReset').addEventListener('click', resetArm);
-    document.getElementById('modeToggle').addEventListener('change', toggleMode);
+    try {
+        const btnConnect = document.getElementById('btnConnect');
+        const btnDisconnect = document.getElementById('btnDisconnect');
+        const btnStart = document.getElementById('btnStart');
+        const btnSave = document.getElementById('btnSave');
+        const btnReset = document.getElementById('btnReset');
+        
+        if (btnConnect) btnConnect.addEventListener('click', connectArduino);
+        if (btnDisconnect) btnDisconnect.addEventListener('click', disconnectArduino);
+        if (btnStart) btnStart.addEventListener('click', startAutoMode);
+        if (btnSave) btnSave.addEventListener('click', savePose);
+        if (btnReset) btnReset.addEventListener('click', resetArm);
+        
+        const modeToggle = document.getElementById('modeToggle');
+        if (modeToggle) modeToggle.addEventListener('change', toggleMode);
+    } catch (error) {
+        console.error('Error setting up event listeners:', error);
+    }
 }
 
 // Connect to Arduino
 function connectArduino() {
-    if (!socket.connected) {
+    if (!socket || !socket.connected) {
         showNotification('Socket.IO not connected. Please wait...', 'warning');
+        // Try to reconnect
+        if (socket) {
+            socket.connect();
+        } else {
+            initializeSocketIO();
+        }
         return;
     }
     socket.emit('servo_command', { cmd: 'connect' });
@@ -304,18 +429,31 @@ function connectArduino() {
 
 // Disconnect from Arduino
 function disconnectArduino() {
+    if (!socket) {
+        showNotification('Socket.IO not initialized', 'warning');
+        return;
+    }
     socket.emit('servo_command', { cmd: 'disconnect' });
     updateConnectionStatus(false);
 }
 
 // Start automatic mode
 function startAutoMode() {
+    if (!socket || !socket.connected) {
+        showNotification('Socket.IO not connected. Please wait...', 'warning');
+        return;
+    }
     socket.emit('servo_command', { cmd: 'start' });
     showNotification('Starting automatic mode...', 'success');
 }
 
 // Save current pose
 function savePose() {
+    if (!socket || !socket.connected) {
+        showNotification('Socket.IO not connected. Please wait...', 'warning');
+        return;
+    }
+    
     const pose = {};
     document.querySelectorAll('.servo-slider').forEach(slider => {
         const servo = slider.dataset.servo;
@@ -334,6 +472,11 @@ function savePose() {
 
 // Reset arm to home position
 function resetArm() {
+    if (!socket || !socket.connected) {
+        showNotification('Socket.IO not connected. Please wait...', 'warning');
+        return;
+    }
+    
     if (confirm('Reset all servos to home position?')) {
         socket.emit('servo_command', { cmd: 'reset' });
 
@@ -355,6 +498,13 @@ function resetArm() {
 
 // Toggle mode
 function toggleMode(event) {
+    if (!socket || !socket.connected) {
+        showNotification('Socket.IO not connected. Please wait...', 'warning');
+        // Revert toggle
+        event.target.checked = !event.target.checked;
+        return;
+    }
+    
     const isAuto = event.target.checked;
     socket.emit('servo_command', {
         cmd: 'set_mode',
@@ -364,34 +514,51 @@ function toggleMode(event) {
 }
 
 // Update connection status
-function updateConnectionStatus(connected) {
+function updateConnectionStatus(connected, message = null) {
     isConnected = connected;
     const statusBadge = document.getElementById('connectionStatus');
+    if (!statusBadge) {
+        console.warn('Connection status badge not found');
+        return;
+    }
+    
     const statusDot = statusBadge.querySelector('.status-dot');
     const statusText = statusBadge.querySelector('span:last-child');
 
     if (connected) {
         statusBadge.className = 'connection-badge connected';
-        statusDot.className = 'status-dot connected';
-        statusText.textContent = 'Connected';
+        if (statusDot) statusDot.className = 'status-dot connected';
+        if (statusText) statusText.textContent = message || 'Connected';
 
         // Enable buttons
-        document.getElementById('btnConnect').disabled = true;
-        document.getElementById('btnDisconnect').disabled = false;
-        document.getElementById('btnStart').disabled = false;
-        document.getElementById('btnSave').disabled = false;
-        document.getElementById('btnReset').disabled = false;
+        const btnConnect = document.getElementById('btnConnect');
+        const btnDisconnect = document.getElementById('btnDisconnect');
+        const btnStart = document.getElementById('btnStart');
+        const btnSave = document.getElementById('btnSave');
+        const btnReset = document.getElementById('btnReset');
+        
+        if (btnConnect) btnConnect.disabled = true;
+        if (btnDisconnect) btnDisconnect.disabled = false;
+        if (btnStart) btnStart.disabled = false;
+        if (btnSave) btnSave.disabled = false;
+        if (btnReset) btnReset.disabled = false;
     } else {
         statusBadge.className = 'connection-badge disconnected';
-        statusDot.className = 'status-dot disconnected';
-        statusText.textContent = 'Disconnected';
+        if (statusDot) statusDot.className = 'status-dot disconnected';
+        if (statusText) statusText.textContent = message || 'Disconnected';
 
         // Disable buttons
-        document.getElementById('btnConnect').disabled = false;
-        document.getElementById('btnDisconnect').disabled = true;
-        document.getElementById('btnStart').disabled = true;
-        document.getElementById('btnSave').disabled = true;
-        document.getElementById('btnReset').disabled = true;
+        const btnConnect = document.getElementById('btnConnect');
+        const btnDisconnect = document.getElementById('btnDisconnect');
+        const btnStart = document.getElementById('btnStart');
+        const btnSave = document.getElementById('btnSave');
+        const btnReset = document.getElementById('btnReset');
+        
+        if (btnConnect) btnConnect.disabled = false;
+        if (btnDisconnect) btnDisconnect.disabled = true;
+        if (btnStart) btnStart.disabled = true;
+        if (btnSave) btnSave.disabled = true;
+        if (btnReset) btnReset.disabled = true;
     }
 }
 

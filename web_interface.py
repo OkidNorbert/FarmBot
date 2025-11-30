@@ -1354,6 +1354,14 @@ def calibrate():
     """Calibration panel"""
     return render_template('pi_calibrate.html')
 
+@app.route('/api/socketio/status', methods=['GET'])
+def api_socketio_status():
+    """Check SocketIO server status"""
+    return jsonify({
+        'available': SOCKETIO_AVAILABLE,
+        'message': 'SocketIO is available' if SOCKETIO_AVAILABLE else 'SocketIO is not installed. Install with: pip install flask-socketio eventlet'
+    })
+
 # ==========================================
 # Calibration API Routes
 # ==========================================
