@@ -109,15 +109,76 @@ training_status = {
 system_state = {
     'running': False,
     'detection_count': 0,
+    'ripe_count': 0,
+    'unripe_count': 0,
+    'spoilt_count': 0,
     'camera_connected': False,
     'arduino_connected': False,
     'classifier_loaded': False,
     'last_detection': None,
-    'current_frame': None
+    'current_frame': None,
+    'session_start': datetime.now().isoformat()
 }
 
+# Statistics storage file
+STATS_FILE = 'monitoring_stats.json'
+
+def load_stats():
+    """Load statistics from file"""
+    if os.path.exists(STATS_FILE):
+        try:
+            with open(STATS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {
+        'total_sorted': 0,
+        'ripe_count': 0,
+        'unripe_count': 0,
+        'spoilt_count': 0,
+        'detection_history': [],
+        'session_history': []
+    }
+
+def save_stats(stats):
+    """Save statistics to file"""
+    try:
+        with open(STATS_FILE, 'w') as f:
+            json.dump(stats, f, indent=2)
+    except Exception as e:
+        print(f"Error saving stats: {e}")
+
+def update_sorting_stats(class_name):
+    """Update sorting statistics when a tomato is sorted"""
+    stats = load_stats()
+    stats['total_sorted'] += 1
+    
+    if class_name == 'ready' or class_name == 'ripe':
+        stats['ripe_count'] += 1
+        system_state['ripe_count'] += 1
+    elif class_name == 'not_ready' or class_name == 'unripe':
+        stats['unripe_count'] += 1
+        system_state['unripe_count'] += 1
+    elif class_name == 'spoilt' or class_name == 'spoiled':
+        stats['spoilt_count'] += 1
+        system_state['spoilt_count'] += 1
+    
+    # Add to detection history (keep last 100)
+    stats['detection_history'].append({
+        'timestamp': datetime.now().isoformat(),
+        'class': class_name
+    })
+    if len(stats['detection_history']) > 100:
+        stats['detection_history'] = stats['detection_history'][-100:]
+    
+    save_stats(stats)
+
 def log_detection(detection_data):
-    """Log detection event to CSV"""
+    """Log detection event to CSV and update statistics"""
+    # Update sorting statistics
+    if 'class' in detection_data:
+        update_sorting_stats(detection_data['class'])
+    
     # Use file locking to prevent race conditions
     import fcntl
     
@@ -251,7 +312,105 @@ def pi_status():
         system_state['connection_type'] = 'none'
         system_state['classifier_loaded'] = False
     
+    # Load persistent stats
+    stats = load_stats()
+    system_state['ripe_count'] = stats.get('ripe_count', 0)
+    system_state['unripe_count'] = stats.get('unripe_count', 0)
+    system_state['spoilt_count'] = stats.get('spoilt_count', 0)
+    
     return jsonify(system_state)
+
+@app.route('/api/monitor/stats')
+def api_monitor_stats():
+    """Get detailed monitoring statistics"""
+    try:
+        stats = load_stats()
+        
+        # Update system state from hardware controller if available
+        if HARDWARE_AVAILABLE and hw_controller:
+            try:
+                hw_status = hw_controller.get_status()
+                system_state['camera_connected'] = hw_status.get('camera_connected', False)
+                system_state['arduino_connected'] = hw_status.get('arduino_connected', False)
+                system_state['auto_mode'] = hw_status.get('auto_mode', False)
+                system_state['connection_type'] = hw_status.get('connection_type', 'none')
+            except Exception as e:
+                print(f"Error getting hardware status: {e}")
+        
+        status = system_state.copy()
+        
+        # Ensure session_start is set
+        if not status.get('session_start'):
+            status['session_start'] = datetime.now().isoformat()
+            system_state['session_start'] = status['session_start']
+        
+        # Get detection rate (per minute)
+        detection_history = stats.get('detection_history', [])
+        if len(detection_history) > 0:
+            # Calculate detections in last minute
+            now = datetime.now()
+            recent_detections = [
+                d for d in detection_history 
+                if (now - datetime.fromisoformat(d['timestamp'])).total_seconds() < 60
+            ]
+            detection_rate = len(recent_detections)
+        else:
+            detection_rate = 0
+        
+        # Get tomato detection status
+        tomato_status = {'detected': False, 'tomato_count': 0}
+        try:
+            # Try to get detection status from camera if available
+            if HARDWARE_AVAILABLE and hw_controller:
+                if hasattr(hw_controller, 'camera_connected') and hw_controller.camera_connected:
+                    if hasattr(hw_controller, 'camera') and hw_controller.camera is not None:
+                        ret, frame = hw_controller.camera.read()
+                        if ret and frame is not None:
+                            tomato_count = count_tomatoes_in_frame(frame)
+                            tomato_status = {
+                                'detected': tomato_count > 0,
+                                'tomato_count': tomato_count
+                            }
+        except Exception as e:
+            # If detection fails, just use defaults
+            print(f"Error getting tomato detection: {e}")
+            pass
+        
+        return jsonify({
+            'total_sorted': stats.get('total_sorted', 0),
+            'ripe_count': stats.get('ripe_count', 0),
+            'unripe_count': stats.get('unripe_count', 0),
+            'spoilt_count': stats.get('spoilt_count', 0),
+            'detection_count': status.get('detection_count', 0),
+            'detection_rate': detection_rate,
+            'detection_history': detection_history[-20:],  # Last 20 detections
+            'tomato_detected': tomato_status.get('detected', False),
+            'tomato_count': tomato_status.get('tomato_count', 0),
+            'camera_connected': status.get('camera_connected', False),
+            'arduino_connected': status.get('arduino_connected', False),
+            'auto_mode': status.get('auto_mode', False),
+            'session_start': status.get('session_start', datetime.now().isoformat())
+        })
+    except Exception as e:
+        print(f"Error in api_monitor_stats: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': str(e),
+            'total_sorted': 0,
+            'ripe_count': 0,
+            'unripe_count': 0,
+            'spoilt_count': 0,
+            'detection_count': 0,
+            'detection_rate': 0,
+            'detection_history': [],
+            'tomato_detected': False,
+            'tomato_count': 0,
+            'camera_connected': False,
+            'arduino_connected': False,
+            'auto_mode': False,
+            'session_start': datetime.now().isoformat()
+        }), 500
 
 @app.route('/api/auto/start', methods=['POST'])
 def api_start_auto():
@@ -612,6 +771,14 @@ def api_switch_camera():
             return jsonify({'success': False, 'message': 'Camera index required'}), 400
         
         if hw_controller.switch_camera(camera_index):
+            # Save camera preference to file
+            try:
+                camera_pref_file = 'camera_preference.json'
+                with open(camera_pref_file, 'w') as f:
+                    json.dump({'camera_index': camera_index, 'timestamp': datetime.now().isoformat()}, f)
+            except Exception as e:
+                print(f"Warning: Could not save camera preference: {e}")
+            
             return jsonify({
                 'success': True, 
                 'message': f'Switched to camera {camera_index}', 
@@ -1187,6 +1354,233 @@ def calibrate():
     """Calibration panel"""
     return render_template('pi_calibrate.html')
 
+# ==========================================
+# Calibration API Routes
+# ==========================================
+
+@app.route('/api/calibration/calculate', methods=['POST'])
+def api_calibration_calculate():
+    """Calculate calibration transformation matrix from points"""
+    try:
+        data = request.get_json()
+        if not data or 'points' not in data:
+            return jsonify({'success': False, 'message': 'No points provided'}), 400
+        
+        points = data['points']
+        if len(points) < 4:
+            return jsonify({'success': False, 'message': 'Need at least 4 calibration points'}), 400
+        
+        # Extract pixel and world coordinates
+        pixel_coords = np.array([p['pixel'] for p in points], dtype=np.float32)
+        world_coords = np.array([p['world'] for p in points], dtype=np.float32)
+        
+        # Calculate homography matrix using OpenCV
+        homography_matrix, mask = cv2.findHomography(pixel_coords, world_coords, 
+                                                      cv2.RANSAC, 5.0)
+        
+        if homography_matrix is None:
+            return jsonify({'success': False, 'message': 'Failed to calculate transformation matrix'}), 500
+        
+        # Calculate accuracy (reprojection error)
+        errors = []
+        for i, pixel in enumerate(pixel_coords):
+            # Transform pixel to world
+            pixel_homogeneous = np.array([pixel[0], pixel[1], 1.0])
+            predicted_world = homography_matrix @ pixel_homogeneous
+            predicted_world = predicted_world[:2] / predicted_world[2]
+            
+            # Calculate error
+            error = np.linalg.norm(predicted_world - world_coords[i])
+            errors.append(error)
+        
+        avg_error = np.mean(errors)
+        max_error = np.max(errors)
+        
+        calibration_data = {
+            'matrix': homography_matrix.tolist(),
+            'point_count': len(points),
+            'accuracy': float(avg_error),
+            'max_error': float(max_error),
+            'errors': [float(e) for e in errors],
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        return jsonify({
+            'success': True,
+            'data': calibration_data,
+            'message': f'Calibration calculated with {len(points)} points (avg error: {avg_error:.2f}mm)'
+        })
+        
+    except Exception as e:
+        print(f"Error calculating calibration: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/calibration/save', methods=['POST'])
+def api_calibration_save():
+    """Save calibration data to file"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        # Save using hardware controller if available
+        if HARDWARE_AVAILABLE and hw_controller:
+            points = data.get('points', [])
+            if points:
+                success = hw_controller.update_calibration(points)
+                if success:
+                    return jsonify({
+                        'success': True,
+                        'message': 'Calibration saved successfully'
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Failed to save calibration via hardware controller'
+                    }), 500
+        
+        # Fallback: Save to JSON file
+        calibration_file = 'calibration_data.json'
+        calibration_data = {
+            'points': data.get('points', []),
+            'calibration': data.get('calibration', {}),
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        with open(calibration_file, 'w') as f:
+            json.dump(calibration_data, f, indent=2)
+        
+        # Also save as numpy format if calibration matrix exists
+        if 'calibration' in data and data['calibration'] and 'matrix' in data['calibration']:
+            try:
+                matrix = np.array(data['calibration']['matrix'])
+                pixel_coords = np.array([p['pixel'] for p in data.get('points', [])], dtype=np.float32)
+                world_coords = np.array([p['world'] for p in data.get('points', [])], dtype=np.float32)
+                
+                np.savez('calibration.npz',
+                        homography=matrix,
+                        pixel_coords=pixel_coords,
+                        world_coords=world_coords)
+            except Exception as e:
+                print(f"Warning: Could not save numpy format: {e}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Calibration saved successfully'
+        })
+        
+    except Exception as e:
+        print(f"Error saving calibration: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/calibration/load', methods=['GET'])
+def api_calibration_load():
+    """Load calibration data from file"""
+    try:
+        # Try to load from JSON file first
+        calibration_file = 'calibration_data.json'
+        if os.path.exists(calibration_file):
+            with open(calibration_file, 'r') as f:
+                data = json.load(f)
+                return jsonify({
+                    'success': True,
+                    'data': data,
+                    'message': 'Calibration loaded successfully'
+                })
+        
+        # Try to load from numpy format
+        if os.path.exists('calibration.npz'):
+            calib_data = np.load('calibration.npz')
+            matrix = calib_data['homography']
+            pixel_coords = calib_data['pixel_coords']
+            world_coords = calib_data['world_coords']
+            
+            # Reconstruct points
+            points = []
+            for i in range(len(pixel_coords)):
+                points.append({
+                    'pixel': pixel_coords[i].tolist(),
+                    'world': world_coords[i].tolist()
+                })
+            
+            return jsonify({
+                'success': True,
+                'data': {
+                    'points': points,
+                    'calibration': {
+                        'matrix': matrix.tolist(),
+                        'point_count': len(points)
+                    }
+                },
+                'message': 'Calibration loaded from numpy format'
+            })
+        
+        return jsonify({
+            'success': False,
+            'message': 'No calibration file found'
+        })
+        
+    except Exception as e:
+        print(f"Error loading calibration: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/calibration/test', methods=['POST'])
+def api_calibration_test():
+    """Test calibration by converting pixel to world coordinates"""
+    try:
+        data = request.get_json()
+        if not data or 'pixel' not in data:
+            return jsonify({'success': False, 'message': 'No pixel coordinates provided'}), 400
+        
+        pixel = np.array(data['pixel'], dtype=np.float32)
+        
+        # Load calibration
+        calibration_file = 'calibration_data.json'
+        if not os.path.exists(calibration_file):
+            if os.path.exists('calibration.npz'):
+                calib_data = np.load('calibration.npz')
+                matrix = calib_data['homography']
+            else:
+                return jsonify({'success': False, 'message': 'No calibration found'}), 404
+        else:
+            with open(calibration_file, 'r') as f:
+                calib_data = json.load(f)
+                if 'calibration' not in calib_data or 'matrix' not in calib_data['calibration']:
+                    return jsonify({'success': False, 'message': 'Invalid calibration data'}), 400
+                matrix = np.array(calib_data['calibration']['matrix'])
+        
+        # Transform pixel to world coordinates
+        pixel_homogeneous = np.array([pixel[0], pixel[1], 1.0])
+        predicted_world = matrix @ pixel_homogeneous
+        predicted_world = predicted_world[:2] / predicted_world[2]
+        
+        # Calculate error if actual position provided
+        error = None
+        actual = None
+        if 'actual' in data:
+            actual = np.array(data['actual'], dtype=np.float32)
+            error = float(np.linalg.norm(predicted_world - actual))
+        
+        return jsonify({
+            'success': True,
+            'pixel': pixel.tolist(),
+            'predicted': predicted_world.tolist(),
+            'actual': actual.tolist() if actual is not None else None,
+            'error': error if error is not None else 0.0
+        })
+        
+    except Exception as e:
+        print(f"Error testing calibration: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/training')
 def training_dashboard():
     """Training dashboard"""
@@ -1676,17 +2070,21 @@ def api_camera_feed():
     if HARDWARE_AVAILABLE and hw_controller:
         def generate_frames():
             """Video streaming generator function using hardware controller."""
+            frame_count = 0
             while True:
                 frame = hw_controller.get_frame()
                 if frame is None:
-                    break
+                    time.sleep(0.1)  # Wait a bit if no frame
+                    continue
                     
-                # Add timestamp
-                cv2.putText(frame, f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", (10, 30), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+                # Add timestamp (only every 10th frame to reduce CPU)
+                if frame_count % 10 == 0:
+                    cv2.putText(frame, f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", (10, 30), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                        
-                # Encode - check return value before using buffer
-                ret, buffer = cv2.imencode('.jpg', frame)
+                # Encode with lower quality for calibration page (faster)
+                # Use higher quality JPEG compression for smaller file size
+                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
                 if not ret:
                     continue  # Skip this frame if encoding failed
                 
@@ -1694,7 +2092,10 @@ def api_camera_feed():
                 
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                time.sleep(0.03)  # Limit to ~30 FPS
+                
+                frame_count += 1
+                # Limit to ~10 FPS for calibration page (reduces CPU/network load)
+                time.sleep(0.1)
         
         return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
     else:
@@ -1705,18 +2106,27 @@ def gen_frames():
     """Generate frames from camera - uses hardware controller if available"""
     # Try hardware controller first (for Pi)
     if HARDWARE_AVAILABLE and hw_controller:
+        frame_count = 0
+        last_detection_result = (False, 0, [])
+        
         while True:
             frame = hw_controller.get_frame()
             if frame is None:
-                break
+                time.sleep(0.1)
+                continue
             
-            # Add timestamp
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            cv2.putText(frame, timestamp, (10, 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            # Add timestamp (only update every 10 frames to reduce CPU)
+            if frame_count % 10 == 0:
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                cv2.putText(frame, timestamp, (10, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
-            # Detect tomatoes and draw bounding boxes
-            tomato_detected, tomato_count, tomato_boxes = detect_tomatoes_with_boxes(frame)
+            # Only detect tomatoes every 5th frame to reduce CPU usage
+            # This significantly improves performance while maintaining reasonable detection
+            if frame_count % 5 == 0:
+                last_detection_result = detect_tomatoes_with_boxes(frame)
+            
+            tomato_detected, tomato_count, tomato_boxes = last_detection_result
             
             # Draw bounding boxes
             for i, (x, y, w, h) in enumerate(tomato_boxes):
@@ -1724,21 +2134,24 @@ def gen_frames():
                 cv2.putText(frame, f"Tomato {i+1}", (x, y-10), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             
-            # Add detection status
-            if tomato_detected:
-                cv2.putText(frame, f"TOMATOES DETECTED: {tomato_count}", (10, 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-            else:
-                cv2.putText(frame, "NO TOMATOES DETECTED", (10, 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            # Add detection status (only update text every 5 frames)
+            if frame_count % 5 == 0:
+                if tomato_detected:
+                    cv2.putText(frame, f"TOMATOES DETECTED: {tomato_count}", (10, 60), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                else:
+                    cv2.putText(frame, "NO TOMATOES DETECTED", (10, 60), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             
-            # Encode frame
-            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            # Encode frame with optimized quality
+            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
             if ret:
                 frame_bytes = buffer.tobytes()
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            time.sleep(0.03)
+            
+            frame_count += 1
+            time.sleep(0.03)  # ~30 FPS
         return
     
     # Fallback to direct camera access
@@ -1763,6 +2176,9 @@ def gen_frames():
         return
     
     # Camera is available, stream live video
+    frame_count = 0
+    last_detection_result = (False, 0, [])
+    
     while True:
         success, frame = cap.read()
         if not success:
@@ -1772,31 +2188,38 @@ def gen_frames():
                 break
             continue
         
-        # Add timestamp
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        cv2.putText(frame, timestamp, (10, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        # Add timestamp (only update every 10 frames)
+        if frame_count % 10 == 0:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            cv2.putText(frame, timestamp, (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
-        # Detect tomatoes and draw bounding boxes
-        tomato_detected, tomato_count, tomato_boxes = detect_tomatoes_with_boxes(frame)
+        # Only detect tomatoes every 5th frame to reduce CPU usage
+        if frame_count % 5 == 0:
+            last_detection_result = detect_tomatoes_with_boxes(frame)
+        
+        tomato_detected, tomato_count, tomato_boxes = last_detection_result
         
         for i, (x, y, w, h) in enumerate(tomato_boxes):
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cv2.putText(frame, f"Tomato {i+1}", (x, y-10), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         
-        if tomato_detected:
-            cv2.putText(frame, f"TOMATOES DETECTED: {tomato_count}", (10, 60), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-        else:
-            cv2.putText(frame, "NO TOMATOES DETECTED", (10, 60), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        # Update text only every 5 frames
+        if frame_count % 5 == 0:
+            if tomato_detected:
+                cv2.putText(frame, f"TOMATOES DETECTED: {tomato_count}", (10, 60), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            else:
+                cv2.putText(frame, "NO TOMATOES DETECTED", (10, 60), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         
-        # Encode frame
-        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        # Encode frame with optimized quality
+        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
         if not ret:
             continue
-            
+        
+        frame_count += 1
         frame_bytes = buffer.tobytes()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')

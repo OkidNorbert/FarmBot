@@ -1,35 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FarmBOT - Calibration</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+{% block title %}Calibration - FarmBOT{% endblock %}
+
+{% block content %}
     <style>
-        /* Ensure footer stays at bottom */
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-        }
-        body {
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
-        .container, .container-fluid {
-            flex: 1 0 auto;
-        }
-        footer {
-            flex-shrink: 0;
-            margin-top: auto;
-        }
-        
         .camera-view {
             width: 100%;
-            height: 400px;
+        height: 500px;
             background-color: #000;
             position: relative;
             border-radius: 5px;
@@ -45,128 +22,364 @@
 
         .calibration-point {
             position: absolute;
-            width: 12px;
-            height: 12px;
+        width: 16px;
+        height: 16px;
             background-color: #ff0000;
-            border: 2px solid #fff;
+        border: 3px solid #fff;
             border-radius: 50%;
             transform: translate(-50%, -50%);
             pointer-events: none;
+        z-index: 10;
+        box-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
         }
 
         .point-label {
             position: absolute;
             color: #fff;
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 2px 6px;
-            border-radius: 3px;
+        background-color: rgba(0, 0, 0, 0.8);
+        padding: 4px 8px;
+        border-radius: 4px;
             font-size: 12px;
+        font-weight: bold;
             transform: translate(-50%, -200%);
             pointer-events: none;
+        z-index: 11;
+        white-space: nowrap;
+    }
+
+    .point-label::after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+        border-top-color: rgba(0, 0, 0, 0.8);
+    }
+
+    .calibration-status {
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 15px;
+    }
+
+    .status-good {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+
+    .status-warning {
+        background-color: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffeaa7;
+    }
+
+    .status-error {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+
+    .point-card {
+        border-left: 4px solid #007bff;
+        margin-bottom: 10px;
+        transition: transform 0.2s;
+    }
+
+    .point-card:hover {
+        transform: translateX(5px);
+    }
+
+    .accuracy-badge {
+        font-size: 0.85rem;
+        padding: 5px 10px;
+    }
+
+    .test-result {
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 5px;
+        background-color: #f8f9fa;
+    }
+
+    .test-result.success {
+        background-color: #d4edda;
+        border-left: 4px solid #28a745;
+    }
+
+    .test-result.error {
+        background-color: #f8d7da;
+        border-left: 4px solid #dc3545;
         }
     </style>
-</head>
 
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
-        <div class="container">
-            <a class="navbar-brand" href="/">
-                <i class="fas fa-robot"></i> FarmBOT
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="/control">Control</a>
-                <a class="nav-link" href="/monitor">Monitor</a>
-                <a class="nav-link active" href="/calibrate">Calibrate</a>
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="mb-0">
+            <i class="fas fa-ruler-combined"></i> Camera-to-Arm Calibration
+        </h1>
+        <p class="text-muted">Calibrate the coordinate mapping between camera pixels and robotic arm positions</p>
             </div>
         </div>
-    </nav>
 
-    <div class="container mt-4">
+<!-- Calibration Status -->
+<div id="calibration-status" class="calibration-status status-warning" style="display: none;">
+    <strong><i class="fas fa-info-circle"></i> Status:</strong> <span id="status-text">No calibration loaded</span>
+</div>
+
+<!-- Main Content Row -->
         <div class="row">
-            <div class="col-md-8">
+    <!-- Camera View -->
+    <div class="col-lg-8">
                 <div class="card mb-4">
-                    <div class="card-header bg-dark text-white">
-                        <h5 class="mb-0"><i class="fas fa-camera"></i> Camera Calibration</h5>
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-camera"></i> Live Camera Feed</h5>
+                <div class="d-flex gap-2 align-items-center">
+                    <select class="form-select form-select-sm" id="camera-selector" onchange="switchCamera()" style="width: auto; min-width: 150px;">
+                        <option value="">Loading cameras...</option>
+                    </select>
+                    <button class="btn btn-sm btn-outline-light" onclick="refreshCameraList()" title="Refresh Camera List">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-light" onclick="refreshCamera()" title="Refresh Camera">
+                        <i class="fas fa-redo"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-light" onclick="toggleFullscreen()" title="Fullscreen">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                </div>
                     </div>
                     <div class="card-body p-0">
                         <div class="camera-view" id="camera-container">
-                            <img src="/api/camera/feed" id="camera-feed">
+                    <img src="/api/camera/feed" id="camera-feed" alt="Camera Feed" 
+                         onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'640\' height=\'480\'%3E%3Crect fill=\'%23333\' width=\'640\' height=\'480\'/%3E%3Ctext fill=\'%23fff\' x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\'%3ECamera not available%3C/text%3E%3C/svg%3E'">
                         </div>
                     </div>
                     <div class="card-footer">
-                        <small class="text-muted">Click on the image to add calibration points</small>
+                <small class="text-muted">
+                    <i class="fas fa-mouse-pointer"></i> Click on the camera feed to add calibration points
+                    <br>
+                    <i class="fas fa-info-circle"></i> <strong>Tip:</strong> Use the dropdown above to switch to your USB ArduCam (usually Camera 1 or higher)
+                </small>
+            </div>
+        </div>
+
+        <!-- Test Calibration Section -->
+        <div class="card mb-4" id="test-section" style="display: none;">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-vial"></i> Test Calibration</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Click on a point in the camera feed to test the calibration accuracy.</p>
+                <div id="test-results"></div>
+                <button class="btn btn-outline-secondary btn-sm" onclick="clearTestResults()">
+                    <i class="fas fa-trash"></i> Clear Results
+                </button>
                     </div>
                 </div>
             </div>
 
-            <div class="col-md-4">
+    <!-- Control Panel -->
+    <div class="col-lg-4">
+        <!-- Calibration Points List -->
                 <div class="card mb-3">
-                    <div class="card-header bg-info text-white">
-                        <h5><i class="fas fa-map-marker-alt"></i> Calibration Points</h5>
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-map-marker-alt"></i> Calibration Points</h5>
+                <span class="badge bg-light text-dark" id="point-count">0</span>
                     </div>
-                    <div class="card-body">
-                        <div id="points-list" class="mb-3">
-                            <p class="text-muted small">No points added yet. Click on the camera feed to start.</p>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                <div id="points-list">
+                    <p class="text-muted small text-center">No points added yet. Click on the camera feed to start.</p>
                         </div>
                         
-                        <div id="point-input-form" style="display: none;">
+                <!-- Point Input Form -->
+                <div id="point-input-form" style="display: none;" class="mt-3 border-top pt-3">
                             <h6>Point <span id="current-point-num"></span></h6>
                             <div class="mb-2">
-                                <label class="form-label small">Pixel: <span id="pixel-coords"></span></label>
+                        <label class="form-label small"><strong>Pixel Coordinates:</strong></label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">X</span>
+                            <input type="text" class="form-control" id="pixel-x" readonly>
+                            <span class="input-group-text">Y</span>
+                            <input type="text" class="form-control" id="pixel-y" readonly>
+                        </div>
                             </div>
                             <div class="mb-2">
-                                <label class="form-label small">Real World X (mm)</label>
-                                <input type="number" class="form-control form-control-sm" id="world-x" step="0.1">
+                        <label class="form-label small"><strong>Real World X (mm)</strong></label>
+                        <input type="number" class="form-control form-control-sm" id="world-x" step="0.1" placeholder="Enter X coordinate">
                             </div>
                             <div class="mb-2">
-                                <label class="form-label small">Real World Y (mm)</label>
-                                <input type="number" class="form-control form-control-sm" id="world-y" step="0.1">
+                        <label class="form-label small"><strong>Real World Y (mm)</strong></label>
+                        <input type="number" class="form-control form-control-sm" id="world-y" step="0.1" placeholder="Enter Y coordinate">
                             </div>
-                            <button class="btn btn-sm btn-primary w-100" onclick="confirmPoint()">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-sm btn-primary" onclick="confirmPoint()">
                                 <i class="fas fa-check"></i> Confirm Point
                             </button>
-                        </div>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="cancelPoint()">
+                            <i class="fas fa-times"></i> Cancel
+                        </button>
+                    </div>
+                </div>
                     </div>
                 </div>
 
-                <div class="card">
+        <!-- Actions -->
+        <div class="card mb-3">
                     <div class="card-header bg-warning text-dark">
-                        <h5><i class="fas fa-cogs"></i> Actions</h5>
+                <h5 class="mb-0"><i class="fas fa-cogs"></i> Actions</h5>
                     </div>
                     <div class="card-body">
                         <div class="d-grid gap-2">
+                    <button class="btn btn-success" onclick="runCalibration()" id="calibrate-btn" disabled>
+                        <i class="fas fa-calculator"></i> Calculate & Save Calibration
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="testCalibration()" id="test-btn" disabled>
+                        <i class="fas fa-vial"></i> Test Calibration
+                    </button>
+                    <button class="btn btn-outline-info" onclick="loadCalibration()">
+                        <i class="fas fa-upload"></i> Load Existing Calibration
+                    </button>
                             <button class="btn btn-outline-danger" onclick="clearLastPoint()" id="clear-btn" disabled>
-                                <i class="fas fa-undo"></i> Clear Last Point
-                            </button>
-                            <button class="btn btn-success" onclick="runCalibration()" id="calibrate-btn" disabled>
-                                <i class="fas fa-calculator"></i> Run Calibration
+                        <i class="fas fa-undo"></i> Remove Last Point
                             </button>
                             <button class="btn btn-outline-secondary" onclick="resetCalibration()">
-                                <i class="fas fa-trash"></i> Reset All
+                        <i class="fas fa-trash"></i> Reset All Points
                             </button>
                         </div>
                         <div class="mt-3">
-                            <small class="text-muted">Need at least 4 points for calibration</small>
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle"></i> Need at least 4 points for calibration. More points = better accuracy.
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Arm Movement Controls -->
+        <div class="card mb-3">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-hand-paper"></i> Arm Movement</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">Move the arm to a known position, then click on that position in the camera feed.</p>
+                <div class="mb-2">
+                    <label class="form-label small">Move to Position (mm)</label>
+                    <div class="input-group input-group-sm mb-2">
+                        <span class="input-group-text">X</span>
+                        <input type="number" class="form-control" id="move-x" step="1" placeholder="X (mm)">
                         </div>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text">Y</span>
+                        <input type="number" class="form-control" id="move-y" step="1" placeholder="Y (mm)">
                     </div>
+                </div>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-sm btn-success" onclick="moveArmToPosition()">
+                        <i class="fas fa-arrow-right"></i> Move Arm
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="homeArm()">
+                        <i class="fas fa-home"></i> Home Arm
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Calibration Info -->
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0"><i class="fas fa-info-circle"></i> Calibration Info</h5>
+            </div>
+            <div class="card-body">
+                <div id="calibration-info">
+                    <p class="text-muted small">No calibration data available.</p>
                 </div>
             </div>
         </div>
     </div>
+</div>
+{% endblock %}
 
+{% block scripts %}
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let calibrationPoints = [];
         let pendingPoint = null;
+    let calibrationData = null;
+    let testMode = false;
 
+    // Initialize camera feed refresh
+    let cameraRefreshInterval = null;
+    let isPageVisible = true;
+    
+    function refreshCamera() {
+        // Only refresh if page is visible
+        if (!isPageVisible) return;
+        
+        const img = document.getElementById('camera-feed');
+        if (img && img.complete) {
+            const src = img.src.split('?')[0];
+            img.src = src + '?t=' + new Date().getTime();
+        }
+    }
+
+    // Use proper video streaming instead of polling
+    // Auto-refresh camera every 500ms (2 FPS is enough for calibration)
+    // This reduces network load significantly
+    function startCameraRefresh() {
+        if (cameraRefreshInterval) {
+            clearInterval(cameraRefreshInterval);
+        }
+        cameraRefreshInterval = setInterval(refreshCamera, 500);
+    }
+    
+    function stopCameraRefresh() {
+        if (cameraRefreshInterval) {
+            clearInterval(cameraRefreshInterval);
+            cameraRefreshInterval = null;
+        }
+    }
+    
+    // Pause refresh when page is not visible (saves resources)
+    document.addEventListener('visibilitychange', function() {
+        isPageVisible = !document.hidden;
+        if (isPageVisible) {
+            startCameraRefresh();
+        } else {
+            stopCameraRefresh();
+        }
+    });
+    
+    // Start refresh on page load
+    startCameraRefresh();
+
+    // Fullscreen toggle
+    function toggleFullscreen() {
+        const container = document.getElementById('camera-container');
+        if (!document.fullscreenElement) {
+            container.requestFullscreen().catch(err => {
+                console.error('Error attempting to enable fullscreen:', err);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    }
+
+    // Handle camera click
         document.getElementById('camera-container').addEventListener('click', function(e) {
-            const rect = e.target.getBoundingClientRect();
+        if (testMode && calibrationData) {
+            handleTestClick(e);
+            return;
+        }
+
+        const img = document.getElementById('camera-feed');
+        const rect = img.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
             
             // Convert to image coordinates
-            const imgWidth = e.target.naturalWidth || 640;
-            const imgHeight = e.target.naturalHeight || 480;
+        const imgWidth = img.naturalWidth || 640;
+        const imgHeight = img.naturalHeight || 480;
             const scaleX = imgWidth / rect.width;
             const scaleY = imgHeight / rect.height;
             
@@ -175,7 +388,8 @@
             
             // Show input form
             pendingPoint = {pixel: [pixelX, pixelY], displayX: x, displayY: y};
-            document.getElementById('pixel-coords').textContent = `(${pixelX}, ${pixelY})`;
+        document.getElementById('pixel-x').value = pixelX;
+        document.getElementById('pixel-y').value = pixelY;
             document.getElementById('current-point-num').textContent = calibrationPoints.length + 1;
             document.getElementById('point-input-form').style.display = 'block';
             document.getElementById('world-x').value = '';
@@ -196,19 +410,7 @@
             calibrationPoints.push(pendingPoint);
             
             // Add visual marker
-            const marker = document.createElement('div');
-            marker.className = 'calibration-point';
-            marker.style.left = pendingPoint.displayX + 'px';
-            marker.style.top = pendingPoint.displayY + 'px';
-            
-            const label = document.createElement('div');
-            label.className = 'point-label';
-            label.textContent = calibrationPoints.length;
-            label.style.left = pendingPoint.displayX + 'px';
-            label.style.top = pendingPoint.displayY + 'px';
-            
-            document.getElementById('camera-container').appendChild(marker);
-            document.getElementById('camera-container').appendChild(label);
+        addPointMarker(pendingPoint, calibrationPoints.length);
             
             updatePointsList();
             document.getElementById('point-input-form').style.display = 'none';
@@ -221,32 +423,73 @@
             }
         }
 
+    function cancelPoint() {
+        pendingPoint = null;
+        document.getElementById('point-input-form').style.display = 'none';
+    }
+
+    function addPointMarker(point, index) {
+        const container = document.getElementById('camera-container');
+        
+        const marker = document.createElement('div');
+        marker.className = 'calibration-point';
+        marker.style.left = point.displayX + 'px';
+        marker.style.top = point.displayY + 'px';
+        marker.dataset.index = index - 1;
+        
+        const label = document.createElement('div');
+        label.className = 'point-label';
+        label.textContent = `P${index}`;
+        label.style.left = point.displayX + 'px';
+        label.style.top = point.displayY + 'px';
+        
+        container.appendChild(marker);
+        container.appendChild(label);
+    }
+
         function updatePointsList() {
             const list = document.getElementById('points-list');
+        const count = document.getElementById('point-count');
+        count.textContent = calibrationPoints.length;
+        
             if (calibrationPoints.length === 0) {
-                list.innerHTML = '<p class="text-muted small">No points added yet. Click on the camera feed to start.</p>';
+            list.innerHTML = '<p class="text-muted small text-center">No points added yet. Click on the camera feed to start.</p>';
                 return;
             }
             
-            let html = '<div class="list-group list-group-flush">';
+        let html = '';
             calibrationPoints.forEach((p, i) => {
-                html += `<div class="list-group-item py-1 px-2 small">
-                    <strong>Point ${i+1}:</strong> Pixel(${p.pixel[0]}, ${p.pixel[1]}) → World(${p.world[0]}, ${p.world[1]})
-                </div>`;
-            });
-            html += '</div>';
+            html += `
+                <div class="point-card card mb-2">
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>Point ${i+1}</strong><br>
+                                <small class="text-muted">
+                                    Pixel: (${p.pixel[0]}, ${p.pixel[1]})<br>
+                                    World: (${p.world[0].toFixed(1)}, ${p.world[1].toFixed(1)}) mm
+                                </small>
+                            </div>
+                            <button class="btn btn-sm btn-outline-danger" onclick="removePoint(${i})" title="Remove point">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
             list.innerHTML = html;
         }
 
-        function clearLastPoint() {
-            if (calibrationPoints.length > 0) {
-                calibrationPoints.pop();
+    function removePoint(index) {
+        calibrationPoints.splice(index, 1);
                 const container = document.getElementById('camera-container');
                 const markers = container.querySelectorAll('.calibration-point, .point-label');
-                if (markers.length >= 2) {
-                    markers[markers.length - 1].remove();
-                    markers[markers.length - 2].remove();
-                }
+        // Remove all markers and re-add them
+        markers.forEach(m => m.remove());
+        calibrationPoints.forEach((p, i) => {
+            addPointMarker({...p, displayX: p.displayX, displayY: p.displayY}, i + 1);
+        });
                 updatePointsList();
                 
                 if (calibrationPoints.length === 0) {
@@ -255,6 +498,11 @@
                 if (calibrationPoints.length < 4) {
                     document.getElementById('calibrate-btn').disabled = true;
                 }
+    }
+
+    function clearLastPoint() {
+        if (calibrationPoints.length > 0) {
+            removePoint(calibrationPoints.length - 1);
             }
         }
 
@@ -266,8 +514,11 @@
                 updatePointsList();
                 document.getElementById('clear-btn').disabled = true;
                 document.getElementById('calibrate-btn').disabled = true;
+            document.getElementById('test-btn').disabled = true;
                 document.getElementById('point-input-form').style.display = 'none';
-            }
+            testMode = false;
+            document.getElementById('test-section').style.display = 'none';
+        }
         }
 
         async function runCalibration() {
@@ -277,7 +528,7 @@
             }
             
             try {
-                const response = await fetch('/api/calibration/save', {
+            const response = await fetch('/api/calibration/calculate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({points: calibrationPoints})
@@ -285,24 +536,315 @@
                 
                 const result = await response.json();
                 if (result.success) {
-                    alert('Calibration saved successfully!');
+                calibrationData = result.data;
+                updateCalibrationInfo(result.data);
+                showStatus('Calibration calculated successfully!', 'good');
+                
+                // Save calibration
+                await saveCalibration();
+                
+                // Enable test button
+                document.getElementById('test-btn').disabled = false;
+            } else {
+                showStatus('Calibration failed: ' + result.message, 'error');
+            }
+        } catch (error) {
+            showStatus('Error calculating calibration: ' + error.message, 'error');
+        }
+    }
+
+    async function saveCalibration() {
+        try {
+            const response = await fetch('/api/calibration/save', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    points: calibrationPoints,
+                    calibration: calibrationData
+                })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                showStatus('Calibration saved successfully!', 'good');
                 } else {
-                    alert('Calibration failed: ' + result.message);
+                showStatus('Error saving calibration: ' + result.message, 'error');
+            }
+        } catch (error) {
+            showStatus('Error saving calibration: ' + error.message, 'error');
+        }
+    }
+
+    async function loadCalibration() {
+        try {
+            const response = await fetch('/api/calibration/load');
+            const result = await response.json();
+            
+            if (result.success && result.data) {
+                calibrationData = result.data.calibration;
+                if (result.data.points) {
+                    calibrationPoints = result.data.points;
+                    // Re-add visual markers
+                    const container = document.getElementById('camera-container');
+                    const markers = container.querySelectorAll('.calibration-point, .point-label');
+                    markers.forEach(m => m.remove());
+                    calibrationPoints.forEach((p, i) => {
+                        addPointMarker(p, i + 1);
+                    });
+                    updatePointsList();
+                }
+                updateCalibrationInfo(calibrationData);
+                showStatus('Calibration loaded successfully!', 'good');
+                document.getElementById('test-btn').disabled = false;
+            } else {
+                showStatus('No calibration found or error loading: ' + (result.message || 'Unknown error'), 'warning');
+            }
+        } catch (error) {
+            showStatus('Error loading calibration: ' + error.message, 'error');
+        }
+    }
+
+    function updateCalibrationInfo(data) {
+        const infoDiv = document.getElementById('calibration-info');
+        if (!data) {
+            infoDiv.innerHTML = '<p class="text-muted small">No calibration data available.</p>';
+            return;
+        }
+        
+        let html = '<div class="small">';
+        if (data.accuracy) {
+            const accuracyClass = data.accuracy < 5 ? 'success' : (data.accuracy < 10 ? 'warning' : 'danger');
+            html += `<p><strong>Accuracy:</strong> <span class="badge bg-${accuracyClass} accuracy-badge">${data.accuracy.toFixed(2)} mm</span></p>`;
+        }
+        if (data.point_count) {
+            html += `<p><strong>Points Used:</strong> ${data.point_count}</p>`;
+        }
+        if (data.timestamp) {
+            html += `<p><strong>Calibrated:</strong> ${new Date(data.timestamp).toLocaleString()}</p>`;
+        }
+        html += '</div>';
+        infoDiv.innerHTML = html;
+    }
+
+    function showStatus(message, type) {
+        const statusDiv = document.getElementById('calibration-status');
+        const statusText = document.getElementById('status-text');
+        statusDiv.className = `calibration-status status-${type}`;
+        statusText.textContent = message;
+        statusDiv.style.display = 'block';
+        
+        // Auto-hide after 5 seconds for success messages
+        if (type === 'good') {
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+    }
+
+    function testCalibration() {
+        if (!calibrationData) {
+            alert('Please calculate calibration first');
+            return;
+        }
+        
+        testMode = true;
+        document.getElementById('test-section').style.display = 'block';
+        showStatus('Test mode active - Click on camera feed to test calibration', 'info');
+    }
+
+    async function handleTestClick(e) {
+        const img = document.getElementById('camera-feed');
+        const rect = img.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        const imgWidth = img.naturalWidth || 640;
+        const imgHeight = img.naturalHeight || 480;
+        const scaleX = imgWidth / rect.width;
+        const scaleY = imgHeight / rect.height;
+        
+        const pixelX = Math.round(x * scaleX);
+        const pixelY = Math.round(y * scaleY);
+        
+        try {
+            const response = await fetch('/api/calibration/test', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({pixel: [pixelX, pixelY]})
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                const resultsDiv = document.getElementById('test-results');
+                const resultClass = result.error < 5 ? 'success' : 'error';
+                const resultHtml = `
+                    <div class="test-result ${resultClass}">
+                        <strong>Test Point:</strong> Pixel(${pixelX}, ${pixelY})<br>
+                        <strong>Predicted:</strong> (${result.predicted[0].toFixed(1)}, ${result.predicted[1].toFixed(1)}) mm<br>
+                        ${result.actual ? `<strong>Actual:</strong> (${result.actual[0].toFixed(1)}, ${result.actual[1].toFixed(1)}) mm<br>` : ''}
+                        <strong>Error:</strong> ${result.error.toFixed(2)} mm
+                    </div>
+                `;
+                resultsDiv.innerHTML = resultHtml + resultsDiv.innerHTML;
+            }
+        } catch (error) {
+            showStatus('Error testing calibration: ' + error.message, 'error');
+        }
+    }
+
+    function clearTestResults() {
+        document.getElementById('test-results').innerHTML = '';
+    }
+
+    async function moveArmToPosition() {
+        const x = parseFloat(document.getElementById('move-x').value);
+        const y = parseFloat(document.getElementById('move-y').value);
+        
+        if (isNaN(x) || isNaN(y)) {
+            alert('Please enter valid coordinates');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/arm/move', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({x: x, y: y, z: 0})
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                showStatus(`Arm moving to (${x}, ${y}) mm`, 'good');
+            } else {
+                showStatus('Error moving arm: ' + result.message, 'error');
                 }
             } catch (error) {
-                alert('Error saving calibration: ' + error.message);
-            }
+            showStatus('Error moving arm: ' + error.message, 'error');
         }
-    </script>
-    
-    <!-- Footer -->
-    <footer class="bg-light mt-5 py-4">
-        <div class="container text-center">
-            <p class="text-muted mb-0">
-                <i class="fas fa-robot"></i> FarmBOT - Unified Training & Control System
-            </p>
-        </div>
-    </footer>
-</body>
+    }
 
-</html>
+    async function homeArm() {
+        try {
+            const response = await fetch('/api/arm/home', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                showStatus('Arm homed successfully', 'good');
+            } else {
+                showStatus('Error homing arm: ' + result.message, 'error');
+            }
+        } catch (error) {
+            showStatus('Error homing arm: ' + error.message, 'error');
+        }
+    }
+
+    // Camera management
+    async function loadCameraList() {
+        try {
+            const response = await fetch('/api/camera/list');
+            const result = await response.json();
+            
+            if (result.success && result.cameras) {
+                const selector = document.getElementById('camera-selector');
+                selector.innerHTML = '';
+                
+                if (result.cameras.length === 0) {
+                    selector.innerHTML = '<option value="">No cameras found</option>';
+                    return;
+                }
+                
+                result.cameras.forEach(camera => {
+                    const option = document.createElement('option');
+                    option.value = camera.index;
+                    const typeLabel = camera.type ? ` [${camera.type}]` : '';
+                    option.textContent = `${camera.name}${typeLabel} (${camera.resolution})${camera.current ? ' [Current]' : ''}`;
+                    if (camera.current) {
+                        option.selected = true;
+                    }
+                    selector.appendChild(option);
+                });
+            }
+        } catch (error) {
+            console.error('Error loading camera list:', error);
+            document.getElementById('camera-selector').innerHTML = '<option value="">Error loading cameras</option>';
+        }
+    }
+    
+    async function switchCamera() {
+        const selector = document.getElementById('camera-selector');
+        const cameraIndex = parseInt(selector.value);
+        
+        if (isNaN(cameraIndex)) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/camera/switch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({index: cameraIndex})
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                showStatus(`Switched to camera ${cameraIndex}`, 'good');
+                // Refresh camera list to update current indicator
+                setTimeout(loadCameraList, 500);
+                // Refresh camera feed
+                refreshCamera();
+            } else {
+                showStatus('Error switching camera: ' + result.message, 'error');
+            }
+        } catch (error) {
+            showStatus('Error switching camera: ' + error.message, 'error');
+        }
+    }
+    
+    function refreshCameraList() {
+        loadCameraList();
+    }
+    
+    // Auto-detect and prefer USB cameras (usually index 1 or higher)
+    async function autoSelectUSBCamera() {
+        try {
+            const response = await fetch('/api/camera/list');
+            const result = await response.json();
+            
+            if (result.success && result.cameras && result.cameras.length > 1) {
+                // Prefer cameras with index > 0 (usually USB cameras)
+                // Index 0 is typically the built-in camera
+                const usbCameras = result.cameras.filter(c => c.index > 0);
+                if (usbCameras.length > 0) {
+                    // Switch to first USB camera
+                    const usbCamera = usbCameras[0];
+                    const switchResponse = await fetch('/api/camera/switch', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({index: usbCamera.index})
+                    });
+                    
+                    const switchResult = await switchResponse.json();
+                    if (switchResult.success) {
+                        showStatus(`Auto-selected USB camera (index ${usbCamera.index})`, 'good');
+                        loadCameraList();
+                        refreshCamera();
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error auto-selecting USB camera:', error);
+        }
+    }
+
+    // Load calibration and camera list on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadCalibration();
+        loadCameraList();
+        // Auto-select USB camera after a short delay
+        setTimeout(autoSelectUSBCamera, 1000);
+    });
+    </script>
+{% endblock %}

@@ -1,228 +1,630 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FarmBOT - Monitor</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        /* Ensure footer stays at bottom */
-        html, body {
-            height: 100%;
-            margin: 0;
-            padding: 0;
-        }
-        body {
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
-        .container, .container-fluid {
-            flex: 1 0 auto;
-        }
-        footer {
-            flex-shrink: 0;
-            margin-top: auto;
-        }
-        
-        .stat-card {
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-        }
+{% block title %}System Monitor - FarmBOT{% endblock %}
 
-        .chart-container {
-            position: relative;
-            height: 300px;
-            width: 100%;
-        }
-    </style>
-</head>
+{% block content %}
+<style>
+    .stat-card {
+        border-radius: 10px;
+        padding: 25px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
 
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-success">
-        <div class="container">
-            <a class="navbar-brand" href="/">
-                <i class="fas fa-robot"></i> FarmBOT
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="/control">Control</a>
-                <a class="nav-link active" href="/monitor">Monitor</a>
-                <a class="nav-link" href="/calibrate">Calibrate</a>
+    .chart-container {
+        position: relative;
+        height: 300px;
+        width: 100%;
+    }
+    
+    .status-badge {
+        font-size: 0.9rem;
+        padding: 5px 10px;
+    }
+    
+    .connection-status {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 5px;
+    }
+    
+    .status-connected {
+        background-color: #28a745;
+        box-shadow: 0 0 5px #28a745;
+    }
+    
+    .status-disconnected {
+        background-color: #dc3545;
+    }
+    
+    .recent-activity {
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .activity-item {
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+        font-size: 0.9rem;
+    }
+    
+    .activity-item:last-child {
+        border-bottom: none;
+    }
+</style>
+
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="mb-0">
+            <i class="fas fa-chart-line"></i> System Monitor
+        </h1>
+        <p class="text-muted">Real-time system statistics and monitoring</p>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card bg-primary text-white">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="mb-0"><i class="fas fa-box"></i> Total Sorted</h5>
+                <i class="fas fa-chart-bar fa-2x opacity-50"></i>
             </div>
+            <h1 class="display-4 mb-1" id="total-count">0</h1>
+            <p class="mb-0 small opacity-75">Tomatoes processed</p>
         </div>
-    </nav>
-
-    <div class="container mt-4">
-        <div class="row">
-            <div class="col-md-12">
-                <h2 class="mb-4"><i class="fas fa-chart-line"></i> System Monitor</h2>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-success text-white">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="mb-0"><i class="fas fa-check-circle"></i> Ripe</h5>
+                <i class="fas fa-seedling fa-2x opacity-50"></i>
             </div>
+            <h1 class="display-4 mb-1" id="ripe-count">0</h1>
+            <p class="mb-0 small opacity-75">Ready for harvest</p>
         </div>
-
-        <div class="row">
-            <div class="col-md-4">
-                <div class="card stat-card bg-primary text-white">
-                    <h3><i class="fas fa-box"></i> Total Sorted</h3>
-                    <h1 class="display-4" id="total-count">0</h1>
-                    <p>Tomatoes processed this session</p>
-                </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-warning text-dark">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="mb-0"><i class="fas fa-clock"></i> Unripe</h5>
+                <i class="fas fa-hourglass-half fa-2x opacity-50"></i>
             </div>
-            <div class="col-md-4">
-                <div class="card stat-card bg-success text-white">
-                    <h3><i class="fas fa-check-circle"></i> Ripe</h3>
-                    <h1 class="display-4" id="ripe-count">0</h1>
-                    <p>Ready for harvest</p>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card stat-card bg-warning text-dark">
-                    <h3><i class="fas fa-times-circle"></i> Unripe</h3>
-                    <h1 class="display-4" id="unripe-count">0</h1>
-                    <p>Need more time</p>
-                </div>
-            </div>
+            <h1 class="display-4 mb-1" id="unripe-count">0</h1>
+            <p class="mb-0 small opacity-75">Need more time</p>
         </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-danger text-white">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Spoilt</h5>
+                <i class="fas fa-ban fa-2x opacity-50"></i>
+            </div>
+            <h1 class="display-4 mb-1" id="spoilt-count">0</h1>
+            <p class="mb-0 small opacity-75">Damaged/Old</p>
+        </div>
+    </div>
+</div>
 
-        <div class="row mt-4">
-            <div class="col-md-6">
-                <div class="card shadow-sm">
-                    <div class="card-header">
-                        <h5>Detection History</h5>
+<!-- System Status Row -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="fas fa-info-circle"></i> System Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <strong>Camera:</strong>
+                            <span class="connection-status" id="camera-status-indicator"></span>
+                            <span id="camera-status-text" class="status-badge badge bg-secondary">Checking...</span>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="detectionChart"></canvas>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <strong>Arduino:</strong>
+                            <span class="connection-status" id="arduino-status-indicator"></span>
+                            <span id="arduino-status-text" class="status-badge badge bg-secondary">Checking...</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <strong>Mode:</strong>
+                            <span id="system-mode" class="status-badge badge bg-info">Unknown</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <strong>Detection Rate:</strong>
+                            <span id="detection-rate" class="status-badge badge bg-primary">0/min</span>
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card shadow-sm">
-                    <div class="card-header">
-                        <h5>System Resources</h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-2">
+                            <strong>Tomatoes Detected:</strong>
+                            <span id="tomato-detected" class="status-badge badge bg-success">No</span>
+                            <span id="tomato-count-text" class="text-muted small">(0 visible)</span>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="mb-3">
-                            <label>CPU Usage</label>
-                            <div class="progress">
-                                <div id="cpu-bar" class="progress-bar bg-info" role="progressbar" style="width: 0%">0%
-                                </div>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label>Memory Usage</label>
-                            <div class="progress">
-                                <div id="mem-bar" class="progress-bar bg-warning" role="progressbar" style="width: 0%">
-                                    0%</div>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label>Disk Usage</label>
-                            <div class="progress">
-                                <div id="disk-bar" class="progress-bar bg-danger" role="progressbar" style="width: 0%">
-                                    0%</div>
-                            </div>
-                        </div>
-                        <div class="mt-4">
-                            <h6>Temperature: <span id="temp-val" class="badge bg-secondary">--°C</span></h6>
+                    <div class="col-md-6">
+                        <div class="mb-2">
+                            <strong>Session Start:</strong>
+                            <span id="session-start" class="text-muted">--</span>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Initialize Chart
-        const ctx = document.getElementById('detectionChart').getContext('2d');
-        const detectionChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Detections per Minute',
+<!-- Charts and Resources Row -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="fas fa-chart-area"></i> Detection History</h5>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="detectionChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="fas fa-server"></i> System Resources</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <label class="mb-0"><i class="fas fa-microchip"></i> CPU Usage</label>
+                        <span id="cpu-text" class="text-muted small">0%</span>
+                    </div>
+                    <div class="progress" style="height: 25px;">
+                        <div id="cpu-bar" class="progress-bar bg-info progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%">0%</div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <label class="mb-0"><i class="fas fa-memory"></i> Memory Usage</label>
+                        <span id="mem-text" class="text-muted small">0%</span>
+                    </div>
+                    <div class="progress" style="height: 25px;">
+                        <div id="mem-bar" class="progress-bar bg-warning progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%">0%</div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <label class="mb-0"><i class="fas fa-hdd"></i> Disk Usage</label>
+                        <span id="disk-text" class="text-muted small">0%</span>
+                    </div>
+                    <div class="progress" style="height: 25px;">
+                        <div id="disk-bar" class="progress-bar bg-danger progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%">0%</div>
+                    </div>
+                </div>
+                <div class="mt-4 pt-3 border-top">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <label class="mb-0"><i class="fas fa-thermometer-half"></i> Temperature</label>
+                        <span id="temp-val" class="badge bg-secondary">--°C</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-history"></i> Recent Activity</h5>
+                <button class="btn btn-sm btn-outline-secondary" onclick="clearActivity()">
+                    <i class="fas fa-trash"></i> Clear
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="recent-activity" id="recent-activity">
+                    <p class="text-muted text-center mb-0">No recent activity</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // Wait for Chart.js to load
+    document.addEventListener('DOMContentLoaded', function() {
+        // Check if Chart is available
+        if (typeof Chart === 'undefined') {
+            console.error('Chart.js is not loaded. Trying alternative CDN...');
+            // Fallback to alternative CDN
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
+            script.onload = function() {
+                initializeCharts();
+            };
+            document.head.appendChild(script);
+        } else {
+            initializeCharts();
+        }
+    });
+    
+    function initializeCharts() {
+        // Initialize Charts
+        const ctx = document.getElementById('detectionChart');
+        if (!ctx) {
+            console.error('Chart canvas element not found');
+            return;
+        }
+        
+        const detectionChart = new Chart(ctx.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: 'Detection Rate (per minute)',
                     data: [],
                     borderColor: 'rgb(75, 192, 192)',
-                    tension: 0.1
-                }]
+                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Total Sorted',
+                    data: [],
+                    borderColor: 'rgb(255, 99, 132)',
+                    backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                }
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false
-            }
-        });
-
-        async function updateStats() {
-            try {
-                // Get system info
-                const response = await fetch('/api/system/info');
-                const data = await response.json();
-
-                // Update resources
-                if (data.cpu_percent !== undefined) {
-                    document.getElementById('cpu-bar').style.width = data.cpu_percent + '%';
-                    document.getElementById('cpu-bar').textContent = data.cpu_percent + '%';
+            scales: {
+                y: {
+                    beginAtZero: true
                 }
-
-                if (data.memory_percent !== undefined) {
-                    document.getElementById('mem-bar').style.width = data.memory_percent + '%';
-                    document.getElementById('mem-bar').textContent = data.memory_percent + '%';
-                }
-
-                if (data.disk_percent !== undefined) {
-                    document.getElementById('disk-bar').style.width = data.disk_percent + '%';
-                    document.getElementById('disk-bar').textContent = data.disk_percent + '%';
-                }
-
-                if (data.temperature) {
-                    document.getElementById('temp-val').textContent = data.temperature;
-                }
-
-                // Get detection stats (from status endpoint)
-                const statusResponse = await fetch('/pi/status');
-                const status = await statusResponse.json();
-
-                // Update counts (simulated breakdown for now as we only track total count in simple state)
-                // In a real app, we'd track these separately
-                const total = status.detection_count || 0;
-                // Just for visualization, we'll split them arbitrarily if not tracked
-                // Ideally, the backend should provide these specific counts
-                document.getElementById('total-count').textContent = total;
-
-                // Add data to chart
-                const now = new Date().toLocaleTimeString();
-                detectionChart.data.labels.push(now);
-                detectionChart.data.datasets[0].data.push(total); // This should be rate, but total is fine for demo
-
-                // Keep chart size manageable
-                if (detectionChart.data.labels.length > 20) {
-                    detectionChart.data.labels.shift();
-                    detectionChart.data.datasets[0].data.shift();
-                }
-                detectionChart.update();
-
-            } catch (error) {
-                console.error('Error updating stats:', error);
             }
         }
-
-        setInterval(updateStats, 2000);
-    </script>
+    });
     
-    <!-- Footer -->
-    <footer class="bg-light mt-5 py-4">
-        <div class="container text-center">
-            <p class="text-muted mb-0">
-                <i class="fas fa-robot"></i> FarmBOT - Unified Training & Control System
-            </p>
-        </div>
-    </footer>
-</body>
+    // Make chart available globally
+    window.detectionChart = detectionChart;
+    }
 
-</html>
+    let activityLog = [];
+    const maxActivityItems = 50;
+
+    function addActivity(message, type = 'info') {
+        const timestamp = new Date().toLocaleTimeString();
+        activityLog.unshift({
+            timestamp,
+            message,
+            type
+        });
+        
+        if (activityLog.length > maxActivityItems) {
+            activityLog = activityLog.slice(0, maxActivityItems);
+        }
+        
+        updateActivityDisplay();
+    }
+
+    function updateActivityDisplay() {
+        const container = document.getElementById('recent-activity');
+        if (activityLog.length === 0) {
+            container.innerHTML = '<p class="text-muted text-center mb-0">No recent activity</p>';
+            return;
+        }
+        
+        let html = '';
+        activityLog.forEach(item => {
+            const badgeClass = {
+                'success': 'bg-success',
+                'warning': 'bg-warning',
+                'danger': 'bg-danger',
+                'info': 'bg-info'
+            }[item.type] || 'bg-secondary';
+            
+            html += `
+                <div class="activity-item">
+                    <span class="badge ${badgeClass} me-2">${item.timestamp}</span>
+                    ${item.message}
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    }
+
+    function clearActivity() {
+        activityLog = [];
+        updateActivityDisplay();
+    }
+
+    async function updateStats() {
+        try {
+            // Get monitoring statistics
+            const statsResponse = await fetch('/api/monitor/stats', {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'same-origin'
+            });
+            
+            if (!statsResponse.ok) {
+                const errorText = await statsResponse.text();
+                console.error('API error:', statsResponse.status, errorText);
+                throw new Error(`HTTP error! status: ${statsResponse.status}`);
+            }
+            
+            const stats = await statsResponse.json();
+            
+            // Check if response has error
+            if (stats.error) {
+                console.error('API returned error:', stats.error);
+                addActivity('Error: ' + stats.error, 'danger');
+                return;
+            }
+
+            // Update counts
+            document.getElementById('total-count').textContent = stats.total_sorted || 0;
+            document.getElementById('ripe-count').textContent = stats.ripe_count || 0;
+            document.getElementById('unripe-count').textContent = stats.unripe_count || 0;
+            document.getElementById('spoilt-count').textContent = stats.spoilt_count || 0;
+            
+            // Update detection rate
+            document.getElementById('detection-rate').textContent = `${stats.detection_rate || 0}/min`;
+            
+            // Update connection status
+            const cameraConnected = stats.camera_connected || false;
+            const arduinoConnected = stats.arduino_connected || false;
+            
+            document.getElementById('camera-status-indicator').className = 
+                `connection-status ${cameraConnected ? 'status-connected' : 'status-disconnected'}`;
+            document.getElementById('camera-status-text').textContent = cameraConnected ? 'Connected' : 'Disconnected';
+            document.getElementById('camera-status-text').className = 
+                `status-badge badge ${cameraConnected ? 'bg-success' : 'bg-danger'}`;
+            
+            document.getElementById('arduino-status-indicator').className = 
+                `connection-status ${arduinoConnected ? 'status-connected' : 'status-disconnected'}`;
+            document.getElementById('arduino-status-text').textContent = arduinoConnected ? 'Connected' : 'Disconnected';
+            document.getElementById('arduino-status-text').className = 
+                `status-badge badge ${arduinoConnected ? 'bg-success' : 'bg-danger'}`;
+            
+            // Update system mode
+            const mode = stats.auto_mode ? 'AUTO' : 'MANUAL';
+            document.getElementById('system-mode').textContent = mode;
+            document.getElementById('system-mode').className = 
+                `status-badge badge ${mode === 'AUTO' ? 'bg-success' : 'bg-info'}`;
+            
+            // Update tomato detection
+            const tomatoDetected = stats.tomato_detected || false;
+            const tomatoCount = stats.tomato_count || 0;
+            document.getElementById('tomato-detected').textContent = tomatoDetected ? 'Yes' : 'No';
+            document.getElementById('tomato-detected').className = 
+                `status-badge badge ${tomatoDetected ? 'bg-success' : 'bg-secondary'}`;
+            document.getElementById('tomato-count-text').textContent = `(${tomatoCount} visible)`;
+            
+            // Update session start
+            if (stats.session_start) {
+                const sessionDate = new Date(stats.session_start);
+                document.getElementById('session-start').textContent = sessionDate.toLocaleString();
+            }
+            
+            // Update chart
+            if (window.detectionChart) {
+                const now = new Date().toLocaleTimeString();
+                window.detectionChart.data.labels.push(now);
+                window.detectionChart.data.datasets[0].data.push(stats.detection_rate || 0);
+                window.detectionChart.data.datasets[1].data.push(stats.total_sorted || 0);
+                
+                // Keep chart size manageable (last 30 data points)
+                if (window.detectionChart.data.labels.length > 30) {
+                    window.detectionChart.data.labels.shift();
+                    window.detectionChart.data.datasets[0].data.shift();
+                    window.detectionChart.data.datasets[1].data.shift();
+                }
+                window.detectionChart.update('none'); // 'none' for smooth animation
+            }
+            
+            // Add activity for new detections
+            if (stats.detection_history && stats.detection_history.length > 0) {
+                const latest = stats.detection_history[stats.detection_history.length - 1];
+                const latestTime = new Date(latest.timestamp).toLocaleTimeString();
+                const classBadge = {
+                    'ready': '<span class="badge bg-success">Ripe</span>',
+                    'not_ready': '<span class="badge bg-warning">Unripe</span>',
+                    'spoilt': '<span class="badge bg-danger">Spoilt</span>'
+                }[latest.class] || `<span class="badge bg-secondary">${latest.class}</span>`;
+                
+                // Only add if it's new (compare with last known)
+                if (!window.lastDetectionTime || latest.timestamp !== window.lastDetectionTime) {
+                    addActivity(`Tomato detected and sorted: ${classBadge}`, 'success');
+                    window.lastDetectionTime = latest.timestamp;
+                }
+            }
+
+            // Get system info
+            let systemData = {
+                cpu_percent: 0,
+                memory_percent: 0,
+                disk_percent: 0,
+                temperature: 'N/A'
+            };
+            
+            try {
+                const systemResponse = await fetch('/api/system/info', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'same-origin'
+                });
+                
+                if (!systemResponse.ok) {
+                    const errorText = await systemResponse.text();
+                    console.error('System info API error:', systemResponse.status, errorText);
+                    // Use defaults already set above
+                } else {
+                    try {
+                        systemData = await systemResponse.json();
+                    } catch (jsonError) {
+                        console.error('Error parsing system info JSON:', jsonError);
+                        // Use defaults already set above
+                    }
+                }
+            } catch (fetchError) {
+                console.error('Error fetching system info:', fetchError);
+                // Use defaults already set above
+            }
+            
+            // Debug logging (can be removed in production)
+            // console.log('System info received:', systemData);
+
+            // Update resources
+            if (systemData.cpu_percent !== undefined) {
+                const cpuPercent = Math.round(systemData.cpu_percent);
+                document.getElementById('cpu-bar').style.width = cpuPercent + '%';
+                document.getElementById('cpu-bar').textContent = cpuPercent + '%';
+                document.getElementById('cpu-text').textContent = cpuPercent + '%';
+                
+                // Change color based on usage
+                if (cpuPercent > 80) {
+                    document.getElementById('cpu-bar').className = 'progress-bar bg-danger progress-bar-striped progress-bar-animated';
+                } else if (cpuPercent > 60) {
+                    document.getElementById('cpu-bar').className = 'progress-bar bg-warning progress-bar-striped progress-bar-animated';
+                } else {
+                    document.getElementById('cpu-bar').className = 'progress-bar bg-info progress-bar-striped progress-bar-animated';
+                }
+            }
+
+            if (systemData.memory_percent !== undefined) {
+                const memPercent = Math.round(systemData.memory_percent);
+                document.getElementById('mem-bar').style.width = memPercent + '%';
+                document.getElementById('mem-bar').textContent = memPercent + '%';
+                document.getElementById('mem-text').textContent = memPercent + '%';
+                
+                if (memPercent > 80) {
+                    document.getElementById('mem-bar').className = 'progress-bar bg-danger progress-bar-striped progress-bar-animated';
+                } else if (memPercent > 60) {
+                    document.getElementById('mem-bar').className = 'progress-bar bg-warning progress-bar-striped progress-bar-animated';
+                } else {
+                    document.getElementById('mem-bar').className = 'progress-bar bg-warning progress-bar-striped progress-bar-animated';
+                }
+            }
+
+            if (systemData.disk_percent !== undefined) {
+                const diskPercent = Math.round(systemData.disk_percent);
+                document.getElementById('disk-bar').style.width = diskPercent + '%';
+                document.getElementById('disk-bar').textContent = diskPercent + '%';
+                document.getElementById('disk-text').textContent = diskPercent + '%';
+                
+                if (diskPercent > 90) {
+                    document.getElementById('disk-bar').className = 'progress-bar bg-danger progress-bar-striped progress-bar-animated';
+                } else if (diskPercent > 80) {
+                    document.getElementById('disk-bar').className = 'progress-bar bg-warning progress-bar-striped progress-bar-animated';
+                } else {
+                    document.getElementById('disk-bar').className = 'progress-bar bg-danger progress-bar-striped progress-bar-animated';
+                }
+            }
+
+            if (systemData.temperature) {
+                document.getElementById('temp-val').textContent = systemData.temperature;
+            }
+
+        } catch (error) {
+            console.error('Error updating stats:', error);
+            addActivity('Error updating statistics: ' + error.message, 'danger');
+            
+            // Show error in status if it persists
+            if (!document.getElementById('camera-status-text').textContent || 
+                document.getElementById('camera-status-text').textContent === 'Checking...') {
+                document.getElementById('camera-status-text').textContent = 'Error';
+                document.getElementById('camera-status-text').className = 'status-badge badge bg-danger';
+                document.getElementById('arduino-status-text').textContent = 'Error';
+                document.getElementById('arduino-status-text').className = 'status-badge badge bg-danger';
+            }
+        }
+    }
+
+    // Initialize updateStats after chart is ready
+    let updateStatsInitialized = false;
+    
+    function startMonitoring() {
+        if (!updateStatsInitialized) {
+            updateStatsInitialized = true;
+            
+            // Initial update
+            updateStats();
+            
+            // Update every 3 seconds (reduced from 2 to save resources)
+            // Use a variable so we can clear it if needed
+            window.monitorInterval = setInterval(updateStats, 3000);
+            
+            // Add welcome message
+            addActivity('Monitor started', 'info');
+        }
+    }
+    
+    // Global error handler for unhandled promise rejections
+    window.addEventListener('unhandledrejection', function(event) {
+        console.error('Unhandled promise rejection:', event.reason);
+        // Prevent the error from appearing in console if it's a known issue
+        if (event.reason && typeof event.reason === 'object') {
+            // Check if it's a 403 error that we can safely ignore
+            if (event.reason.code === 403 && event.reason.httpStatus === 200) {
+                event.preventDefault(); // Suppress the error
+                console.warn('Suppressed 403 error (likely from a library):', event.reason);
+            }
+        }
+    });
+    
+    // Wait for DOM and Chart.js to be ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(startMonitoring, 1000); // Wait a bit for Chart.js to load
+        });
+    } else {
+        setTimeout(startMonitoring, 1000);
+    }
+</script>
+{% endblock %}

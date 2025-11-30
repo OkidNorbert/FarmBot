@@ -161,16 +161,18 @@
             <!-- Camera Feed -->
             <div class="col-md-8">
                 <div class="card status-card">
-                    <div class="card-header bg-dark text-white">
-                        <h5><i class="fas fa-camera"></i> Camera Feed</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="mb-2">
-                            <label class="form-label fw-bold">Camera Selection</label>
-                            <select id="camera-select" class="form-select" onchange="switchCamera()">
+                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-camera"></i> Camera Feed</h5>
+                        <div class="d-flex gap-2 align-items-center">
+                            <select id="camera-select" class="form-select form-select-sm" onchange="switchCamera()" style="width: auto; min-width: 180px;">
                                 <option value="">Loading cameras...</option>
                             </select>
+                            <button class="btn btn-sm btn-outline-light" onclick="refreshCameraList()" title="Refresh Camera List">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
                         </div>
+                    </div>
+                    <div class="card-body">
                         <div class="camera-feed">
                             <img id="camera-feed" src="/api/camera/feed" alt="Camera Feed"
                                 style="width: 100%; height: 300px; object-fit: cover;">
@@ -437,7 +439,8 @@
                         result.cameras.forEach(camera => {
                             const option = document.createElement('option');
                             option.value = camera.index;
-                            option.textContent = `${camera.name} (${camera.resolution})${camera.current ? ' [Current]' : ''}`;
+                            const typeLabel = camera.type ? ` [${camera.type}]` : '';
+                            option.textContent = `${camera.name}${typeLabel} (${camera.resolution})${camera.current ? ' [Current]' : ''}`;
                             if (camera.current) {
                                 option.selected = true;
                             }
@@ -473,12 +476,22 @@
                 if (result.success) {
                     showAlert(`Switched to camera ${cameraIndex}`, 'success');
                     setTimeout(loadCameraList, 500);
+                    // Refresh camera feed
+                    const cameraFeed = document.getElementById('camera-feed');
+                    if (cameraFeed) {
+                        const src = cameraFeed.src.split('?')[0];
+                        cameraFeed.src = src + '?t=' + new Date().getTime();
+                    }
                 } else {
                     showAlert('Failed to switch camera: ' + result.message, 'danger');
                 }
             } catch (error) {
                 showAlert('Error switching camera: ' + error.message, 'danger');
             }
+        }
+        
+        function refreshCameraList() {
+            loadCameraList();
         }
 
         async function startCalibration() {

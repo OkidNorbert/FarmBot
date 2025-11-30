@@ -453,10 +453,30 @@ class HardwareController:
         self.camera_connected = False
         self.available_cameras = self._detect_available_cameras()
         
-        # Try to connect to the first available camera (or use configured index)
+        # Try to load saved camera preference
+        saved_camera_index = self._load_camera_preference()
+        
+        # Try to connect to the first available camera (or use configured/saved index)
         if self.available_cameras:
-            # Use first available camera by default, or configured index if valid
-            target_index = self.camera_index if self.camera_index in self.available_cameras else self.available_cameras[0]
+            # Priority: saved preference > configured index > first USB camera > first available
+            target_index = None
+            
+            # 1. Try saved preference
+            if saved_camera_index is not None and saved_camera_index in self.available_cameras:
+                target_index = saved_camera_index
+                self.logger.info(f"Using saved camera preference: index {target_index}")
+            # 2. Try configured index
+            elif self.camera_index in self.available_cameras:
+                target_index = self.camera_index
+            # 3. Prefer USB cameras (index > 0) over built-in (index 0)
+            else:
+                usb_cameras = [idx for idx in self.available_cameras if idx > 0]
+                if usb_cameras:
+                    target_index = usb_cameras[0]
+                    self.logger.info(f"Auto-selecting USB camera: index {target_index}")
+                else:
+                    target_index = self.available_cameras[0]
+            
             if self._connect_camera(target_index):
                 self.logger.info(f"Camera connected at index {target_index} ({len(self.available_cameras)} cameras available)")
             else:
@@ -464,6 +484,19 @@ class HardwareController:
         else:
             self.logger.warning("No cameras detected - Simulation Mode")
             self.camera = None
+    
+    def _load_camera_preference(self):
+        """Load saved camera preference from file"""
+        try:
+            import json
+            camera_pref_file = Path(self.project_root) / 'camera_preference.json'
+            if camera_pref_file.exists():
+                with open(camera_pref_file, 'r') as f:
+                    pref = json.load(f)
+                    return pref.get('camera_index')
+        except Exception as e:
+            self.logger.debug(f"Could not load camera preference: {e}")
+        return None
 
     def _detect_available_cameras(self):
         """Detect all available cameras (both built-in and USB)"""
@@ -475,36 +508,80 @@ class HardwareController:
         import sys
         import warnings
         
-        # Save original stderr
-        original_stderr = sys.stderr
+        # First, check which /dev/video* devices exist to limit our search
+        video_devices = []
+        if os.path.exists('/dev'):
+            for item in sorted(os.listdir('/dev')):
+                if item.startswith('video'):
+                    try:
+                        # Extract index from /dev/videoN
+                        idx = int(item.replace('video', ''))
+                        video_devices.append(idx)
+                    except ValueError:
+                        pass
         
-        # Test indices 0-9 to find all available cameras
-        for idx in range(10):
+        # Save original stderr and stdout
+        original_stderr = sys.stderr
+        original_stdout = sys.stdout
+        
+        # Test indices - prioritize /dev/video* devices, then test 0-9
+        indices_to_test = list(set(video_devices + list(range(10))))
+        indices_to_test.sort()
+        
+        for idx in indices_to_test:
+            test_cap = None
             try:
-                # Suppress stderr for this operation to hide OpenCV warnings
+                # Suppress both stderr and stdout to hide OpenCV warnings completely
                 with open(os.devnull, 'w') as devnull:
                     sys.stderr = devnull
-                    test_cap = cv2.VideoCapture(idx)
-                    sys.stderr = original_stderr
+                    sys.stdout = devnull
                     
-                    if test_cap.isOpened():
+                    # Try to open camera with a short timeout
+                    test_cap = cv2.VideoCapture(idx, cv2.CAP_V4L2 if idx in video_devices else cv2.CAP_ANY)
+                    
+                    # Restore stderr/stdout immediately after opening
+                    sys.stderr = original_stderr
+                    sys.stdout = original_stdout
+                    
+                    if test_cap is not None and test_cap.isOpened():
                         # Try to read a frame to verify it works
                         ret, frame = test_cap.read()
                         if ret and frame is not None:
                             # Get camera info if available
-                            backend = test_cap.getBackendName()
-                            width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                            height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                            try:
+                                backend = test_cap.getBackendName()
+                            except:
+                                backend = "Unknown"
+                            
+                            try:
+                                width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
+                                height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
+                            except:
+                                width, height = 640, 480
+                            
                             available.append(idx)
                             self.logger.info(f"Found camera at index {idx}: {backend}, {width}x{height}")
-                    test_cap.release()
+                    else:
+                        sys.stderr = original_stderr
+                        sys.stdout = original_stdout
+                    
+                    if test_cap:
+                        test_cap.release()
             except Exception as e:
                 # Camera doesn't exist or failed - silently continue
                 sys.stderr = original_stderr
-                pass
+                sys.stdout = original_stdout
+                if test_cap:
+                    try:
+                        test_cap.release()
+                    except:
+                        pass
+                # Don't log errors for missing cameras - this is expected
+                continue
         
-        # Restore stderr
+        # Restore stderr and stdout
         sys.stderr = original_stderr
+        sys.stdout = original_stdout
         
         if available:
             self.logger.info(f"Detected {len(available)} camera(s): {available}")
@@ -518,17 +595,43 @@ class HardwareController:
         try:
             # Release existing camera if any
             if self.camera:
-                self.camera.release()
+                try:
+                    self.camera.release()
+                except:
+                    pass
                 self.camera = None
             
             # Suppress OpenCV warnings during connection
             import os
             import sys
             original_stderr = sys.stderr
+            original_stdout = sys.stdout
+            
+            # Check if this is a /dev/video* device
+            video_devices = []
+            if os.path.exists('/dev'):
+                for item in sorted(os.listdir('/dev')):
+                    if item.startswith('video'):
+                        try:
+                            idx = int(item.replace('video', ''))
+                            video_devices.append(idx)
+                        except ValueError:
+                            pass
+            
+            # Use V4L2 backend if it's a /dev/video* device
+            backend = cv2.CAP_V4L2 if camera_index in video_devices else cv2.CAP_ANY
+            
             with open(os.devnull, 'w') as devnull:
                 sys.stderr = devnull
-                self.camera = cv2.VideoCapture(camera_index)
+                sys.stdout = devnull
+                try:
+                    self.camera = cv2.VideoCapture(camera_index, backend)
+                except:
+                    # Fallback to default backend
+                    self.camera = cv2.VideoCapture(camera_index)
                 sys.stderr = original_stderr
+                sys.stdout = original_stdout
+                
                 if self.camera.isOpened():
                     # Test if we can actually read a frame
                     ret, frame = self.camera.read()
@@ -538,14 +641,27 @@ class HardwareController:
                         # Start frame reading thread
                         threading.Thread(target=self._update_frame, daemon=True).start()
                         return True
+                    else:
+                        # Camera opened but can't read frames
+                        self.camera.release()
+                        self.camera = None
+                        return False
                 else:
-                    self.camera.release()
+                    # Camera didn't open
+                    if self.camera:
+                        try:
+                            self.camera.release()
+                        except:
+                            pass
                     self.camera = None
-                return False
+                    return False
         except Exception as e:
             self.logger.error(f"Failed to connect camera {camera_index}: {e}")
             if self.camera:
-                self.camera.release()
+                try:
+                    self.camera.release()
+                except:
+                    pass
                 self.camera = None
             return False
     
@@ -582,9 +698,39 @@ class HardwareController:
                         width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                         backend = test_cap.getBackendName()
+                        
+                        # Try to identify camera type
+                        camera_name = f"Camera {idx}"
+                        camera_type = "Unknown"
+                        
+                        # Check if it's likely a USB camera (index > 0 usually means USB)
+                        if idx == 0:
+                            camera_name = "Built-in Camera"
+                            camera_type = "Built-in"
+                        else:
+                            # Try to get more info about USB cameras
+                            # Check if there's a /dev/video* device
+                            video_devices = []
+                            if os.path.exists('/dev'):
+                                for item in os.listdir('/dev'):
+                                    if item.startswith('video'):
+                                        try:
+                                            video_idx = int(item.replace('video', ''))
+                                            if video_idx == idx:
+                                                camera_name = f"USB Camera ({item})"
+                                                camera_type = "USB"
+                                                break
+                                        except:
+                                            pass
+                            
+                            if camera_type == "Unknown":
+                                camera_name = f"USB Camera {idx}"
+                                camera_type = "USB"
+                        
                         cameras.append({
                             'index': idx,
-                            'name': f"Camera {idx}",
+                            'name': camera_name,
+                            'type': camera_type,
                             'backend': backend,
                             'resolution': f"{width}x{height}",
                             'current': idx == self.camera_index

@@ -7,10 +7,18 @@
     <div class="row">
         <div class="col-12">
             <div class="card">
-                <div class="card-header">
+                <div class="card-header d-flex justify-content-between align-items-center">
                     <h4 class="mb-0">
                         <i class="fas fa-video"></i> Live Camera Feed
                     </h4>
+                    <div class="d-flex gap-2 align-items-center">
+                        <select id="camera-selector-header" class="form-select form-select-sm" onchange="switchCamera()" style="width: auto; min-width: 150px;">
+                            <option value="">Loading cameras...</option>
+                        </select>
+                        <button class="btn btn-sm btn-outline-light" onclick="refreshCameraList()" title="Refresh Camera List">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div class="row">
@@ -48,6 +56,19 @@
                                         <div id="camera-status" class="alert alert-info">
                                             <strong>Camera Status:</strong> Checking...
                                         </div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Camera Selection</label>
+                                        <select id="camera-selector" class="form-select form-select-sm mb-2" onchange="switchCamera()">
+                                            <option value="">Loading cameras...</option>
+                                        </select>
+                                        <button class="btn btn-sm btn-outline-secondary w-100" onclick="refreshCameraList()">
+                                            <i class="fas fa-sync-alt"></i> Refresh List
+                                        </button>
+                                        <small class="text-muted d-block mt-2">
+                                            <i class="fas fa-info-circle"></i> Select camera before starting feed
+                                        </small>
                                     </div>
                                     
                                     <div class="mb-3">
@@ -123,8 +144,115 @@ let isCameraRunning = false;
 let tomatoMonitoringInterval;
 let isTomatoMonitoring = false;
 
-function startCamera() {
+// Camera management functions
+async function loadCameraList() {
+    try {
+        const response = await fetch('/api/camera/list');
+        const result = await response.json();
+        
+        if (result.success && result.cameras) {
+            // Update both selectors (header and controls panel)
+            const selectors = [
+                document.getElementById('camera-selector'),
+                document.getElementById('camera-selector-header')
+            ].filter(s => s !== null);
+            
+            if (selectors.length === 0) return;
+            
+            selectors.forEach(selector => {
+                selector.innerHTML = '';
+                
+                if (result.cameras.length === 0) {
+                    selector.innerHTML = '<option value="">No cameras found</option>';
+                    return;
+                }
+                
+                result.cameras.forEach(camera => {
+                    const option = document.createElement('option');
+                    option.value = camera.index;
+                    const typeLabel = camera.type ? ` [${camera.type}]` : '';
+                    option.textContent = `${camera.name}${typeLabel} (${camera.resolution})${camera.current ? ' [Current]' : ''}`;
+                    if (camera.current) {
+                        option.selected = true;
+                    }
+                    selector.appendChild(option);
+                });
+            });
+        }
+    } catch (error) {
+        console.error('Error loading camera list:', error);
+        const selectors = [
+            document.getElementById('camera-selector'),
+            document.getElementById('camera-selector-header')
+        ].filter(s => s !== null);
+        
+        selectors.forEach(selector => {
+            selector.innerHTML = '<option value="">Error loading cameras</option>';
+        });
+    }
+}
+
+async function switchCamera() {
+    // Get camera index from either selector
+    const selector = document.getElementById('camera-selector') || document.getElementById('camera-selector-header');
+    if (!selector) return;
+    
+    const cameraIndex = parseInt(selector.value);
+    if (isNaN(cameraIndex)) return;
+    
+    try {
+        const response = await fetch('/api/camera/switch', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({index: cameraIndex})
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            updateStatus(`Switched to camera ${cameraIndex}`, 'success');
+            // Refresh camera list to update current indicator in both selectors
+            setTimeout(loadCameraList, 500);
+            // Restart camera feed if it's running
+            if (isCameraRunning) {
+                stopCamera();
+                setTimeout(startCamera, 500);
+            }
+        } else {
+            updateStatus('Failed to switch camera: ' + result.message, 'danger');
+        }
+    } catch (error) {
+        updateStatus('Error switching camera: ' + error.message, 'danger');
+    }
+}
+
+function refreshCameraList() {
+    loadCameraList();
+}
+
+async function startCamera() {
     if (!isCameraRunning) {
+        // Make sure we're using the selected camera
+        const selector = document.getElementById('camera-selector') || document.getElementById('camera-selector-header');
+        if (selector && selector.value) {
+            const cameraIndex = parseInt(selector.value);
+            if (!isNaN(cameraIndex)) {
+                // Switch to selected camera before starting
+                try {
+                    const response = await fetch('/api/camera/switch', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({index: cameraIndex})
+                    });
+                    const result = await response.json();
+                    if (!result.success) {
+                        updateStatus('Warning: Could not switch to selected camera. Using default.', 'warning');
+                    }
+                } catch (error) {
+                    console.error('Error switching camera before start:', error);
+                }
+            }
+        }
+        
         const cameraFeed = document.getElementById('camera-feed');
         const placeholder = document.getElementById('camera-placeholder');
         
@@ -133,8 +261,9 @@ function startCamera() {
             placeholder.style.display = 'none';
         }
         
-        // Start the camera feed with a timestamp to prevent caching
-        cameraFeed.src = "{{ url_for('video_feed') }}?" + new Date().getTime();
+        // Use /api/camera/feed which uses hardware controller and respects camera selection
+        // Add timestamp to prevent caching
+        cameraFeed.src = "/api/camera/feed?" + new Date().getTime();
         isCameraRunning = true;
         
         // Start auto-capture if enabled
@@ -283,7 +412,16 @@ function getClassColor(prediction) {
 }
 
 function updateStatus(message, type) {
-    const statusDiv = document.getElementById('live-prediction');
+    // Try to find status element - use camera-status if live-prediction doesn't exist
+    let statusDiv = document.getElementById('live-prediction');
+    if (!statusDiv) {
+        statusDiv = document.getElementById('camera-status');
+    }
+    if (!statusDiv) {
+        // If neither exists, create a temporary status or just log
+        console.log(`Status: ${message} (${type})`);
+        return;
+    }
     statusDiv.className = `alert alert-${type}`;
     statusDiv.innerHTML = `<strong>Status:</strong> ${message}`;
 }
@@ -407,12 +545,31 @@ function stopTomatoMonitoring() {
 
 function updateTomatoStatus(message, type) {
     const statusDiv = document.getElementById('tomato-detection');
+    if (!statusDiv) {
+        console.log(`Tomato Status: ${message} (${type})`);
+        return;
+    }
     statusDiv.className = `alert alert-${type}`;
     statusDiv.innerHTML = `<strong>Tomato Status:</strong> ${message}`;
 }
 
+// Global error handler for unhandled promise rejections
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('Unhandled promise rejection:', event.reason);
+    // Prevent the error from appearing in console if it's a known issue
+    if (event.reason && typeof event.reason === 'object') {
+        // Check if it's a 403 error that we can safely ignore
+        if (event.reason.code === 403 && event.reason.httpStatus === 200) {
+            event.preventDefault(); // Suppress the error
+            console.warn('Suppressed 403 error (likely from a library):', event.reason);
+        }
+    }
+});
+
 // Initialize page when loaded
 document.addEventListener('DOMContentLoaded', function() {
+    // Load camera list on page load
+    loadCameraList();
     checkCameraStatus();
     // Don't auto-start camera - let user start it manually
     // startCamera();
