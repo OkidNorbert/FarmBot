@@ -58,6 +58,15 @@ void setup() {
     Serial.println("Initializing servos...");
     servoManager.begin();
     
+    // Initialize to manual mode with default speed
+    currentMode = "MANUAL";
+    servoManager.setSpeed(DEFAULT_SPEED);
+    Serial.print("Initialized in MANUAL mode - Speed: ");
+    Serial.print(DEFAULT_SPEED);
+    Serial.print(" deg/s (max: ");
+    Serial.print(MANUAL_MODE_MAX);
+    Serial.println(" deg/s)");
+    
     Serial.println("Initializing ToF sensor...");
     if (!tofManager.begin()) {
         Serial.println("WARNING: ToF Sensor Failed!");
@@ -222,6 +231,13 @@ void handleWebSocketMessage(String payload) {
     String cmd = data["cmd"].as<String>();
     
     if (cmd == "pick") {
+            // Automatic mode - ensure speed is set to auto mode speed
+            if (currentMode != "AUTO" && currentMode != "AUTOMATIC") {
+                currentMode = "AUTO";
+                servoManager.setSpeed(AUTO_MODE_SPEED);
+                Serial.println("Switched to AUTO mode for pick operation");
+            }
+            
             String id = data["id"] | "unknown";
             int x = data["x"] | 320;
             int y = data["y"] | 240;
@@ -432,7 +448,7 @@ void processTextCommand(String command) {
         currentState = ERROR;
     }
     else if (command.startsWith("SPEED")) {
-        // SPEED <value> - Set movement speed in degrees per second (1-180)
+        // SPEED <value> - Set movement speed in degrees per second
         int firstSpace = command.indexOf(' ');
         if (firstSpace == -1) {
             Serial.println("Invalid SPEED command format - need value");
@@ -440,13 +456,26 @@ void processTextCommand(String command) {
         }
         
         int speed = command.substring(firstSpace + 1).toInt();
-        if (speed >= 1 && speed <= 180) {
-            servoManager.setSpeed(speed);
-            Serial.print("Speed set to: ");
+        
+        // Apply mode-based speed limits
+        int maxAllowedSpeed = (currentMode == "AUTO" || currentMode == "AUTOMATIC") 
+                              ? AUTO_MODE_SPEED 
+                              : MANUAL_MODE_MAX;
+        int constrainedSpeed = constrain(speed, MIN_SPEED, maxAllowedSpeed);
+        servoManager.setSpeed(constrainedSpeed);
+        
+        if (speed != constrainedSpeed) {
+            Serial.print("Speed constrained from ");
             Serial.print(speed);
-            Serial.println(" deg/s");
+            Serial.print(" to ");
+            Serial.print(constrainedSpeed);
+            Serial.print(" deg/s (");
+            Serial.print(currentMode);
+            Serial.println(" mode limit)");
         } else {
-            Serial.println("Invalid speed value - must be 1-180 deg/s");
+            Serial.print("Speed set to: ");
+            Serial.print(constrainedSpeed);
+            Serial.println(" deg/s");
         }
     }
     else if (command.startsWith("ANGLE")) {

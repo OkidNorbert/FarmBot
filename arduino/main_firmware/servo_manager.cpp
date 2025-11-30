@@ -120,8 +120,9 @@ bool ServoManager::isMoving() {
 }
 
 void ServoManager::setSpeed(int speed_deg_per_sec) {
-    // Constrain speed to reasonable range (1-180 degrees per second)
-    _current_speed = constrain(speed_deg_per_sec, 1, 180);
+    // Constrain speed to absolute hardware limits (1-180 degrees per second)
+    // Mode-based limits are applied in main_firmware.ino before calling this
+    _current_speed = constrain(speed_deg_per_sec, MIN_SPEED, MAX_SPEED);
 }
 
 int ServoManager::getSpeed() {

@@ -259,14 +259,23 @@ def api_start_auto():
     system_state['auto_mode'] = True
     system_state['system_mode'] = 'AUTO'
     
-    # Send mode change to Arduino if connected
+    # Send mode change to Arduino via BLE/Serial
+    if HARDWARE_AVAILABLE and hw_controller:
+        hw_controller.auto_mode = True
+        if hw_controller.arduino_connected:
+            import json
+            mode_command = json.dumps({"cmd": "set_mode", "mode": "AUTO"})
+            if hw_controller.ble_client and hw_controller.ble_client.connected:
+                hw_controller.ble_client.send_command(mode_command)
+            elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                hw_controller.arduino.write(f"{mode_command}\n".encode())
+        hw_controller.start_auto_mode()
+    
+    # Also send via WebSocket if Arduino clients connected
     if arduino_clients:
         socketio.emit('command', {'cmd': 'set_mode', 'mode': 'AUTO'}, namespace='/arduino')
     
-    if HARDWARE_AVAILABLE and hw_controller:
-        hw_controller.start_auto_mode()
-    
-    return jsonify({'success': True, 'message': 'Auto Mode Started', 'mode': 'AUTO'})
+    return jsonify({'success': True, 'message': 'Auto Mode Started (Speed: 45 deg/s)', 'mode': 'AUTO'})
 
 @app.route('/api/auto/stop', methods=['POST'])
 def api_stop_auto():
@@ -274,14 +283,23 @@ def api_stop_auto():
     system_state['auto_mode'] = False
     system_state['system_mode'] = 'MANUAL'
     
-    # Send mode change to Arduino if connected
+    # Send mode change to Arduino via BLE/Serial
+    if HARDWARE_AVAILABLE and hw_controller:
+        hw_controller.auto_mode = False
+        if hw_controller.arduino_connected:
+            import json
+            mode_command = json.dumps({"cmd": "set_mode", "mode": "MANUAL"})
+            if hw_controller.ble_client and hw_controller.ble_client.connected:
+                hw_controller.ble_client.send_command(mode_command)
+            elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                hw_controller.arduino.write(f"{mode_command}\n".encode())
+        hw_controller.stop_auto_mode()
+    
+    # Also send via WebSocket if Arduino clients connected
     if arduino_clients:
         socketio.emit('command', {'cmd': 'set_mode', 'mode': 'MANUAL'}, namespace='/arduino')
     
-    if HARDWARE_AVAILABLE and hw_controller:
-        hw_controller.stop_auto_mode()
-    
-    return jsonify({'success': True, 'message': 'Auto Mode Stopped', 'mode': 'MANUAL'})
+    return jsonify({'success': True, 'message': 'Auto Mode Stopped (Manual mode - Max speed: 120 deg/s)', 'mode': 'MANUAL'})
 
 @app.route('/api/control/mode', methods=['POST'])
 def api_set_mode():
@@ -292,15 +310,27 @@ def api_set_mode():
     if mode == 'AUTO':
         system_state['auto_mode'] = True
         system_state['system_mode'] = 'AUTO'
-        if arduino_clients:
-            socketio.emit('command', {'cmd': 'set_mode', 'mode': 'AUTO'}, namespace='/arduino')
     else:
         system_state['auto_mode'] = False
         system_state['system_mode'] = 'MANUAL'
-        if arduino_clients:
-            socketio.emit('command', {'cmd': 'set_mode', 'mode': 'MANUAL'}, namespace='/arduino')
     
-    return jsonify({'success': True, 'mode': mode})
+    # Send mode change to Arduino via BLE/Serial
+    if HARDWARE_AVAILABLE and hw_controller:
+        hw_controller.auto_mode = (mode == 'AUTO')
+        if hw_controller.arduino_connected:
+            import json
+            mode_command = json.dumps({"cmd": "set_mode", "mode": mode})
+            if hw_controller.ble_client and hw_controller.ble_client.connected:
+                hw_controller.ble_client.send_command(mode_command)
+            elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                hw_controller.arduino.write(f"{mode_command}\n".encode())
+    
+    # Also send via WebSocket if Arduino clients connected
+    if arduino_clients:
+        socketio.emit('command', {'cmd': 'set_mode', 'mode': mode}, namespace='/arduino')
+    
+    speed_info = "45 deg/s" if mode == 'AUTO' else "max 120 deg/s"
+    return jsonify({'success': True, 'mode': mode, 'message': f'Mode set to {mode} (Speed: {speed_info})'})
 
 @app.route('/api/control/emergency_stop', methods=['POST'])
 def api_emergency_stop():
@@ -832,10 +862,22 @@ def handle_servo_command(data):
                 if hw_servo in servo_index_map:
                     # Only send SPEED command if speed changed (optimization to reduce lag)
                     # Speed is sent separately and cached to avoid redundant commands
+                    # Convert 0-100% to degrees per second: Manual mode max 120, Auto mode 45
                     if speed is not None:
                         # Check if we need to update speed (only if different from last)
                         if not hasattr(hw_controller, '_last_speed') or hw_controller._last_speed != speed:
-                            speed_command = f"SPEED {int(speed)}"
+                            # Determine current mode (default to manual if not set)
+                            is_auto_mode = getattr(hw_controller, 'auto_mode', False)
+                            
+                            # Convert percentage to deg/s based on mode
+                            if is_auto_mode:
+                                # Auto mode: 0-100% maps to 10-45 deg/s (smooth, controlled)
+                                speed_deg_per_sec = int(10 + (speed / 100.0) * 35)  # 10 to 45 deg/s
+                            else:
+                                # Manual mode: 0-100% maps to 10-120 deg/s (responsive)
+                                speed_deg_per_sec = int(10 + (speed / 100.0) * 110)  # 10 to 120 deg/s
+                            
+                            speed_command = f"SPEED {speed_deg_per_sec}"
                             if hw_controller.arduino_connected:
                                 if hw_controller.ble_client and hw_controller.ble_client.connected:
                                     hw_controller.ble_client.send_command(speed_command)
@@ -862,44 +904,66 @@ def handle_servo_command(data):
             # Start automatic mode
             if HARDWARE_AVAILABLE and hw_controller:
                 hw_controller.auto_mode = True
-                # Set optimal speed for auto mode (accuracy > speed)
+                # Send set_mode command to Arduino to switch to AUTO mode (sets speed to 45 deg/s)
                 if hw_controller.arduino_connected:
+                    # Send JSON command via BLE/Serial
+                    import json
+                    mode_command = json.dumps({"cmd": "set_mode", "mode": "AUTO"})
                     if hw_controller.ble_client and hw_controller.ble_client.connected:
-                        hw_controller.ble_client.send_command("SPEED 60")
+                        hw_controller.ble_client.send_command(mode_command)
                     elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
-                        hw_controller.arduino.write(b"SPEED 60\n")
+                        hw_controller.arduino.write(f"{mode_command}\n".encode())
                 
-                emit('status', {'message': 'Automatic mode started (Speed set to 60)'})
+                emit('status', {'message': 'Automatic mode started (Speed set to 45 deg/s)'})
                 emit('telemetry', {'mode': 'auto', 'status': 'running'})
         
         elif cmd == 'set_mode':
             # Set manual/auto mode
             mode = data.get('mode', 'manual')
+            mode_upper = mode.upper()
             if HARDWARE_AVAILABLE and hw_controller:
-                hw_controller.auto_mode = (mode == 'auto')
-                emit('telemetry', {'mode': mode, 'status': 'idle' if mode == 'manual' else 'running'})
+                hw_controller.auto_mode = (mode_upper == 'AUTO' or mode_upper == 'AUTOMATIC')
+                
+                # Send set_mode command to Arduino via BLE/Serial
+                if hw_controller.arduino_connected:
+                    import json
+                    mode_command = json.dumps({"cmd": "set_mode", "mode": mode_upper})
+                    if hw_controller.ble_client and hw_controller.ble_client.connected:
+                        hw_controller.ble_client.send_command(mode_command)
+                    elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                        hw_controller.arduino.write(f"{mode_command}\n".encode())
+                
+                emit('telemetry', {'mode': mode, 'status': 'idle' if mode_upper == 'MANUAL' else 'running'})
+                emit('status', {'message': f'Mode set to {mode_upper}'})
         
         elif cmd == 'set_speed':
             # Set movement speed (0-100%)
             speed = data.get('speed', 50)
             if HARDWARE_AVAILABLE and hw_controller:
-                # Convert percentage to a value the Arduino can use
-                # Arduino expects speed in degrees per second or similar
-                # For now, we'll send it as a SPEED command if the firmware supports it
-                # Otherwise, store it for use in motion planning
+                # Store speed percentage for reference
                 if hasattr(hw_controller, 'motion_speed'):
                     hw_controller.motion_speed = speed
                 
+                # Determine current mode (default to manual if not set)
+                is_auto_mode = getattr(hw_controller, 'auto_mode', False)
+                
+                # Convert percentage to deg/s based on mode
+                if is_auto_mode:
+                    # Auto mode: 0-100% maps to 10-45 deg/s (smooth, controlled)
+                    speed_deg_per_sec = int(10 + (speed / 100.0) * 35)  # 10 to 45 deg/s
+                else:
+                    # Manual mode: 0-100% maps to 10-120 deg/s (responsive)
+                    speed_deg_per_sec = int(10 + (speed / 100.0) * 110)  # 10 to 120 deg/s
+                
                 # Send SPEED command to Arduino if connected
                 if hw_controller.arduino_connected:
-                    # Format: SPEED <value> where value is 0-100
-                    command = f"SPEED {int(speed)}"
+                    command = f"SPEED {speed_deg_per_sec}"
                     if hw_controller.ble_client and hw_controller.ble_client.connected:
                         hw_controller.ble_client.send_command(command)
                     elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
                         hw_controller.arduino.write(f"{command}\n".encode())
                 
-                emit('status', {'message': f'Speed set to {speed}%'})
+                emit('status', {'message': f'Speed set to {speed}% ({speed_deg_per_sec} deg/s)'})
         
         elif cmd == 'save':
             # Save current pose to file
@@ -1374,9 +1438,17 @@ def submit_feedback():
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode == 0:
-            return jsonify({'success': True, 'message': 'Feedback recorded for continuous learning'})
+            try:
+                response = json.loads(result.stdout.strip())
+                if response.get('success'):
+                    return jsonify({'success': True, 'message': response.get('message', 'Feedback recorded for continuous learning')})
+                else:
+                    return jsonify({'success': False, 'error': response.get('error', 'Failed to save feedback')}), 500
+            except json.JSONDecodeError:
+                # Fallback if output is not JSON
+                return jsonify({'success': True, 'message': 'Feedback recorded for continuous learning'})
         else:
-            return jsonify({'error': f'Failed to record feedback: {result.stderr}'}), 500
+            return jsonify({'success': False, 'error': f'Failed to record feedback: {result.stderr}'}), 500
             
     except Exception as e:
         return jsonify({'error': f'Feedback error: {str(e)}'}), 500
@@ -1389,23 +1461,27 @@ def get_learning_stats():
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode == 0:
-            # Parse the output to extract stats
-            stats = {}
-            for line in result.stdout.strip().split('\n'):
-                if ':' in line:
-                    key, value = line.split(':', 1)
-                    key = key.strip().replace(' ', '_').lower()
-                    try:
-                        stats[key] = int(value.strip())
-                    except:
-                        stats[key] = value.strip()
-            
-            return jsonify({'success': True, 'stats': stats})
+            # Parse JSON output
+            try:
+                stats = json.loads(result.stdout.strip())
+                return jsonify({'success': True, 'stats': stats})
+            except json.JSONDecodeError:
+                # Fallback to old parsing method if JSON fails
+                stats = {}
+                for line in result.stdout.strip().split('\n'):
+                    if ':' in line:
+                        key, value = line.split(':', 1)
+                        key = key.strip().replace(' ', '_').lower()
+                        try:
+                            stats[key] = int(value.strip())
+                        except:
+                            stats[key] = value.strip()
+                return jsonify({'success': True, 'stats': stats})
         else:
-            return jsonify({'error': f'Failed to get stats: {result.stderr}'}), 500
+            return jsonify({'success': False, 'error': f'Failed to get stats: {result.stderr}'}), 500
             
     except Exception as e:
-        return jsonify({'error': f'Stats error: {str(e)}'}), 500
+        return jsonify({'success': False, 'error': f'Stats error: {str(e)}'}), 500
 
 @app.route('/retrain_model', methods=['POST'])
 def retrain_model():
@@ -1415,12 +1491,90 @@ def retrain_model():
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode == 0:
-            return jsonify({'success': True, 'message': 'Model retraining started'})
+            try:
+                response = json.loads(result.stdout.strip())
+                if response.get('success'):
+                    return jsonify({
+                        'success': True, 
+                        'message': response.get('message', 'Model retraining dataset prepared'),
+                        'dataset_path': response.get('dataset_path'),
+                        'images_copied': response.get('images_copied', 0)
+                    })
+                else:
+                    return jsonify({'success': False, 'error': response.get('error', 'Retraining failed')}), 500
+            except json.JSONDecodeError:
+                # If output is not JSON, assume success
+                return jsonify({'success': True, 'message': 'Model retraining dataset prepared'})
         else:
-            return jsonify({'error': f'Retraining failed: {result.stderr}'}), 500
+            return jsonify({'success': False, 'error': f'Retraining failed: {result.stderr}'}), 500
             
     except Exception as e:
-        return jsonify({'error': f'Retraining error: {str(e)}'}), 500
+        return jsonify({'success': False, 'error': f'Retraining error: {str(e)}'}), 500
+
+@app.route('/recent_learning_images')
+def get_recent_learning_images():
+    """Get list of recent test images for continuous learning"""
+    try:
+        cmd = [sys.executable, 'continuous_learning.py', '--action', 'recent_images', '--limit', '20']
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            try:
+                data = json.loads(result.stdout.strip())
+                return jsonify(data)
+            except json.JSONDecodeError:
+                return jsonify({'success': False, 'error': 'Failed to parse image list'}), 500
+        else:
+            return jsonify({'success': False, 'error': f'Failed to get images: {result.stderr}'}), 500
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Error: {str(e)}'}), 500
+
+@app.route('/learning_image/<path:image_path>')
+def serve_learning_image(image_path):
+    """Serve learning images from the learning_data directory"""
+    try:
+        # Security: ensure path is within learning_data directory
+        full_path = os.path.join('learning_data', image_path)
+        if not os.path.abspath(full_path).startswith(os.path.abspath('learning_data')):
+            return jsonify({'error': 'Invalid path'}), 403
+        
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            return send_file(full_path)
+        else:
+            return jsonify({'error': 'Image not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/delete_learning_image', methods=['DELETE'])
+def delete_learning_image():
+    """Delete a learning image and its metadata"""
+    try:
+        data = request.get_json()
+        if not data or 'image_path' not in data:
+            return jsonify({'success': False, 'error': 'Missing image_path'}), 400
+        
+        image_path = data['image_path']
+        
+        # Security: ensure path is within learning_data directory
+        if not os.path.abspath(image_path).startswith(os.path.abspath('learning_data')):
+            return jsonify({'success': False, 'error': 'Invalid path'}), 403
+        
+        # Use continuous learning system to delete
+        cmd = [sys.executable, 'continuous_learning.py', '--action', 'delete_image', '--image', image_path]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            try:
+                response = json.loads(result.stdout.strip())
+                return jsonify(response)
+            except json.JSONDecodeError:
+                return jsonify({'success': True, 'message': 'Image deleted'})
+        else:
+            return jsonify({'success': False, 'error': f'Failed to delete image: {result.stderr}'}), 500
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Error: {str(e)}'}), 500
 
 @app.route('/continuous_learning')
 def continuous_learning_page():
@@ -1943,6 +2097,19 @@ def test_model(model_name):
                     learning_image_path = os.path.join('learning_data', 'new_images', 'test_uploads', f'test_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{original_ext}')
                     os.makedirs(os.path.dirname(learning_image_path), exist_ok=True)
                     shutil.copy2(temp_path, learning_image_path)
+                    
+                    # Save prediction metadata for continuous learning
+                    try:
+                        cmd = [
+                            sys.executable, 'continuous_learning.py',
+                            '--action', 'save_metadata',
+                            '--image', learning_image_path,
+                            '--predicted', prediction.lower().replace(' ', '_'),
+                            '--confidence', str(confidence)
+                        ]
+                        subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                    except:
+                        pass  # Non-critical, continue even if metadata save fails
                     
                     # Clean up temp file
                     os.remove(temp_path)
