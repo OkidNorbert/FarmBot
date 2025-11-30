@@ -9,14 +9,16 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
     _liftHeightDeg = 20;     // Default 20° lift
     
     // Default bin poses (will be calibrated)
-    _binRipe.base = 150;
+    // Right bin (ready/ripe tomatoes) - a few cm to the right
+    _binRipe.base = 150;      // Right side (150° = ~60° right of center)
     _binRipe.shoulder = 60;
     _binRipe.forearm = 110;
     _binRipe.elbow = 90;
     _binRipe.pitch = 80;
     _binRipe.claw = 90;
     
-    _binUnripe.base = 30;
+    // Left bin (other categories) - a few cm to the left
+    _binUnripe.base = 30;      // Left side (30° = ~60° left of center)
     _binUnripe.shoulder = 60;
     _binUnripe.forearm = 110;
     _binUnripe.elbow = 90;
@@ -78,7 +80,7 @@ void MotionPlanner::update() {
             int approach_forearm = 100;
             int approach_elbow = 90;
             int approach_pitch = 100; // Pitch down for approach
-            int approach_claw = 90; // Open
+            int approach_claw = 90; // Open (90° = open, 0° = closed)
             
             if (moveToPose(approach_base, approach_shoulder, approach_forearm, 
                           approach_elbow, approach_pitch, approach_claw)) {
@@ -129,7 +131,7 @@ void MotionPlanner::update() {
         }
         
         case PICK_GRASP: {
-            // Close claw
+            // Close claw (0° = closed)
             _servoMgr->setTarget(5, 0); // Claw closed (index 5)
             
             // Wait for claw to close
@@ -169,7 +171,7 @@ void MotionPlanner::update() {
         }
         
         case PICK_RELEASE: {
-            // Open claw
+            // Open claw (90° = open)
             _servoMgr->setTarget(5, 90); // Claw open
             
             delay(300); // Wait for release

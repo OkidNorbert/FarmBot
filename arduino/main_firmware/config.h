@@ -30,7 +30,7 @@
 #define PULSE_MAX_MG99X     2400
 
 // Safety Limits (Degrees)
-// Claw (SG90)
+// Claw (SG90) - 0° = Closed, 90° = Open
 #define LIMIT_CLAW_MIN      0
 #define LIMIT_CLAW_MAX      90
 
@@ -54,18 +54,26 @@
 #define LIMIT_BASE_MIN      0
 #define LIMIT_BASE_MAX      180
 
-// Motion
-#define DEFAULT_SPEED       20  // Degrees per second (approx)
+// Motion - Speed Configuration
+#define DEFAULT_SPEED       20  // Default speed (degrees per second)
+#define AUTO_MODE_SPEED     45  // Automatic mode speed (deg/s) - optimized for AI/camera/sensor coordination
+#define MANUAL_MODE_MAX     120 // Maximum speed for manual mode (deg/s)
+#define MIN_SPEED           1   // Minimum speed (deg/s)
+#define MAX_SPEED           180 // Absolute maximum speed (deg/s) - hardware limit
 #define HOME_ANGLE          90
 
 // ==========================================
 // Communication Configuration
 // ==========================================
 // Choose communication method: "WIFI", "BLE", or "AUTO" (tries WiFi first, falls back to BLE)
-#define COMM_MODE           "AUTO"
+// Set to BLE since WiFi WebSocket client library has compatibility issues
+#define COMM_MODE           "BLE"
 
 // Enable communication methods (comment out to disable)
-#define USE_WIFI            1
+// NOTE: Make sure you select "Arduino UNO R4 WiFi" board in Arduino IDE!
+// NOT "Arduino Nano R4" - they are different boards!
+// WiFi temporarily disabled - WebSocket client library compatibility issue
+// #define USE_WIFI            1
 #define USE_BLE             1
 
 // WiFi / WebSocket Configuration
@@ -81,3 +89,4 @@
 #define BLE_CHAR_UUID       "19B10001-E8F2-537E-4F6C-D104768A1214"
 
 #endif // CONFIG_H
+

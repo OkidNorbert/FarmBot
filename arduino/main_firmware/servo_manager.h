@@ -28,6 +28,10 @@ public:
     void home();
     void emergencyStop();
     
+    // Speed Control
+    void setSpeed(int speed_deg_per_sec); // Set movement speed (degrees per second)
+    int getSpeed(); // Get current speed
+    
     // Status
     int getAngle(uint8_t servo_id);
     bool isMoving();
@@ -36,6 +40,7 @@ private:
     ServoConfig servos[6];
     bool _emergency_stop;
     unsigned long _last_update;
+    int _current_speed; // Current speed in degrees per second
     
     void attachServo(int id, int pin, int min_p, int max_p, int min_a, int max_a);
     int constrainAngle(int id, int angle);

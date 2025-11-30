@@ -70,6 +70,62 @@
         <div class="row">
             <!-- Left Column: Camera Feed & Telemetry -->
             <div class="col-lg-5 mb-4">
+                <!-- Arm Visualization -->
+                <div class="card status-card mb-4">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="fas fa-cube"></i> Arm Visualization</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="arm-viz-container">
+                            <svg width="100%" height="500" viewBox="0 0 400 500" xmlns="http://www.w3.org/2000/svg" style="background: linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%);">
+                                <!-- Arm Assembly Group (for base rotation) -->
+                                <g id="arm-assembly" transform="rotate(0 200 450)">
+                                    <!-- Base (fixed position, bottom) -->
+                                    <g id="base-group">
+                                        <rect x="150" y="450" width="100" height="50" fill="#007bff" class="arm-part" rx="5" stroke="#0056b3" stroke-width="2"/>
+                                        <text x="200" y="480" text-anchor="middle" font-size="12" fill="white" font-weight="bold">Base</text>
+                                    </g>
+                                    
+                                    <!-- Shoulder (rotates around base top) -->
+                                    <g id="shoulder-group" transform="rotate(0 200 450)">
+                                        <rect x="180" y="350" width="40" height="100" fill="#6f42c1" class="arm-part" rx="5" stroke="#5a32a3" stroke-width="2"/>
+                                        <circle cx="200" cy="450" r="8" fill="#fff" stroke="#6f42c1" stroke-width="2"/>
+                                    </g>
+                                    
+                                    <!-- Forearm (rotates around shoulder top) -->
+                                    <g id="forearm-group" transform="rotate(0 200 350)">
+                                        <rect x="185" y="250" width="30" height="100" fill="#17a2b8" class="arm-part" rx="5" stroke="#138496" stroke-width="2"/>
+                                        <circle cx="200" cy="350" r="6" fill="#fff" stroke="#17a2b8" stroke-width="2"/>
+                                    </g>
+                                    
+                                    <!-- Elbow (rotates around forearm top) -->
+                                    <g id="elbow-group" transform="rotate(0 200 250)">
+                                        <rect x="190" y="150" width="20" height="100" fill="#fd7e14" class="arm-part" rx="5" stroke="#e8650e" stroke-width="2"/>
+                                        <circle cx="200" cy="250" r="5" fill="#fff" stroke="#fd7e14" stroke-width="2"/>
+                                    </g>
+                                    
+                                    <!-- Wrist Pitch (rotates around elbow top) -->
+                                    <g id="pitch-group" transform="rotate(0 200 150)">
+                                        <rect x="195" y="100" width="10" height="50" fill="#ffc107" class="arm-part" rx="5" stroke="#e0a800" stroke-width="2"/>
+                                        <circle cx="200" cy="150" r="4" fill="#fff" stroke="#ffc107" stroke-width="2"/>
+                                    </g>
+                                    
+                                    <!-- Claw (opens/closes at wrist) -->
+                                    <g id="claw-group" transform="translate(200, 100)">
+                                        <g class="claw-finger-left">
+                                            <rect x="-15" y="0" width="8" height="30" fill="#dc3545" class="arm-part" rx="3" stroke="#c82333" stroke-width="1"/>
+                                        </g>
+                                        <g class="claw-finger-right">
+                                            <rect x="7" y="0" width="8" height="30" fill="#dc3545" class="arm-part" rx="3" stroke="#c82333" stroke-width="1"/>
+                                        </g>
+                                        <circle cx="0" cy="0" r="5" fill="#dc3545" stroke="#fff" stroke-width="2"/>
+                                    </g>
+                                </g>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Camera Feed -->
                 <div class="card status-card mb-4">
                     <div class="card-header bg-dark text-white">
@@ -116,103 +172,110 @@
                         <h5 class="mb-0"><i class="fas fa-sliders-h"></i> Servo Controls</h5>
                     </div>
                     <div class="card-body">
-                        <div class="servo-value" id="baseValue">90°</div>
-                    </div>
-                    <div class="slider-wrapper">
-                        <input type="range" class="servo-slider base" id="baseSlider" min="0" max="180" value="90"
-                            data-servo="base">
-                    </div>
-                </div>
-
-                <!-- Forearm Servo -->
-                <div class="servo-control">
-                    <div class="servo-header">
-                        <div class="servo-name">
-                            <i class="fas fa-hand-paper" style="color: var(--info);"></i>
-                            <span>Forearm</span>
+                        <!-- Claw Servo (Top of arm - highest) -->
+                        <div class="servo-control">
+                            <div class="servo-header">
+                                <div class="servo-name">
+                                    <i class="fas fa-hand-scissors" style="color: var(--danger);"></i>
+                                    <span>Claw</span>
+                                </div>
+                                <div class="servo-value" id="clawValue">0°</div>
+                            </div>
+                            <div class="slider-wrapper">
+                                <input type="range" class="servo-slider claw" id="clawSlider" min="0" max="90" value="0"
+                                    data-servo="claw">
+                            </div>
                         </div>
-                        <div class="servo-value" id="forearmValue">90°</div>
-                    </div>
-                    <div class="slider-wrapper">
-                        <input type="range" class="servo-slider forearm" id="forearmSlider" min="10" max="170"
-                            value="90" data-servo="forearm">
-                    </div>
-                </div>
 
-                <!-- Shoulder/Arm Servo -->
-                <div class="servo-control">
-                    <div class="servo-header">
-                        <div class="servo-name">
-                            <i class="fas fa-hand-rock" style="color: #6f42c1;"></i>
-                            <span>Shoulder</span>
+                        <!-- Wrist Pitch Servo -->
+                        <div class="servo-control">
+                            <div class="servo-header">
+                                <div class="servo-name">
+                                    <i class="fas fa-arrows-alt-v" style="color: var(--warning);"></i>
+                                    <span>Wrist Pitch</span>
+                                </div>
+                                <div class="servo-value" id="pitchValue">90°</div>
+                            </div>
+                            <div class="slider-wrapper">
+                                <input type="range" class="servo-slider pitch" id="pitchSlider" min="20" max="160" value="90"
+                                    data-servo="pitch">
+                            </div>
                         </div>
-                        <div class="servo-value" id="shoulderValue">90°</div>
-                    </div>
-                    <div class="slider-wrapper">
-                        <input type="range" class="servo-slider shoulder" id="shoulderSlider" min="15" max="165"
-                            value="90" data-servo="shoulder">
-                    </div>
-                </div>
 
-                <!-- Elbow/Wrist Yaw Servo -->
-                <div class="servo-control">
-                    <div class="servo-header">
-                        <div class="servo-name">
-                            <i class="fas fa-angle-double-up" style="color: #fd7e14;"></i>
-                            <span>Elbow</span>
+                        <!-- Elbow/Wrist Yaw Servo -->
+                        <div class="servo-control">
+                            <div class="servo-header">
+                                <div class="servo-name">
+                                    <i class="fas fa-angle-double-up" style="color: #fd7e14;"></i>
+                                    <span>Elbow</span>
+                                </div>
+                                <div class="servo-value" id="elbowValue">90°</div>
+                            </div>
+                            <div class="slider-wrapper">
+                                <input type="range" class="servo-slider elbow" id="elbowSlider" min="15" max="165" value="90"
+                                    data-servo="elbow">
+                            </div>
                         </div>
-                        <div class="servo-value" id="elbowValue">90°</div>
-                    </div>
-                    <div class="slider-wrapper">
-                        <input type="range" class="servo-slider elbow" id="elbowSlider" min="15" max="165" value="90"
-                            data-servo="elbow">
-                    </div>
-                </div>
 
-                <!-- Wrist Pitch Servo -->
-                <div class="servo-control">
-                    <div class="servo-header">
-                        <div class="servo-name">
-                            <i class="fas fa-arrows-alt-v" style="color: var(--warning);"></i>
-                            <span>Wrist Pitch</span>
+                        <!-- Forearm Servo -->
+                        <div class="servo-control">
+                            <div class="servo-header">
+                                <div class="servo-name">
+                                    <i class="fas fa-hand-paper" style="color: var(--info);"></i>
+                                    <span>Forearm</span>
+                                </div>
+                                <div class="servo-value" id="forearmValue">90°</div>
+                            </div>
+                            <div class="slider-wrapper">
+                                <input type="range" class="servo-slider forearm" id="forearmSlider" min="10" max="170"
+                                    value="90" data-servo="forearm">
+                            </div>
                         </div>
-                        <div class="servo-value" id="pitchValue">90°</div>
-                    </div>
-                    <div class="slider-wrapper">
-                        <input type="range" class="servo-slider pitch" id="pitchSlider" min="20" max="160" value="90"
-                            data-servo="pitch">
-                    </div>
-                </div>
 
-                <!-- Claw Servo -->
-                <div class="servo-control">
-                    <div class="servo-header">
-                        <div class="servo-name">
-                            <i class="fas fa-hand-scissors" style="color: var(--danger);"></i>
-                            <span>Claw</span>
+                        <!-- Shoulder/Arm Servo -->
+                        <div class="servo-control">
+                            <div class="servo-header">
+                                <div class="servo-name">
+                                    <i class="fas fa-hand-rock" style="color: #6f42c1;"></i>
+                                    <span>Shoulder</span>
+                                </div>
+                                <div class="servo-value" id="shoulderValue">90°</div>
+                            </div>
+                            <div class="slider-wrapper">
+                                <input type="range" class="servo-slider shoulder" id="shoulderSlider" min="15" max="165"
+                                    value="90" data-servo="shoulder">
+                            </div>
                         </div>
-                        <div class="servo-value" id="clawValue">0°</div>
-                    </div>
-                    <div class="slider-wrapper">
-                        <input type="range" class="servo-slider claw" id="clawSlider" min="0" max="90" value="0"
-                            data-servo="claw">
-                    </div>
-                </div>
 
-                <!-- Speed Control -->
-                <div class="servo-control">
-                    <div class="servo-header">
-                        <div class="servo-name">
-                            <i class="fas fa-tachometer-alt" style="color: var(--success);"></i>
-                            <span>Speed</span>
+                        <!-- Base Servo (Bottom of arm - lowest) -->
+                        <div class="servo-control">
+                            <div class="servo-header">
+                                <div class="servo-name">
+                                    <i class="fas fa-circle-notch" style="color: var(--primary);"></i>
+                                    <span>Base</span>
+                                </div>
+                                <div class="servo-value" id="baseValue">90°</div>
+                            </div>
+                            <div class="slider-wrapper">
+                                <input type="range" class="servo-slider base" id="baseSlider" min="0" max="180" value="90"
+                                    data-servo="base">
+                            </div>
                         </div>
-                        <div class="servo-value" id="speedValue">100%</div>
-                    </div>
-                    <div class="slider-wrapper">
-                        <input type="range" class="servo-slider speed" id="speedSlider" min="33" max="100" value="100"
-                            data-servo="speed">
-                    </div>
-                </div>
+
+                        <!-- Speed Control -->
+                        <div class="servo-control" style="border-top: 2px solid #dee2e6; padding-top: 1rem; margin-top: 0.5rem;">
+                            <div class="servo-header">
+                                <div class="servo-name">
+                                    <i class="fas fa-tachometer-alt" style="color: var(--success);"></i>
+                                    <span>Speed</span>
+                                </div>
+                                <div class="servo-value" id="speedValue">100%</div>
+                            </div>
+                            <div class="slider-wrapper">
+                                <input type="range" class="servo-slider speed" id="speedSlider" min="33" max="100" value="100"
+                                    data-servo="speed">
+                            </div>
+                        </div>
 
                 <!-- Action Buttons -->
                 <div class="action-buttons">

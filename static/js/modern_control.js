@@ -23,13 +23,27 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // Socket.IO event handlers
 socket.on('connect', () => {
-    console.log('Socket.IO connected');
+    console.log('✅ Socket.IO connected');
+    updateConnectionStatus(true);
+});
+
+socket.on('disconnect', () => {
+    console.log('❌ Socket.IO disconnected');
+    updateConnectionStatus(false);
+});
+
+socket.on('connect_error', (error) => {
+    console.error('Socket connection error:', error);
+    updateConnectionStatus(false);
 });
 
 socket.on('status', (data) => {
     console.log('Status update:', data);
-    if (data.connected) {
-        updateConnectionStatus(true);
+    if (data.connected !== undefined) {
+        updateConnectionStatus(data.connected);
+    }
+    if (data.message) {
+        showNotification(data.message, data.connected ? 'success' : 'info');
     }
 });
 
@@ -66,6 +80,8 @@ function initializeSliders() {
 
             if (servo === 'speed') {
                 currentSpeed = value;
+                // Send speed command immediately
+                sendServoCommand(servo, value);
                 return;
             }
 
@@ -91,7 +107,12 @@ function initializeSliders() {
             // Debounce servo commands
             clearTimeout(this.debounceTimer);
             this.debounceTimer = setTimeout(() => {
-                sendServoCommand(servo, value, dynamicSpeed);
+                // Only send command if connected
+                if (socket.connected && isConnected) {
+                    sendServoCommand(servo, value, dynamicSpeed);
+                } else {
+                    console.warn(`Cannot send command for ${servo}: not connected`);
+                }
             }, 50);
         });
     });
@@ -124,10 +145,13 @@ function updateSliderDisplay(servo, value) {
     }
 }
 
-// Update 3D Arm Visualization
+// Update Arm Visualization (2D side view) - Real-time responsive updates
 function updateArmVisualization(servo, angle) {
     const group = document.getElementById(`${servo}-group`);
-    if (!group) return;
+    if (!group) {
+        console.warn(`Visualization group not found for servo: ${servo}`);
+        return;
+    }
 
     let rotation = 0;
     let centerX = 200;
@@ -135,28 +159,45 @@ function updateArmVisualization(servo, angle) {
 
     switch (servo) {
         case 'base':
-            // Base doesn't rotate in 2D view, maybe change color or small shift?
-            // Or rotate the whole arm group if we had one?
-            // For now, just keep it static or maybe rotate the base rect slightly?
-            // Actually, base rotation is around Z axis, hard to show in 2D side view.
-            // Let's skip base rotation visualization for side view.
+            // Base rotation is around Z axis - rotate entire arm assembly
+            const baseRect = group.querySelector('rect');
+            if (baseRect) {
+                // Visual feedback: change color intensity based on angle
+                const intensity = Math.abs(angle - 90) / 90; // 0 to 1
+                const hue = 210 + (intensity * 30); // Blue to cyan
+                baseRect.setAttribute('fill', `hsl(${hue}, 70%, ${50 + intensity * 20}%)`);
+            }
+            // Rotate entire arm assembly for base rotation
+            const armAssembly = document.getElementById('arm-assembly');
+            if (armAssembly) {
+                rotation = angle - 90; // Convert 0-180° to -90 to +90°
+                armAssembly.setAttribute('transform', `rotate(${rotation} 200 450)`);
+            }
+            // Add visual feedback
+            group.classList.add('servo-moving');
+            setTimeout(() => group.classList.remove('servo-moving'), 200);
             return;
+            
         case 'shoulder':
-            centerY = 450;
-            rotation = angle - 90;
+            centerY = 450; // Base of shoulder (top of base)
+            rotation = angle - 90; // Convert 0-180° to -90 to +90°
             break;
+            
         case 'forearm':
-            centerY = 300;
+            centerY = 350; // Joint between shoulder and forearm
             rotation = angle - 90;
             break;
+            
         case 'elbow':
-            centerY = 200;
+            centerY = 250; // Elbow joint
             rotation = angle - 90;
             break;
+            
         case 'pitch':
-            centerY = 150;
+            centerY = 150; // Wrist pitch joint
             rotation = angle - 90;
             break;
+            
         case 'claw':
             // Claw opens/closes
             // angle: 0 = closed, 90 = open
@@ -167,25 +208,78 @@ function updateArmVisualization(servo, angle) {
             if (leftFinger && rightFinger) {
                 // Move fingers apart
                 // Left moves left (-X), Right moves right (+X)
-                const offset = openAmount * 10;
+                const offset = openAmount * 15; // Increased for better visibility
                 leftFinger.setAttribute('transform', `translate(-${offset}, 0)`);
                 rightFinger.setAttribute('transform', `translate(${offset}, 0)`);
+                
+                // Also change color intensity
+                const clawCircle = group.querySelector('circle');
+                if (clawCircle) {
+                    const brightness = 30 + (openAmount * 30);
+                    clawCircle.setAttribute('fill', `hsl(0, 70%, ${brightness}%)`);
+                }
             }
+            // Add visual feedback
+            group.classList.add('servo-moving');
+            setTimeout(() => group.classList.remove('servo-moving'), 200);
             return;
     }
 
-    // Apply rotation
+    // Apply rotation with smooth transition
     group.setAttribute('transform', `rotate(${rotation} ${centerX} ${centerY})`);
+    
+    // Add visual feedback - highlight the moving part
+    group.classList.add('servo-moving');
+    setTimeout(() => {
+        group.classList.remove('servo-moving');
+    }, 200);
 }
 
 // Send servo command via WebSocket
-function sendServoCommand(servo, angle) {
-    socket.emit('servo_command', {
+function sendServoCommand(servo, angle, speed) {
+    // Check if socket is connected
+    if (!socket.connected) {
+        console.warn('Socket not connected, cannot send command');
+        showNotification('Not connected to server. Please click Connect.', 'warning');
+        return;
+    }
+    
+    // Map frontend servo names to backend expected names
+    // Backend expects: base, forearm, arm, wrist_yaw, wrist_pitch, claw
+    // Frontend uses: base, forearm, shoulder, elbow, pitch, claw
+    const servoMap = {
+        'shoulder': 'arm',  // Frontend 'shoulder' -> backend 'arm'
+        'elbow': 'wrist_yaw',  // Frontend 'elbow' -> backend 'wrist_yaw'
+        'pitch': 'wrist_pitch',  // Frontend 'pitch' -> backend 'wrist_pitch'
+        // Others map directly
+        'base': 'base',
+        'forearm': 'forearm',
+        'claw': 'claw',
+        'speed': 'speed'  // Speed is handled separately
+    };
+    
+    const backendServo = servoMap[servo] || servo;
+    
+    // Don't send speed as a servo command
+    if (servo === 'speed') {
+        const command = {
+            cmd: 'set_speed',
+            speed: angle  // For speed, angle parameter is the speed value
+        };
+        console.log('📤 Sending speed command:', command);
+        socket.emit('servo_command', command);
+        return;
+    }
+    
+    const command = {
         cmd: 'move',
-        servo: servo,
-        angle: angle,
-        speed: currentSpeed
-    });
+        servo: backendServo,
+        angle: parseInt(angle),
+        speed: speed ? parseInt(speed) : currentSpeed
+    };
+    
+    console.log('📤 Sending servo command:', command);
+    socket.emit('servo_command', command);
 }
 
 // Setup event listeners
@@ -200,6 +294,10 @@ function setupEventListeners() {
 
 // Connect to Arduino
 function connectArduino() {
+    if (!socket.connected) {
+        showNotification('Socket.IO not connected. Please wait...', 'warning');
+        return;
+    }
     socket.emit('servo_command', { cmd: 'connect' });
     showNotification('Connecting to Arduino...', 'info');
 }

@@ -60,9 +60,7 @@ void CommClient::begin() {
                 _connected = true;
                 _connectionType = "BLE";
                 Serial.println("✅ Connected via BLE");
-                if (_messageCallback) {
-                    bleClient->onMessage(_messageCallback);
-                }
+                // BLE callback will be set in onMessage() if needed
                 return;
             }
             #endif
@@ -75,9 +73,7 @@ void CommClient::begin() {
             _connected = true;
             _connectionType = "BLE";
             Serial.println("✅ Connected via BLE");
-            if (_messageCallback) {
-                bleClient->onMessage(_messageCallback);
-            }
+            // BLE callback will be set in onMessage() if needed
             return;
         }
         #endif
@@ -150,10 +146,9 @@ void CommClient::onMessage(void (*callback)(String)) {
     #endif
     
     #ifdef USE_BLE
-    if (_connectionType == "BLE" && bleClient) {
-        bleClient->onMessage([this](String message) {
-            this->handleMessage(message);
-        });
+    if (_connectionType == "BLE" && bleClient && _messageCallback) {
+        // BLE expects a function pointer, so we pass the callback directly
+        bleClient->onMessage(_messageCallback);
     }
     #endif
 }

@@ -21,7 +21,6 @@ public:
     bool available();
 
 private:
-    void processReceivedCommand();
     BLEService* _service;
     BLEStringCharacteristic* _commandChar;
     BLEStringCharacteristic* _telemetryChar;

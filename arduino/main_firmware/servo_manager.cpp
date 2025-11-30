@@ -3,6 +3,7 @@
 ServoManager::ServoManager() {
     _emergency_stop = false;
     _last_update = 0;
+    _current_speed = DEFAULT_SPEED; // Initialize with default speed
 }
 
 void ServoManager::begin() {
@@ -16,6 +17,12 @@ void ServoManager::begin() {
     attachServo(4, PIN_SERVO_PITCH,    PULSE_MIN_SG90,  PULSE_MAX_SG90,  LIMIT_PITCH_MIN,    LIMIT_PITCH_MAX);
     attachServo(5, PIN_SERVO_CLAW,     PULSE_MIN_SG90,  PULSE_MAX_SG90,  LIMIT_CLAW_MIN,     LIMIT_CLAW_MAX);
     
+    // Set claw to closed position (0°) immediately on power-on for safety
+    servos[5].servo.write(0);
+    servos[5].current_angle = 0;
+    servos[5].target_angle = 0;
+    delay(500); // Give servo time to move to closed position
+    
     home();
 }
 
@@ -25,18 +32,23 @@ void ServoManager::attachServo(int id, int pin, int min_p, int max_p, int min_a,
     servos[id].max_pulse = max_p;
     servos[id].min_angle = min_a;
     servos[id].max_angle = max_a;
-    servos[id].current_angle = HOME_ANGLE;
-    servos[id].target_angle = HOME_ANGLE;
+    
+    // Claw (id=5) starts at 0° (closed) for safety, all others at 90° (home)
+    int initial_angle = (id == 5) ? 0 : HOME_ANGLE;
+    servos[id].current_angle = initial_angle;
+    servos[id].target_angle = initial_angle;
     
     servos[id].servo.attach(pin, min_p, max_p);
-    servos[id].servo.write(HOME_ANGLE);
+    servos[id].servo.write(initial_angle);
 }
 
 void ServoManager::update() {
     if (_emergency_stop) return;
     
     unsigned long now = millis();
-    if (now - _last_update < (1000 / DEFAULT_SPEED)) return; // Speed control
+    // Use dynamic speed if set, otherwise use default
+    int speed = (_current_speed > 0) ? _current_speed : DEFAULT_SPEED;
+    if (now - _last_update < (1000 / speed)) return; // Speed control
     
     bool moving = false;
     for (int i = 0; i < 6; i++) {
@@ -80,11 +92,12 @@ int ServoManager::constrainAngle(int id, int angle) {
 }
 
 void ServoManager::home() {
-    for (int i = 0; i < 6; i++) {
+    // Home all servos to 90° except claw
+    for (int i = 0; i < 5; i++) {  // Servos 0-4 (Base through Pitch)
         setTarget(i, HOME_ANGLE);
     }
-    // Claw closed (0) or open (90)? Prompt says 90 on power up.
-    // But usually home for claw is open. Let's stick to 90 as requested.
+    // Claw stays closed (0°) - it was set to closed in begin() for safety
+    // Claw: 0° = Closed, 90° = Open
 }
 
 void ServoManager::emergencyStop() {
@@ -104,4 +117,13 @@ bool ServoManager::isMoving() {
         if (servos[i].current_angle != servos[i].target_angle) return true;
     }
     return false;
+}
+
+void ServoManager::setSpeed(int speed_deg_per_sec) {
+    // Constrain speed to reasonable range (1-180 degrees per second)
+    _current_speed = constrain(speed_deg_per_sec, 1, 180);
+}
+
+int ServoManager::getSpeed() {
+    return _current_speed;
 }
