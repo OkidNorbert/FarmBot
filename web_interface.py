@@ -1132,33 +1132,71 @@ def api_switch_camera():
     global CURRENT_CAMERA_INDEX
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
         camera_index = data.get('index')
         
         if camera_index is None:
             return jsonify({'success': False, 'message': 'Camera index required'}), 400
+        
+        # Ensure camera_index is an integer
+        try:
+            camera_index = int(camera_index)
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'message': f'Invalid camera index: {camera_index}'}), 400
             
         success = False
         error_message = None
+        
+        print(f"[CAMERA_SWITCH] Attempting to switch to camera {camera_index}")
+        
         if HARDWARE_AVAILABLE and hw_controller:
             try:
-                if hw_controller.switch_camera(camera_index):
-                    success = True
+                if hasattr(hw_controller, 'switch_camera'):
+                    if hw_controller.switch_camera(camera_index):
+                        success = True
+                        print(f"[CAMERA_SWITCH] Hardware controller switched to camera {camera_index}")
+                    else:
+                        error_message = f"Hardware controller failed to switch to camera {camera_index}"
+                        print(f"[CAMERA_SWITCH] Hardware controller switch returned False")
                 else:
-                    error_message = f"Hardware controller failed to switch to camera {camera_index}"
+                    print(f"[CAMERA_SWITCH] Hardware controller does not have switch_camera method")
+                    # Fall through to fallback method
+                    raise AttributeError("switch_camera method not available")
+            except AttributeError:
+                # Fall through to fallback method
+                pass
             except Exception as e:
                 error_message = f"Error switching camera: {str(e)}"
-                print(f"Camera switch error: {e}")
-        else:
-            # Fallback: Just update the index for the generator
-            # Verify if camera exists first
-            import cv2
-            cap = cv2.VideoCapture(camera_index)
-            if cap.isOpened():
-                ret, _ = cap.read()
-                if ret:
-                    CURRENT_CAMERA_INDEX = camera_index
-                    success = True
-                cap.release()
+                print(f"[CAMERA_SWITCH] Hardware controller error: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Fallback: Just update the index for the generator
+        if not success:
+            try:
+                print(f"[CAMERA_SWITCH] Using fallback method to verify camera {camera_index}")
+                import cv2
+                cap = cv2.VideoCapture(camera_index)
+                if cap.isOpened():
+                    ret, _ = cap.read()
+                    if ret:
+                        CURRENT_CAMERA_INDEX = camera_index
+                        success = True
+                        print(f"[CAMERA_SWITCH] Successfully switched to camera {camera_index} (fallback)")
+                    else:
+                        error_message = f"Camera {camera_index} opened but could not read frame"
+                        print(f"[CAMERA_SWITCH] Camera {camera_index} opened but read failed")
+                    cap.release()
+                else:
+                    error_message = f"Could not open camera {camera_index}"
+                    print(f"[CAMERA_SWITCH] Could not open camera {camera_index}")
+            except Exception as e:
+                error_message = f"Error in fallback camera switch: {str(e)}"
+                print(f"[CAMERA_SWITCH] Fallback error: {e}")
+                import traceback
+                traceback.print_exc()
         
         if success:
             # Save camera preference to file
@@ -1176,8 +1214,12 @@ def api_switch_camera():
             })
         else:
             error_msg = error_message or f'Failed to switch to camera {camera_index}'
+            print(f"[CAMERA_SWITCH] Switch failed: {error_msg}")
             return jsonify({'success': False, 'message': error_msg}), 500
     except Exception as e:
+        print(f"[CAMERA_SWITCH] Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/camera/capture', methods=['POST'])
@@ -3484,6 +3526,7 @@ def test_model(model_name):
         classifier = None
         if HARDWARE_AVAILABLE and hw_controller and hasattr(hw_controller, 'classifier') and hw_controller.classifier:
             classifier = hw_controller.classifier
+            print(f"[TEST] Using hardware controller's classifier")
         
         # If no classifier available, try to load model directly
         if not classifier:
@@ -3504,9 +3547,15 @@ def test_model(model_name):
                         model_path = default_path
                 
                 if model_path and os.path.exists(model_path):
+                    print(f"[TEST] Loading classifier from: {model_path}")
                     classifier = TomatoClassifier(model_path=model_path)
+                    print(f"[TEST] Classifier loaded successfully")
+                else:
+                    print(f"[TEST] Model file not found. Checked: {model_folder}/best_model.pth and {MODELS_FOLDER}/tomato/best_model.pth")
             except Exception as e:
-                print(f"Could not load classifier: {e}")
+                print(f"[TEST] Could not load classifier: {e}")
+                import traceback
+                traceback.print_exc()
         
         results = []
         saved_crops = []
@@ -3514,10 +3563,14 @@ def test_model(model_name):
         # Use color-based detection to find tomatoes, then classify each one individually
         if classifier:
             try:
+                print(f"[TEST] Classifier available, starting detection...")
                 # First, detect tomato bounding boxes using color-based detection
                 tomato_detected, tomato_count, tomato_boxes = detect_tomatoes_with_boxes(frame)
                 
                 print(f"[TEST] Detected {tomato_count} tomatoes with bounding boxes: {tomato_boxes}")
+                
+                if tomato_count == 0:
+                    print(f"[TEST] No tomatoes detected via color detection, will try whole image classification")
                 
                 # If we only got 1 large detection, try a more aggressive splitting approach
                 if tomato_count == 1 and len(tomato_boxes) == 1:
@@ -3758,42 +3811,113 @@ def test_model(model_name):
                         try:
                             # Convert BGR to RGB for classification
                             crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                            classification_result = classifier.classify_crop(crop_rgb, confidence_threshold=0.3)
                             
-                            if classification_result:
-                                predicted_class = classification_result['class']
-                                confidence = classification_result['confidence']
+                            # Perform multiple classifications with slight variations for stability
+                            # This helps reduce noise from detection variations
+                            classification_results = []
+                            confidence_threshold = 0.5  # Increased from 0.3 for more stable results
+                            predicted_class = None
+                            confidence = None
+                            classification_result = None
+                            
+                            # First classification
+                            result1 = classifier.classify_crop(crop_rgb, confidence_threshold=confidence_threshold)
+                            if result1:
+                                classification_results.append(result1)
+                            
+                            # Second classification with slight crop variation (if first succeeded)
+                            if result1:
+                                # Try with slightly different crop (add small random padding variation)
+                                h, w = crop_rgb.shape[:2]
+                                if h > 20 and w > 20:
+                                    # Crop a slightly different region
+                                    offset_x = max(0, min(5, w // 20))
+                                    offset_y = max(0, min(5, h // 20))
+                                    crop_variant = crop_rgb[offset_y:h-offset_y, offset_x:w-offset_x]
+                                    if crop_variant.size > 0:
+                                        result2 = classifier.classify_crop(crop_variant, confidence_threshold=confidence_threshold)
+                                        if result2:
+                                            classification_results.append(result2)
+                            
+                            # Average the results if we have multiple classifications
+                            if classification_results:
+                                # Count votes for each class
+                                class_votes = {}
+                                total_confidence = 0
                                 
-                                print(f"[TEST] Tomato {i+1}: {predicted_class} ({confidence:.2f})")
+                                for result in classification_results:
+                                    cls = result['class']
+                                    conf = result['confidence']
+                                    if cls not in class_votes:
+                                        class_votes[cls] = {'count': 0, 'confidence_sum': 0}
+                                    class_votes[cls]['count'] += 1
+                                    class_votes[cls]['confidence_sum'] += conf
+                                    total_confidence += conf
                                 
-                                # Save cropped tomato
-                                crop_filename = f'test_{timestamp}_tomato_{i+1}.{original_ext}'
-                                crop_path = os.path.join(learning_dir, crop_filename)
-                                cv2.imwrite(crop_path, crop)
-                                saved_crops.append(crop_path)
+                                # Get the class with most votes, or highest average confidence if tie
+                                best_class = None
+                                best_score = -1
                                 
-                                # Save metadata for this crop
-                                try:
-                                    cmd = [
-                                        sys.executable, 'continuous_learning.py',
-                                        '--action', 'save_metadata',
-                                        '--image', crop_path,
-                                        '--predicted', predicted_class,
-                                        '--confidence', str(confidence)
-                                    ]
-                                    subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                                except Exception as e:
-                                    print(f"Error saving metadata: {e}")
+                                for cls, data in class_votes.items():
+                                    # Score = vote count * average confidence
+                                    avg_conf = data['confidence_sum'] / data['count']
+                                    score = data['count'] * avg_conf
+                                    if score > best_score:
+                                        best_score = score
+                                        best_class = cls
                                 
-                                results.append({
-                                    'tomato_number': i + 1,
-                                    'prediction': predicted_class,
-                                    'confidence': confidence,
-                                    'bbox': [x_padded, y_padded, w_padded, h_padded],
-                                    'crop_path': crop_path
-                                })
+                                # Use the best class and average confidence
+                                predicted_class = best_class
+                                avg_confidence = class_votes[best_class]['confidence_sum'] / class_votes[best_class]['count']
+                                confidence = avg_confidence
+                                
+                                print(f"[TEST] Tomato {i+1}: {predicted_class} ({confidence:.2f}) [from {len(classification_results)} classifications]")
                             else:
-                                print(f"[TEST] Tomato {i+1}: Classification below threshold")
+                                # Try with lower threshold if no results
+                                classification_result = classifier.classify_crop(crop_rgb, confidence_threshold=0.3)
+                                if classification_result:
+                                    predicted_class = classification_result['class']
+                                    confidence = classification_result['confidence']
+                                    print(f"[TEST] Tomato {i+1}: {predicted_class} ({confidence:.2f}) [low confidence]")
+                                else:
+                                    print(f"[TEST] Tomato {i+1}: Classification below threshold")
+                                    continue
+                            
+                            # Ensure we have valid classification before proceeding
+                            if predicted_class is None or confidence is None:
+                                print(f"[TEST] Tomato {i+1}: No valid classification obtained")
+                                continue
+                            
+                            # Save cropped tomato
+                            crop_filename = f'test_{timestamp}_tomato_{i+1}.{original_ext}'
+                            crop_path = os.path.join(learning_dir, crop_filename)
+                            cv2.imwrite(crop_path, crop)
+                            saved_crops.append(crop_path)
+                            
+                            # Save metadata for this crop
+                            try:
+                                cmd = [
+                                    sys.executable, 'continuous_learning.py',
+                                    '--action', 'save_metadata',
+                                    '--image', crop_path,
+                                    '--predicted', predicted_class,
+                                    '--confidence', str(confidence)
+                                ]
+                                subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                            except Exception as e:
+                                print(f"Error saving metadata: {e}")
+                            
+                            # Ensure prediction is a valid string
+                            if not predicted_class or not isinstance(predicted_class, str):
+                                predicted_class = 'Unknown'
+                            
+                            results.append({
+                                'tomato_number': i + 1,
+                                'prediction': predicted_class,
+                                'confidence': float(confidence) if confidence is not None else 0.0,
+                                'bbox': [x_padded, y_padded, w_padded, h_padded],
+                                'crop_path': crop_path
+                            })
                         except Exception as e:
                             print(f"[TEST] Error classifying crop {i+1}: {e}")
                             import traceback
@@ -3806,80 +3930,78 @@ def test_model(model_name):
                 import traceback
                 traceback.print_exc()
         
-        # If no tomatoes detected or no classifier, fall back to full image classification
-        if len(results) == 0:
-            model_path = os.path.join(MODELS_FOLDER, model_name)
-            inference_script = os.path.join(model_path, f'{model_name}_inference.py')
-            
-            if os.path.exists(inference_script):
-                try:
-                    # Use the virtual environment Python
-                    python_cmd = 'python'
-                    venv_path = os.path.join(os.getcwd(), 'tomato_sorter_env/bin/python')
-                    if os.path.exists(venv_path):
-                        python_cmd = venv_path
+        # If no tomatoes detected, try to classify the whole image as fallback
+        if len(results) == 0 and classifier:
+            print(f"[TEST] No individual tomatoes detected, trying whole image classification...")
+            try:
+                # Convert frame to RGB
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # Classify the whole frame with lower threshold
+                classification_result = classifier.classify_crop(frame_rgb, confidence_threshold=0.1)
+                
+                if classification_result:
+                    print(f"[TEST] Whole image classification: {classification_result['class']} ({classification_result['confidence']:.2f})")
+                    # Save image for continuous learning
+                    learning_image_path = os.path.join('learning_data', 'new_images', 'test_uploads', f'test_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{original_ext}')
+                    os.makedirs(os.path.dirname(learning_image_path), exist_ok=True)
+                    cv2.imwrite(learning_image_path, frame)
                     
-                    result = subprocess.run([
-                        python_cmd, inference_script, '--image', temp_path
-                    ], capture_output=True, text=True, timeout=30)
+                    # Ensure prediction is a valid string
+                    predicted_class = classification_result.get('class', 'Unknown')
+                    if not predicted_class or not isinstance(predicted_class, str):
+                        predicted_class = 'Unknown'
                     
-                    if result.returncode == 0:
-                        # Parse output to extract prediction
-                        output_lines = result.stdout.strip().split('\n')
-                        prediction = 'Unknown'
-                        confidence = 0.0
-                        
-                        for line in output_lines:
-                            if 'Predicted Class:' in line:
-                                prediction = line.split('Predicted Class:')[1].strip()
-                            elif 'Confidence:' in line:
-                                try:
-                                    confidence = float(line.split('Confidence:')[1].strip())
-                                except:
-                                    pass
-                        
-                        # Save image for continuous learning
-                        learning_image_path = os.path.join('learning_data', 'new_images', 'test_uploads', f'test_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{original_ext}')
-                        os.makedirs(os.path.dirname(learning_image_path), exist_ok=True)
-                        shutil.copy2(temp_path, learning_image_path)
-                        
-                        # Save prediction metadata for continuous learning
-                        try:
-                            cmd = [
-                                sys.executable, 'continuous_learning.py',
-                                '--action', 'save_metadata',
-                                '--image', learning_image_path,
-                                '--predicted', prediction.lower().replace(' ', '_'),
-                                '--confidence', str(confidence)
-                            ]
-                            subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                        except:
-                            pass
-                        
-                        results.append({
-                            'prediction': prediction,
-                            'confidence': confidence,
-                            'learning_image_path': learning_image_path
-                        })
-                except subprocess.TimeoutExpired:
-                    pass
-                except Exception as e:
-                    print(f"Inference error: {e}")
+                    results.append({
+                        'prediction': predicted_class,
+                        'confidence': float(classification_result.get('confidence', 0.0)) if classification_result.get('confidence') is not None else 0.0,
+                        'learning_image_path': learning_image_path,
+                        'note': 'Whole image classified (no individual tomatoes detected)'
+                    })
+                else:
+                    print(f"[TEST] Whole image classification below threshold")
+            except Exception as e:
+                print(f"[TEST] Error in whole image classification: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Clean up temp file
         if os.path.exists(temp_path):
             os.remove(temp_path)
         
         if len(results) > 0:
-            return jsonify({
+            # For single tomato, also include direct prediction/confidence for backward compatibility
+            response_data = {
                 'success': True,
                 'tomato_count': tomato_count,
                 'results': results,
                 'multi_tomato': tomato_count > 1,
                 'continuous_learning': True
-            })
+            }
+            
+            # Add direct prediction/confidence for single tomato (for frontend compatibility)
+            if len(results) == 1:
+                response_data['prediction'] = results[0].get('prediction', 'Unknown') or 'Unknown'
+                response_data['confidence'] = results[0].get('confidence', 0.0) or 0.0
+            elif len(results) > 1:
+                # For multiple tomatoes, use the first one as primary result
+                response_data['prediction'] = results[0].get('prediction', 'Unknown') or 'Unknown'
+                response_data['confidence'] = results[0].get('confidence', 0.0) or 0.0
+            
+            return jsonify(response_data)
         else:
-            return jsonify({'error': 'Could not process image or no tomatoes detected'}), 400
+            # No results at all - classifier might not be working or image has no tomatoes
+            error_msg = 'Could not process image or no tomatoes detected.'
+            if not classifier:
+                error_msg += ' Classifier not available - model may not be loaded.'
+            else:
+                error_msg += ' Make sure tomatoes are clearly visible in the frame.'
+            
+            return jsonify({
+                'success': False,
+                'error': error_msg,
+                'prediction': 'Unknown',
+                'confidence': 0.0
+            }), 400
     else:
         return jsonify({'error': 'Invalid image file'}), 400
 

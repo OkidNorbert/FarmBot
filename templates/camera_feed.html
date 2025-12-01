@@ -221,12 +221,23 @@ async function startCamera() {
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({index: cameraIndex})
                     });
-                    const result = await response.json();
-                    if (!result.success) {
+                    
+                    if (!response.ok) {
+                        console.error(`Camera switch failed with status ${response.status}`);
+                        const errorText = await response.text();
+                        console.error('Error response:', errorText);
                         updateStatus('Warning: Could not switch to selected camera. Using default.', 'warning');
+                    } else {
+                        const result = await response.json();
+                        if (!result.success) {
+                            updateStatus('Warning: Could not switch to selected camera. Using default.', 'warning');
+                        } else {
+                            console.log(`Successfully switched to camera ${cameraIndex}`);
+                        }
                     }
                 } catch (error) {
                     console.error('Error switching camera before start:', error);
+                    updateStatus('Warning: Could not switch to selected camera. Using default.', 'warning');
                 }
             }
         }
@@ -355,17 +366,101 @@ function captureAndClassify() {
             method: 'POST',
             body: formData
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            // Validate data structure
+            if (!data || typeof data !== 'object') {
+                console.error('Invalid response data:', data);
+                throw new Error('Invalid response from server');
+            }
+            
             if (data.success) {
-                displayClassification(data);
-                updateStatus('Classification complete', 'success');
+                // Handle the response format - it can have 'results' array or direct 'prediction'
+                if (data.results && Array.isArray(data.results) && data.results.length > 0) {
+                    // Multiple tomatoes detected - show the first one or aggregate
+                    const firstResult = data.results[0];
+                    if (!firstResult || typeof firstResult !== 'object') {
+                        console.error('Invalid firstResult:', firstResult);
+                        throw new Error('Invalid result data');
+                    }
+                    
+                    // Ensure prediction exists and is a string
+                    let prediction = 'Unknown';
+                    if (firstResult.prediction !== undefined && firstResult.prediction !== null) {
+                        prediction = String(firstResult.prediction);
+                    }
+                    
+                    const confidence = (firstResult.confidence !== undefined && firstResult.confidence !== null) 
+                        ? parseFloat(firstResult.confidence) 
+                        : 0.0;
+                    
+                    displayClassification({
+                        prediction: prediction,
+                        confidence: confidence,
+                        tomato_count: data.tomato_count || data.results.length,
+                        multi_tomato: data.multi_tomato || false
+                    });
+                    if (data.tomato_count > 1) {
+                        updateStatus(`Classification complete - ${data.tomato_count} tomatoes detected`, 'success');
+                    } else {
+                        updateStatus('Classification complete', 'success');
+                    }
+                } else if (data.prediction !== undefined && data.prediction !== null) {
+                    // Direct prediction format (backward compatibility)
+                    // Ensure prediction is a valid string
+                    const prediction = String(data.prediction);
+                    const confidence = (data.confidence !== undefined && data.confidence !== null) 
+                        ? parseFloat(data.confidence) 
+                        : 0.0;
+                    
+                    displayClassification({
+                        prediction: prediction,
+                        confidence: confidence,
+                        tomato_count: data.tomato_count || 1
+                    });
+                    updateStatus('Classification complete', 'success');
+                } else {
+                    updateStatus('No tomatoes detected in image', 'warning');
+                }
             } else {
-                updateStatus('Classification failed: ' + data.error, 'danger');
+                const errorMsg = (data.error && typeof data.error === 'string') ? data.error : 'Unknown error';
+                updateStatus('Classification failed: ' + errorMsg, 'danger');
+                // Show error in classification results too
+                const resultsDiv = document.getElementById('classification-results');
+                const detailsDiv = document.getElementById('prediction-details');
+                if (resultsDiv && detailsDiv) {
+                    detailsDiv.innerHTML = `
+                        <div class="alert alert-danger mb-0">
+                            <strong>Error:</strong> ${errorMsg}<br>
+                            <small>Make sure tomatoes are clearly visible in the frame and the model is loaded.</small>
+                        </div>
+                    `;
+                    resultsDiv.style.display = 'block';
+                }
             }
         })
         .catch(error => {
-            updateStatus('Classification error: ' + error, 'danger');
+            console.error('Classification error:', error);
+            console.error('Error stack:', error.stack);
+            const errorMsg = (error && error.message) ? error.message : String(error);
+            updateStatus('Classification error: ' + errorMsg, 'danger');
+            // Show error in classification results
+            const resultsDiv = document.getElementById('classification-results');
+            const detailsDiv = document.getElementById('prediction-details');
+            if (resultsDiv && detailsDiv) {
+                detailsDiv.innerHTML = `
+                    <div class="alert alert-danger mb-0">
+                        <strong>Error:</strong> ${errorMsg}<br>
+                        <small>Check browser console (F12) and server console for details.</small>
+                    </div>
+                `;
+                resultsDiv.style.display = 'block';
+            }
         });
     }, 'image/jpeg');
 }
@@ -374,7 +469,16 @@ function displayClassification(data) {
     const resultsDiv = document.getElementById('classification-results');
     const detailsDiv = document.getElementById('prediction-details');
     
-    if (!resultsDiv || !detailsDiv) return;
+    if (!resultsDiv || !detailsDiv) {
+        console.error('displayClassification: Missing DOM elements');
+        return;
+    }
+    
+    // Validate data parameter
+    if (!data || typeof data !== 'object') {
+        console.error('displayClassification: Invalid data parameter:', data);
+        data = { prediction: 'Unknown', confidence: 0.0 };
+    }
     
     const classNames = {
         'ready': 'Ready (Ripe)',
@@ -382,26 +486,79 @@ function displayClassification(data) {
         'spoilt': 'Spoilt (Old/Damaged)'
     };
     
-    const className = classNames[data.prediction?.toLowerCase()] || data.prediction || 'Unknown';
-    const confidence = ((data.confidence || 0) * 100).toFixed(1);
+    // Handle prediction value - it might be in different formats
+    let prediction = null;
+    if (data && typeof data === 'object') {
+        prediction = data.prediction;
+        if (!prediction && data.results && Array.isArray(data.results) && data.results.length > 0) {
+            prediction = data.results[0]?.prediction;
+        }
+    }
     
-    detailsDiv.innerHTML = `
-        <div class="alert alert-${getClassColor(data.prediction)} mb-0">
+    // Ensure prediction is a string and handle undefined/null
+    if (!prediction || typeof prediction !== 'string') {
+        console.warn('displayClassification: Invalid prediction value:', prediction, 'Type:', typeof prediction);
+        prediction = 'Unknown';
+    }
+    
+    // Final safety check before calling toLowerCase
+    if (typeof prediction !== 'string') {
+        console.error('displayClassification: Prediction is still not a string after validation:', prediction);
+        prediction = 'Unknown';
+    }
+    
+    // Safe toLowerCase with try-catch as final safety net
+    let predictionLower = 'unknown';
+    try {
+        predictionLower = String(prediction).toLowerCase();
+    } catch (e) {
+        console.error('displayClassification: Error calling toLowerCase:', e, 'prediction:', prediction);
+        predictionLower = 'unknown';
+    }
+    const className = classNames[predictionLower] || prediction || 'Unknown';
+    const confidence = ((data.confidence || (data.results && data.results[0]?.confidence) || 0) * 100).toFixed(1);
+    const tomatoCount = data.tomato_count || 1;
+    
+    // Ensure prediction is safe for getClassColor and getClassIcon
+    const safePrediction = (typeof prediction === 'string') ? prediction : 'Unknown';
+    
+    let resultHtml = `
+        <div class="alert alert-${getClassColor(safePrediction)} mb-0">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
                     <strong>${className}</strong><br>
                     <small>Confidence: ${confidence}%</small>
+                    ${tomatoCount > 1 ? `<br><small class="text-muted">${tomatoCount} tomatoes detected</small>` : ''}
                 </div>
-                <i class="fas fa-${getClassIcon(data.prediction)} fa-2x"></i>
+                <i class="fas fa-${getClassIcon(safePrediction)} fa-2x"></i>
             </div>
         </div>
     `;
     
+    detailsDiv.innerHTML = resultHtml;
     resultsDiv.style.display = 'block';
 }
 
 function getClassColor(prediction) {
-    switch(prediction?.toLowerCase()) {
+    // Multiple safety checks
+    if (prediction === null || prediction === undefined) {
+        return 'info';
+    }
+    if (typeof prediction !== 'string') {
+        console.warn('getClassColor: prediction is not a string:', prediction, typeof prediction);
+        return 'info';
+    }
+    
+    // Safe toLowerCase with try-catch
+    let predictionLower = 'unknown';
+    try {
+        predictionLower = String(prediction).toLowerCase();
+    } catch (e) {
+        console.error('getClassColor: Error calling toLowerCase:', e, 'prediction:', prediction);
+        return 'info';
+    }
+    
+    switch(predictionLower) {
         case 'ready': return 'success';
         case 'not_ready': return 'warning';
         case 'spoilt': return 'danger';
@@ -410,7 +567,25 @@ function getClassColor(prediction) {
 }
 
 function getClassIcon(prediction) {
-    switch(prediction?.toLowerCase()) {
+    // Multiple safety checks
+    if (prediction === null || prediction === undefined) {
+        return 'question-circle';
+    }
+    if (typeof prediction !== 'string') {
+        console.warn('getClassIcon: prediction is not a string:', prediction, typeof prediction);
+        return 'question-circle';
+    }
+    
+    // Safe toLowerCase with try-catch
+    let predictionLower = 'unknown';
+    try {
+        predictionLower = String(prediction).toLowerCase();
+    } catch (e) {
+        console.error('getClassIcon: Error calling toLowerCase:', e, 'prediction:', prediction);
+        return 'question-circle';
+    }
+    
+    switch(predictionLower) {
         case 'ready': return 'check-circle';
         case 'not_ready': return 'clock';
         case 'spoilt': return 'exclamation-triangle';
