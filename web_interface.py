@@ -2706,7 +2706,14 @@ def delete_learning_image():
 @app.route('/continuous_learning')
 def continuous_learning_page():
     """Continuous learning management page"""
-    return render_template('continuous_learning.html', training_status=training_status)
+    try:
+        return render_template('continuous_learning.html', training_status=training_status)
+    except Exception as e:
+        import traceback
+        error_msg = traceback.format_exc()
+        print(f"ERROR in continuous_learning_page: {e}")
+        print(error_msg)
+        return f"Error rendering template: {str(e)}<br><pre>{error_msg}</pre>", 500
 
 # Multi-tomato detection route removed - not needed for robotic sorting system
 
@@ -3773,7 +3780,11 @@ def not_found(error):
 
 @app.errorhandler(500)
 def internal_error(error):
-    return jsonify({'error': 'Internal server error'}), 500
+    import traceback
+    error_msg = traceback.format_exc()
+    print(f"ERROR 500: {error}")
+    print(error_msg)
+    return jsonify({'error': 'Internal server error', 'details': str(error)}), 500
 
 # Initialize camera list cache on startup (non-blocking)
 def init_camera_cache():
