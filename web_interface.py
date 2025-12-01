@@ -19,11 +19,21 @@ from datetime import datetime
 import threading
 import time
 
+# Suppress OpenCV warnings and errors globally
+os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'  # Only show errors, suppress warnings
+os.environ['OPENCV_VIDEOIO_DEBUG'] = '0'  # Disable video I/O debug messages
+
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file, Response
 from werkzeug.utils import secure_filename
 import yaml
 import cv2
 import numpy as np
+
+# Set OpenCV log level to suppress warnings
+try:
+    cv2.setLogLevel(0)  # 0 = SILENT, 1 = ERROR, 2 = WARN, 3 = INFO, 4 = DEBUG
+except:
+    pass  # Older OpenCV versions might not have this
 
 # Try to import flask_socketio (required for WebSocket support)
 # Note: These imports are optional - if not installed, fallback classes are used
@@ -912,8 +922,8 @@ def api_list_cameras():
     try:
         force_refresh = request.args.get('refresh', 'false').lower() == 'true'
         
-        # ALWAYS use cache first if available (don't try to refresh if cameras are in use)
-        if CAMERA_LIST_CACHE is not None:
+        # Use cache only if not forcing refresh
+        if not force_refresh and CAMERA_LIST_CACHE is not None:
             # Update current status in cached list
             for cam in CAMERA_LIST_CACHE:
                 cam['current'] = (cam['index'] == CURRENT_CAMERA_INDEX)
@@ -960,38 +970,131 @@ def api_list_cameras():
                 # No available_cameras list, fall through to /dev/video* fallback
                 pass
         
-        # Fallback: Just list /dev/video* devices without opening cameras (fast, no hanging)
+        # Fallback: Actually test cameras to see which ones work
         cameras = []
         current = None
         
-        # Check for /dev/video* devices (don't open them - can hang if in use)
+        # First, get list of /dev/video* devices
+        video_devices = []
         if os.path.exists('/dev'):
             for item in sorted(os.listdir('/dev')):
                 if item.startswith('video'):
                     try:
                         idx = int(item.replace('video', ''))
-                        
-                        # Build camera info without opening the camera (prevents hanging)
-                        camera_name = f"Camera {idx}"
-                        camera_type = "Built-in" if idx == 0 else "USB"
-                        
-                        # Determine current camera
-                        is_current = False
-                        if HARDWARE_AVAILABLE and hw_controller and hw_controller.camera_connected:
-                            is_current = (idx == hw_controller.camera_index)
-                        else:
-                            is_current = (idx == CURRENT_CAMERA_INDEX)
-                        
-                        cameras.append({
-                            'index': idx,
-                            'name': camera_name,
-                            'type': camera_type,
-                            'backend': 'V4L2',
-                            'resolution': '640x480',  # Default, don't try to read
-                            'current': is_current
-                        })
+                        video_devices.append(idx)
                     except ValueError:
                         pass
+        
+        # If force refresh or no cache, actually test cameras
+        if force_refresh or CAMERA_LIST_CACHE is None:
+            # Test each camera index to see if it actually works
+            # Only test indices that exist as /dev/video* devices to avoid unnecessary warnings
+            indices_to_test = sorted(video_devices) if video_devices else list(range(10))
+            
+            # Suppress OpenCV warnings during camera testing
+            import os
+            import sys
+            import warnings
+            
+            # Save original stderr
+            original_stderr_fd = sys.stderr.fileno()
+            saved_stderr_fd = os.dup(original_stderr_fd)
+            
+            try:
+                # Redirect stderr to suppress OpenCV warnings
+                with open(os.devnull, 'w') as devnull:
+                    os.dup2(devnull.fileno(), original_stderr_fd)
+                    
+                    for idx in indices_to_test:
+                        test_cap = None
+                        try:
+                            # Try to open camera with V4L2 backend
+                            backend = cv2.CAP_V4L2 if idx in video_devices else cv2.CAP_ANY
+                            
+                            # Suppress OpenCV warnings for this specific call
+                            with warnings.catch_warnings():
+                                warnings.filterwarnings("ignore")
+                                test_cap = cv2.VideoCapture(idx, backend)
+                            
+                            if test_cap is not None and test_cap.isOpened():
+                                # Try to read a frame to verify it works
+                                ret, frame = test_cap.read()
+                                if ret and frame is not None:
+                                    # Get camera properties
+                                    try:
+                                        width = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
+                                        height = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
+                                    except:
+                                        width, height = 640, 480
+                                    
+                                    # Try to determine camera type and name
+                                    camera_type = "USB"
+                                    camera_name = f"Camera {idx}"
+                                    
+                                    # Try to get more info about the camera device
+                                    try:
+                                        import subprocess
+                                        # Try to get device info using v4l2-ctl if available
+                                        result = subprocess.run(['v4l2-ctl', '--device=/dev/video{}'.format(idx), '--info'], 
+                                                              capture_output=True, text=True, timeout=1, stderr=subprocess.DEVNULL)
+                                        if result.returncode == 0:
+                                            # Parse device name from v4l2-ctl output
+                                            for line in result.stdout.split('\n'):
+                                                if 'Card type' in line or 'Driver name' in line:
+                                                    # Extract camera name
+                                                    parts = line.split(':')
+                                                    if len(parts) > 1:
+                                                        device_name = parts[1].strip()
+                                                        if device_name:
+                                                            camera_name = f"{device_name} ({idx})"
+                                                    break
+                                    except:
+                                        pass
+                                    
+                                    # Label camera type - index 0 is often built-in, but not always
+                                    # For now, we'll just label it as the index number
+                                    if idx == 0:
+                                        camera_type = "Camera 0"  # Could be built-in or USB
+                                    else:
+                                        camera_type = f"USB Camera {idx}"
+                                    
+                                    # Determine current camera
+                                    is_current = False
+                                    if HARDWARE_AVAILABLE and hw_controller and hw_controller.camera_connected:
+                                        is_current = (idx == hw_controller.camera_index)
+                                    else:
+                                        is_current = (idx == CURRENT_CAMERA_INDEX)
+                                    
+                                    cameras.append({
+                                        'index': idx,
+                                        'name': camera_name,
+                                        'type': camera_type,
+                                        'backend': 'V4L2',
+                                        'resolution': f'{width}x{height}',
+                                        'current': is_current
+                                    })
+                                
+                                test_cap.release()
+                        except Exception as e:
+                            # Camera doesn't work or can't be opened - silently skip
+                            if test_cap:
+                                try:
+                                    test_cap.release()
+                                except:
+                                    pass
+                            continue
+            finally:
+                # Restore stderr
+                os.dup2(saved_stderr_fd, original_stderr_fd)
+                os.close(saved_stderr_fd)
+        else:
+            # Use cached list but update current status
+            cameras = CAMERA_LIST_CACHE or []
+            for cam in cameras:
+                if HARDWARE_AVAILABLE and hw_controller and hw_controller.camera_connected:
+                    cam['current'] = (cam['index'] == hw_controller.camera_index)
+                else:
+                    cam['current'] = (cam['index'] == CURRENT_CAMERA_INDEX)
         
         # Determine current camera index
         if HARDWARE_AVAILABLE and hw_controller and hw_controller.camera_connected:
@@ -2806,11 +2909,12 @@ def video_feed():
 
 @app.route('/api/camera/feed')
 def api_camera_feed():
-    """Pi-specific camera feed route using hardware controller"""
+    """Pi-specific camera feed route using hardware controller with detection"""
     if HARDWARE_AVAILABLE and hw_controller:
         def generate_frames():
-            """Video streaming generator function using hardware controller."""
+            """Video streaming generator function using hardware controller with detection."""
             frame_count = 0
+            last_detection_result = (False, 0, [])
             try:
                 while True:
                     # Check if camera is still connected
@@ -2821,11 +2925,33 @@ def api_camera_feed():
                     if frame is None:
                         time.sleep(0.1)  # Wait a bit if no frame
                         continue
-                        
+                    
                     # Add timestamp (only every 10th frame to reduce CPU)
                     if frame_count % 10 == 0:
-                        cv2.putText(frame, f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", (10, 30), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        cv2.putText(frame, timestamp, (10, 30), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    
+                    # Only detect tomatoes every 5th frame to reduce CPU usage
+                    if frame_count % 5 == 0:
+                        last_detection_result = detect_tomatoes_with_boxes(frame)
+                    
+                    tomato_detected, tomato_count, tomato_boxes = last_detection_result
+                    
+                    # Draw bounding boxes
+                    for i, (x, y, w, h) in enumerate(tomato_boxes):
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        cv2.putText(frame, f"Tomato {i+1}", (x, y-10), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    
+                    # Add detection status (only update text every 5 frames)
+                    if frame_count % 5 == 0:
+                        if tomato_detected:
+                            cv2.putText(frame, f"TOMATOES DETECTED: {tomato_count}", (10, 60), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                        else:
+                            cv2.putText(frame, "NO TOMATOES DETECTED", (10, 60), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
                            
                     # Encode with lower quality for calibration page (faster)
                     # Use higher quality JPEG compression for smaller file size
@@ -3224,30 +3350,52 @@ def tomato_detection_status():
     """Get current tomato detection status from camera"""
     import cv2
     
-    # Try to get a frame from camera
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        return jsonify({
-            'detected': False,
-            'message': 'Camera not available',
-            'tomato_count': 0
-        })
+    frame = None
     
-    ret, frame = cap.read()
-    cap.release()
+    # Try hardware controller first (if available and connected)
+    if HARDWARE_AVAILABLE and hw_controller and hw_controller.camera_connected:
+        try:
+            frame = hw_controller.get_frame()
+            if frame is None:
+                return jsonify({
+                    'detected': False,
+                    'message': 'Camera not available',
+                    'tomato_count': 0,
+                    'timestamp': datetime.now().isoformat()
+                })
+        except Exception as e:
+            print(f"Error getting frame from hardware controller: {e}")
+            frame = None
     
-    if not ret:
-        return jsonify({
-            'detected': False,
-            'message': 'Could not read from camera',
-            'tomato_count': 0
-        })
+    # Fallback to direct camera access
+    if frame is None:
+        # Use current camera index
+        camera_index = CURRENT_CAMERA_INDEX
+        if HARDWARE_AVAILABLE and hw_controller and hw_controller.camera_connected:
+            camera_index = hw_controller.camera_index
+        
+        cap = cv2.VideoCapture(camera_index)
+        if not cap.isOpened():
+            return jsonify({
+                'detected': False,
+                'message': f'Camera not available (index {camera_index})',
+                'tomato_count': 0,
+                'timestamp': datetime.now().isoformat()
+            })
+        
+        ret, frame = cap.read()
+        cap.release()
+        
+        if not ret or frame is None:
+            return jsonify({
+                'detected': False,
+                'message': 'Could not read from camera',
+                'tomato_count': 0,
+                'timestamp': datetime.now().isoformat()
+            })
     
-    # Detect tomatoes in the frame
-    tomato_detected = detect_tomatoes_in_frame(frame)
-    
-    # Count tomatoes for more detailed info
-    tomato_count = count_tomatoes_in_frame(frame)
+    # Detect tomatoes in the frame using the detection function with boxes
+    tomato_detected, tomato_count, tomato_boxes = detect_tomatoes_with_boxes(frame)
     
     return jsonify({
         'detected': tomato_detected,

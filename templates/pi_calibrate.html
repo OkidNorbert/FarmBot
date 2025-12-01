@@ -752,9 +752,10 @@
     }
 
     // Camera management
-    async function loadCameraList() {
+    async function loadCameraList(forceRefresh = false) {
         try {
-            const response = await fetch('/api/camera/list');
+            const url = forceRefresh ? '/api/camera/list?refresh=true' : '/api/camera/list';
+            const response = await fetch(url);
             const result = await response.json();
             
             if (result.success && result.cameras) {
@@ -814,7 +815,7 @@
     }
     
     function refreshCameraList() {
-        loadCameraList();
+        loadCameraList(true); // Force refresh to re-detect all cameras
     }
     
     // Auto-detect and prefer USB cameras (usually index 1 or higher)

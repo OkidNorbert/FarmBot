@@ -15,12 +15,13 @@ from datetime import datetime
 import sys
 from pathlib import Path
 
-# Suppress OpenCV warnings globally
-os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
+# Suppress OpenCV warnings and errors globally
+os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'  # Only show errors, suppress warnings
+os.environ['OPENCV_VIDEOIO_DEBUG'] = '0'  # Disable video I/O debug messages
 # Note: cv2.setLogLevel() may not be available in all OpenCV versions
 try:
     if hasattr(cv2, 'setLogLevel'):
-        cv2.setLogLevel(3)  # 3 = LOG_LEVEL_SILENT in newer versions
+        cv2.setLogLevel(0)  # 0 = SILENT, 1 = ERROR, 2 = WARN, 3 = INFO, 4 = DEBUG
 except:
     pass
 
