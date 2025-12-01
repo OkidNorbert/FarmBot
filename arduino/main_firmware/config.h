@@ -51,8 +51,14 @@
 #define LIMIT_SHOULDER_MAX  165
 
 // Base (MG99x)
+// Set to true if using a continuous rotation servo for base
+// NOTE: Continuous rotation servos don't have position feedback, so the firmware
+//       tracks a "virtual position" based on rotation time and speed.
+//       You may need to calibrate BASE_ROTATION_SPEED to match your servo's actual speed.
+#define BASE_CONTINUOUS_ROTATION  true  // Change to false for standard 180° servo
 #define LIMIT_BASE_MIN      0
-#define LIMIT_BASE_MAX      180
+#define LIMIT_BASE_MAX      180  // Virtual limits for continuous rotation servo
+#define BASE_ROTATION_SPEED 30   // Degrees per second for continuous rotation base (calibrate this!)
 
 // Motion - Speed Configuration
 #define DEFAULT_SPEED       20  // Default speed (degrees per second)

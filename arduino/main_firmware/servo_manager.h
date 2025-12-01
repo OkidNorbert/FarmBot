@@ -13,6 +13,7 @@ struct ServoConfig {
     int max_angle;
     int current_angle;
     int target_angle;
+    bool is_continuous;  // True for continuous rotation servos
     Servo servo;
 };
 
@@ -42,8 +43,14 @@ private:
     unsigned long _last_update;
     int _current_speed; // Current speed in degrees per second
     
-    void attachServo(int id, int pin, int min_p, int max_p, int min_a, int max_a);
+    // Continuous rotation tracking
+    unsigned long _base_rotation_start_time;
+    int _base_rotation_direction; // -1 = CCW, 0 = stop, 1 = CW
+    int _base_virtual_angle; // Tracked virtual position for continuous rotation
+    
+    void attachServo(int id, int pin, int min_p, int max_p, int min_a, int max_a, bool continuous = false);
     int constrainAngle(int id, int angle);
+    void updateContinuousRotation(int id);
 };
 
 #endif // SERVO_MANAGER_H
