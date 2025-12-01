@@ -3572,11 +3572,17 @@ def test_model(model_name):
                 if tomato_count == 0:
                     print(f"[TEST] No tomatoes detected via color detection, will try whole image classification")
                 
-                # If we only got 1 large detection, try a more aggressive splitting approach
+                # If we only got 1 detection, check if it's a normal single tomato or needs splitting
                 if tomato_count == 1 and len(tomato_boxes) == 1:
                     x, y, w, h = tomato_boxes[0]
                     # Check if it's suspiciously large (likely multiple tomatoes merged)
-                    if w > 300 or h > 300 or (w * h) > 100000:
+                    # Only attempt splitting if it's clearly too large for a single tomato
+                    is_large_detection = w > 300 or h > 300 or (w * h) > 100000
+                    
+                    if not is_large_detection:
+                        # Normal-sized single tomato - don't split, just classify as-is
+                        print(f"[TEST] Single tomato detected ({w}x{h}), treating as single tomato (no splitting)")
+                    elif is_large_detection:
                         print(f"[TEST] Large single detection ({w}x{h}), attempting aggressive splitting...")
                         try:
                             # Re-detect with more aggressive settings
