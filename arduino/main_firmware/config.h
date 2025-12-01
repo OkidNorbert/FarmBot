@@ -30,9 +30,13 @@
 #define PULSE_MAX_MG99X     2400
 
 // Safety Limits (Degrees)
-// Claw (SG90) - 0° = Open, 90° = Closed (REVERSED)
+// Claw (SG90) - CLAW_CLOSED_POSITION = Closed, 90° = Open
+// NOTE: Some servos may need a slight offset (1-2°) to fully close
+// If 0° doesn't fully close, try setting CLAW_CLOSED_POSITION to 1 or 2
+// Test your servo: send angle 0, then 1, then 2 - use the value that fully closes
 #define LIMIT_CLAW_MIN      0
 #define LIMIT_CLAW_MAX      90
+#define CLAW_CLOSED_POSITION 0  // Actual position for fully closed claw (0-5 degrees, adjust if needed)
 
 // Pitch (SG90)
 #define LIMIT_PITCH_MIN     20
@@ -46,9 +50,13 @@
 #define LIMIT_FOREARM_MIN   10
 #define LIMIT_FOREARM_MAX   170
 
-// Shoulder (MG99x)
+// Shoulder (MG99x or HTS-16L)
+// Set to true if using HTS-16L serial servo for shoulder
+#define SHOULDER_USE_HTS16L  true  // Change to false for standard PWM servo (MG996R)
 #define LIMIT_SHOULDER_MIN  15
-#define LIMIT_SHOULDER_MAX  165
+#define LIMIT_SHOULDER_MAX  165  // For HTS-16L, can go up to 240, but constrained to 165 for safety
+#define HTS16L_SERVO_ID     1     // HTS-16L servo ID (default is 1)
+#define HTS16L_BAUD_RATE    115200 // HTS-16L communication baud rate
 
 // Base (MG99x)
 // Set to true if using a continuous rotation servo for base

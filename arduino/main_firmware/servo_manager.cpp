@@ -7,51 +7,80 @@ ServoManager::ServoManager() {
     _base_rotation_start_time = 0;
     _base_rotation_direction = 0;
     _base_virtual_angle = HOME_ANGLE; // Start at home position
+    #if SHOULDER_USE_HTS16L
+    hts16l_serial = nullptr;
+    #endif
 }
 
 void ServoManager::begin() {
     // Initialize Servos with Config
     // ID mapping: 0=Base, 1=Shoulder, 2=Forearm, 3=Elbow, 4=Pitch, 5=Claw
     
-    attachServo(0, PIN_SERVO_BASE,     PULSE_MIN_MG99X, PULSE_MAX_MG99X, LIMIT_BASE_MIN,     LIMIT_BASE_MAX, BASE_CONTINUOUS_ROTATION);
-    attachServo(1, PIN_SERVO_SHOULDER, PULSE_MIN_MG99X, PULSE_MAX_MG99X, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX, false);
-    attachServo(2, PIN_SERVO_FOREARM,  PULSE_MIN_MG99X, PULSE_MAX_MG99X, LIMIT_FOREARM_MIN,  LIMIT_FOREARM_MAX, false);
-    attachServo(3, PIN_SERVO_ELBOW,    PULSE_MIN_SG90,  PULSE_MAX_SG90,  LIMIT_ELBOW_MIN,    LIMIT_ELBOW_MAX, false);
-    attachServo(4, PIN_SERVO_PITCH,    PULSE_MIN_SG90,  PULSE_MAX_SG90,  LIMIT_PITCH_MIN,    LIMIT_PITCH_MAX, false);
-    attachServo(5, PIN_SERVO_CLAW,     PULSE_MIN_SG90,  PULSE_MAX_SG90,  LIMIT_CLAW_MIN,     LIMIT_CLAW_MAX, false);
+    #if SHOULDER_USE_HTS16L
+    // Initialize HTS-16L serial servo for shoulder
+    // Use Serial1 for HTS-16L (Arduino UNO R4 WiFi has multiple serial ports)
+    // Note: You may need to use a different serial port depending on your wiring
+    hts16l_serial = &Serial1; // Change to Serial2 or Serial if needed
+    if (hts16l_shoulder.begin(hts16l_serial, HTS16L_SERVO_ID, HTS16L_BAUD_RATE)) {
+        Serial.println("HTS-16L shoulder servo initialized");
+        // Set shoulder to home position
+        hts16l_shoulder.setAngle(HOME_ANGLE);
+        servos[1].current_angle = HOME_ANGLE;
+        servos[1].target_angle = HOME_ANGLE;
+    } else {
+        Serial.println("WARNING: HTS-16L shoulder servo initialization failed!");
+    }
+    // Attach shoulder as serial servo (pin not used for serial servos)
+    attachServo(1, 0, 0, 0, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX, false, true);
+    #else
+    attachServo(1, PIN_SERVO_SHOULDER, PULSE_MIN_MG99X, PULSE_MAX_MG99X, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX, false, false);
+    #endif
     
-    // Set claw to open position (0° = open) immediately on power-on
-    servos[5].servo.write(0);
-    servos[5].current_angle = 0;
-    servos[5].target_angle = 0;
-    delay(500); // Give servo time to move to open position
+    attachServo(0, PIN_SERVO_BASE,     PULSE_MIN_MG99X, PULSE_MAX_MG99X, LIMIT_BASE_MIN,     LIMIT_BASE_MAX, BASE_CONTINUOUS_ROTATION, false);
+    attachServo(2, PIN_SERVO_FOREARM,  PULSE_MIN_MG99X, PULSE_MAX_MG99X, LIMIT_FOREARM_MIN,  LIMIT_FOREARM_MAX, false, false);
+    attachServo(3, PIN_SERVO_ELBOW,    PULSE_MIN_SG90,  PULSE_MAX_SG90,  LIMIT_ELBOW_MIN,    LIMIT_ELBOW_MAX, false, false);
+    attachServo(4, PIN_SERVO_PITCH,    PULSE_MIN_SG90,  PULSE_MAX_SG90,  LIMIT_PITCH_MIN,    LIMIT_PITCH_MAX, false, false);
+    attachServo(5, PIN_SERVO_CLAW,     PULSE_MIN_SG90,  PULSE_MAX_SG90,  LIMIT_CLAW_MIN,     LIMIT_CLAW_MAX, false, false);
+    
+    // Set claw to closed position immediately on power-on for safety
+    // Use CLAW_CLOSED_POSITION (may be 0-5° depending on servo calibration)
+    servos[5].servo.write(CLAW_CLOSED_POSITION);
+    servos[5].current_angle = CLAW_CLOSED_POSITION;
+    servos[5].target_angle = CLAW_CLOSED_POSITION;
+    delay(500); // Give servo time to move to closed position
     
     home();
 }
 
-void ServoManager::attachServo(int id, int pin, int min_p, int max_p, int min_a, int max_a, bool continuous) {
+void ServoManager::attachServo(int id, int pin, int min_p, int max_p, int min_a, int max_a, bool continuous, bool serial) {
     servos[id].pin = pin;
     servos[id].min_pulse = min_p;
     servos[id].max_pulse = max_p;
     servos[id].min_angle = min_a;
     servos[id].max_angle = max_a;
     servos[id].is_continuous = continuous;
+    servos[id].is_serial = serial;
     
-    // Claw (id=5) starts at 0° (open), all others at 90° (home)
-    int initial_angle = (id == 5) ? 0 : HOME_ANGLE;
+    // Claw (id=5) starts at CLAW_CLOSED_POSITION (closed) for safety, all others at 90° (home)
+    int initial_angle = (id == 5) ? CLAW_CLOSED_POSITION : HOME_ANGLE;
     servos[id].current_angle = initial_angle;
     servos[id].target_angle = initial_angle;
     
-    servos[id].servo.attach(pin, min_p, max_p);
-    
-    if (continuous) {
-        // For continuous rotation: 90° = stop, <90° = CCW, >90° = CW
-        servos[id].servo.write(90); // Start stopped
-        _base_virtual_angle = HOME_ANGLE;
-        _base_rotation_direction = 0;
-        _base_rotation_start_time = millis();
+    if (serial) {
+        // Serial servo (HTS-16L) - already initialized in begin()
+        // Don't attach PWM servo
     } else {
-        servos[id].servo.write(initial_angle);
+        servos[id].servo.attach(pin, min_p, max_p);
+        
+        if (continuous) {
+            // For continuous rotation: 90° = stop, <90° = CCW, >90° = CW
+            servos[id].servo.write(90); // Start stopped
+            _base_virtual_angle = HOME_ANGLE;
+            _base_rotation_direction = 0;
+            _base_rotation_start_time = millis();
+        } else {
+            servos[id].servo.write(initial_angle);
+        }
     }
 }
 
@@ -65,14 +94,20 @@ void ServoManager::update() {
     
     bool moving = false;
     for (int i = 0; i < 6; i++) {
-        if (servos[i].is_continuous) {
+        if (servos[i].is_serial) {
+            // Handle serial servo (HTS-16L)
+            updateSerialServo(i);
+            if (servos[i].current_angle != servos[i].target_angle) {
+                moving = true;
+            }
+        } else if (servos[i].is_continuous) {
             // Handle continuous rotation servo (base)
             updateContinuousRotation(i);
             if (servos[i].current_angle != servos[i].target_angle) {
                 moving = true;
             }
         } else {
-            // Standard position-based servo
+            // Standard position-based PWM servo
             if (servos[i].current_angle != servos[i].target_angle) {
                 moving = true;
                 if (servos[i].current_angle < servos[i].target_angle) {
@@ -127,14 +162,22 @@ void ServoManager::home() {
     for (int i = 0; i < 5; i++) {  // Servos 0-4 (Base through Pitch)
         setTarget(i, HOME_ANGLE);
     }
-    // Claw stays open (0° = open) - it was set to open in begin()
-    // Claw: 0° = Open, 90° = Closed (REVERSED)
+    // Claw stays closed (CLAW_CLOSED_POSITION) - it was set to closed in begin() for safety
+    // Claw: CLAW_CLOSED_POSITION (typically 0°) = Closed, 90° = Open
 }
 
 void ServoManager::emergencyStop() {
     _emergency_stop = true;
     for (int i = 0; i < 6; i++) {
-        servos[i].servo.detach(); // Cut power signal
+        if (servos[i].is_serial) {
+            #if SHOULDER_USE_HTS16L
+            if (i == 1) {
+                hts16l_shoulder.stop(); // Stop serial servo
+            }
+            #endif
+        } else {
+            servos[i].servo.detach(); // Cut power signal for PWM servos
+        }
     }
 }
 
@@ -231,4 +274,30 @@ void ServoManager::updateContinuousRotation(int id) {
     if (elapsed > 1000) {
         _base_rotation_start_time = now;
     }
+}
+
+void ServoManager::updateSerialServo(int id) {
+    // Only handle shoulder servo (id=1) as HTS-16L
+    if (id != 1 || !servos[id].is_serial) return;
+    
+    #if SHOULDER_USE_HTS16L
+    int target = servos[id].target_angle;
+    int current = servos[id].current_angle;
+    
+    // If we're at target, nothing to do
+    if (abs(target - current) < 2) { // 2 degree tolerance
+        servos[id].current_angle = target;
+        return;
+    }
+    
+    // Calculate speed based on current speed setting
+    // Convert deg/s to HTS-16L speed (0-1000)
+    int hts_speed = map(_current_speed, 1, 180, 50, 1000);
+    hts_speed = constrain(hts_speed, 50, 1000);
+    
+    // Set angle directly (HTS-16L handles smooth movement internally)
+    if (hts16l_shoulder.setAngle(target, hts_speed)) {
+        servos[id].current_angle = target; // Assume it will reach target
+    }
+    #endif
 }
