@@ -341,49 +341,114 @@ class HardwareController:
                 self.logger.debug("[AUTO] No tomatoes detected in frame")
             return
         
-        # 3. Decide: Pick the most confident ready tomato
-        target = max(ready_tomatoes, key=lambda x: x['confidence'])
-        self.logger.info(f"[AUTO] Picking ready tomato (confidence: {target['confidence']:.2f}, class: {target['class']})")
+        # 3. Sort ready tomatoes by confidence (highest first) for better picking order
+        ready_tomatoes.sort(key=lambda x: x['confidence'], reverse=True)
         
-        # 4. Act (if connected)
-        if self.arduino_connected:
-            # Calculate coordinates (Simplified mapping)
-            # In real usage, map pixels to mm
-            center_x, center_y = target['center']
+        self.logger.info(f"[AUTO] Found {len(ready_tomatoes)} ready tomato(s) to pick")
+        
+        # 4. Pick ALL ready tomatoes in sequence
+        for i, target in enumerate(ready_tomatoes):
+            self.logger.info(f"[AUTO] Picking ready tomato {i+1}/{len(ready_tomatoes)} (confidence: {target['confidence']:.2f}, class: {target['class']})")
             
-            # Get Depth from VL53L0X sensor
-            z_depth = self.get_distance_sensor()
-            
-            # Use default distance if sensor fails to prevent command parsing errors
-            DEFAULT_DISTANCE_MM = 50  # Safe default distance
-            if z_depth is None:
-                self.logger.warning(f"[AUTO] Distance sensor unavailable, using default {DEFAULT_DISTANCE_MM}mm")
-                z_depth = DEFAULT_DISTANCE_MM
-            
-            self.logger.info(f"[AUTO] Picking ready tomato at {center_x}, {center_y}, {z_depth}mm")
-            
-            # Send Pick Command
-            # Format: PICK <x> <y> <z> <class_id>
-            # class_id: 1=Ready/Ripe (goes to right), 0=Other (goes to left)
-            # Since we only pick ready tomatoes, always use class_id=1 (right bin)
-            class_id = 1  # Ready tomatoes go to the right
-            self.send_command(f"PICK {center_x} {center_y} {z_depth} {class_id}")
-            
-            # Wait for operation to complete
-            time.sleep(5) 
-        else:
-            self.logger.info("[AUTO] Simulation: Pick command sent")
+            # Act (if connected)
+            if self.arduino_connected:
+                # Calculate coordinates (Simplified mapping)
+                # In real usage, map pixels to mm
+                center_x, center_y = target['center']
+                
+                # Get Depth from VL53L0X sensor
+                z_depth = self.get_distance_sensor()
+                
+                # Use default distance if sensor fails to prevent command parsing errors
+                DEFAULT_DISTANCE_MM = 50  # Safe default distance
+                if z_depth is None:
+                    self.logger.warning(f"[AUTO] Distance sensor unavailable, using default {DEFAULT_DISTANCE_MM}mm")
+                    z_depth = DEFAULT_DISTANCE_MM
+                
+                self.logger.info(f"[AUTO] Picking ready tomato at {center_x}, {center_y}, {z_depth}mm")
+                
+                # Send Pick Command
+                # Format: PICK <x> <y> <z> <class_id>
+                # class_id: 1=Ready/Ripe (goes to right), 0=Other (goes to left)
+                # Since we only pick ready tomatoes, always use class_id=1 (right bin)
+                class_id = 1  # Ready tomatoes go to the right
+                self.send_command(f"PICK {center_x} {center_y} {z_depth} {class_id}")
+                
+                # Wait for operation to complete before picking next tomato
+                time.sleep(5)
+            else:
+                self.logger.info(f"[AUTO] Simulation: Pick command {i+1}/{len(ready_tomatoes)} sent")
+        
+        self.logger.info(f"[AUTO] Completed picking {len(ready_tomatoes)} ready tomato(s) from this frame")
 
     def detect_tomatoes(self, frame):
-        """Run detection on frame with enhanced support for Ugandan tomatoes"""
+        """Run detection on frame with enhanced support for Ugandan tomatoes
+        Now classifies each detected tomato individually"""
         if self.classifier:
-            # Use lower confidence threshold for Ugandan tomatoes (0.3 instead of default 0.5)
-            # Enable image enhancement optimized for Ugandan tomato varieties
-            return self.classifier.detect_tomatoes(
-                frame, 
-                confidence_threshold=0.3,  # Lower threshold for better detection
-                enhance_for_ugandan=True   # Apply color/brightness enhancement
-            )
+            # First, detect tomato bounding boxes using color-based detection
+            import cv2
+            import numpy as np
+            
+            # Use color-based detection to find tomato bounding boxes
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            
+            # Define color ranges for tomatoes
+            lower_red1 = np.array([0, 50, 50])
+            upper_red1 = np.array([15, 255, 255])
+            lower_red2 = np.array([165, 50, 50])
+            upper_red2 = np.array([180, 255, 255])
+            mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+            mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+            red_mask = mask1 + mask2
+            
+            lower_green = np.array([35, 50, 50])
+            upper_green = np.array([85, 255, 255])
+            green_mask = cv2.inRange(hsv, lower_green, upper_green)
+            
+            lower_orange = np.array([10, 50, 50])
+            upper_orange = np.array([25, 255, 255])
+            orange_mask = cv2.inRange(hsv, lower_orange, upper_orange)
+            
+            combined_mask = red_mask + green_mask + orange_mask
+            
+            # Apply morphological operations
+            kernel = np.ones((5,5), np.uint8)
+            combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel)
+            combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel)
+            
+            # Find contours and extract bounding boxes
+            contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            bboxes = []
+            
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area > 2000:  # Minimum area threshold
+                    x, y, w, h = cv2.boundingRect(contour)
+                    aspect_ratio = w / h
+                    if 0.6 < aspect_ratio < 1.6:  # Circular requirement
+                        perimeter = cv2.arcLength(contour, True)
+                        if perimeter > 0:
+                            circularity = 4 * np.pi * area / (perimeter * perimeter)
+                            if circularity > 0.3 and w > 40 and h > 40:
+                                # Add padding to bounding box for better classification
+                                padding = 10
+                                x = max(0, x - padding)
+                                y = max(0, y - padding)
+                                w = min(frame.shape[1] - x, w + 2 * padding)
+                                h = min(frame.shape[0] - y, h + 2 * padding)
+                                bboxes.append((x, y, w, h))
+            
+            # Now classify each detected tomato individually
+            if bboxes:
+                return self.classifier.detect_tomatoes(
+                    frame,
+                    confidence_threshold=0.3,
+                    enhance_for_ugandan=True,
+                    bboxes=bboxes
+                )
+            else:
+                # No tomatoes detected, return empty list
+                return []
         else:
             # Dummy detection for simulation
             # Randomly find a tomato every few seconds

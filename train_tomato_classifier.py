@@ -100,9 +100,12 @@ def create_data_yaml(dataset_path):
     print(f"✅ Created data.yaml at {yaml_path}")
     return yaml_path
 
-def train_classifier(dataset_path, epochs=50, batch_size=32, lr=0.001):
-    """Train the tomato classifier"""
-    print("🚀 Starting classification training...")
+def train_classifier(dataset_path, epochs=50, batch_size=32, lr=0.001, pretrained_model=None):
+    """Train the tomato classifier, optionally continuing from a pretrained model"""
+    if pretrained_model:
+        print("🔄 Continuing training from existing model (fine-tuning)...")
+    else:
+        print("🚀 Starting classification training from scratch...")
     
     # Data transforms
     train_transform = transforms.Compose([
@@ -133,6 +136,22 @@ def train_classifier(dataset_path, epochs=50, batch_size=32, lr=0.001):
     print(f"Using device: {device}")
     
     model = TomatoClassifier(num_classes=3).to(device)
+    
+    # Load pretrained model if provided
+    if pretrained_model and os.path.exists(pretrained_model):
+        try:
+            print(f"📂 Loading pretrained model from: {pretrained_model}")
+            state_dict = torch.load(pretrained_model, map_location=device)
+            model.load_state_dict(state_dict)
+            print("✅ Pretrained model loaded successfully!")
+            # Use lower learning rate for fine-tuning
+            if lr >= 0.001:
+                lr = lr * 0.1  # Reduce learning rate by 10x for fine-tuning
+                print(f"📉 Using reduced learning rate for fine-tuning: {lr}")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not load pretrained model: {e}")
+            print("   Starting training from scratch instead...")
+    
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
@@ -201,28 +220,49 @@ def train_classifier(dataset_path, epochs=50, batch_size=32, lr=0.001):
     torch.save(model.state_dict(), model_path)
     print(f"✅ Model saved to {model_path}")
     
+    # Also save to models/tomato/ if directory exists
+    models_dir = os.path.join('models', 'tomato')
+    if os.path.exists(models_dir):
+        best_model_path = os.path.join(models_dir, 'best_model.pth')
+        torch.save(model.state_dict(), best_model_path)
+        print(f"✅ Model also saved to {best_model_path}")
+    
     # Plot training curves
     plt.figure(figsize=(12, 4))
     
     plt.subplot(1, 2, 1)
-    plt.plot(train_losses, label='Train Loss')
-    plt.plot(val_losses, label='Val Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.title('Training and Validation Loss')
+    plt.plot(train_losses, label='Train Loss', linewidth=2)
+    plt.plot(val_losses, label='Val Loss', linewidth=2)
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Loss', fontsize=12)
+    plt.legend(fontsize=10)
+    plt.title('Training and Validation Loss', fontsize=14, fontweight='bold')
+    plt.grid(True, alpha=0.3)
     
     plt.subplot(1, 2, 2)
-    plt.plot(train_accs, label='Train Acc')
-    plt.plot(val_accs, label='Val Acc')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy (%)')
-    plt.legend()
-    plt.title('Training and Validation Accuracy')
+    plt.plot(train_accs, label='Train Acc', linewidth=2)
+    plt.plot(val_accs, label='Val Acc', linewidth=2)
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Accuracy (%)', fontsize=12)
+    plt.legend(fontsize=10)
+    plt.title('Training and Validation Accuracy', fontsize=14, fontweight='bold')
+    plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('training_curves.png')
-    plt.show()
+    
+    # Save training curves to multiple locations
+    curves_path = 'training_curves.png'
+    plt.savefig(curves_path, dpi=150, bbox_inches='tight')
+    print(f"📊 Training curves saved to {curves_path}")
+    
+    # Also save to models/tomato/ if directory exists
+    if os.path.exists(models_dir):
+        curves_model_path = os.path.join(models_dir, 'training_curves.png')
+        plt.savefig(curves_model_path, dpi=150, bbox_inches='tight')
+        print(f"📊 Training curves also saved to {curves_model_path}")
+    
+    # Close figure to free memory (don't show in headless environment)
+    plt.close()
     
     return model
 
@@ -233,6 +273,8 @@ def main():
     parser.add_argument('--epochs', type=int, default=50, help='Number of epochs')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--resume', '--pretrained_model', type=str, default=None,
+                       help='Path to pretrained model to continue training from (fine-tuning)')
     
     args = parser.parse_args()
     
@@ -242,13 +284,15 @@ def main():
     print(f"Epochs: {args.epochs}")
     print(f"Batch size: {args.batch_size}")
     print(f"Learning rate: {args.lr}")
+    if args.resume:
+        print(f"Resume from: {args.resume}")
     print()
     
     # Create data.yaml
     data_yaml = create_data_yaml(args.dataset)
     
     # Train classifier
-    model = train_classifier(args.dataset, args.epochs, args.batch_size, args.lr)
+    model = train_classifier(args.dataset, args.epochs, args.batch_size, args.lr, args.resume)
     
     print("✅ Training completed!")
     print(f"📁 Dataset: {args.dataset}")

@@ -119,6 +119,10 @@ def retrain_model():
     """Trigger model retraining using feedback data"""
     ensure_data_dir()
     
+    # Ensure retraining dataset directory exists
+    dataset_dir = Path('learning_data/retraining_dataset')
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    
     try:
         # Load feedback data
         if os.path.exists(FEEDBACK_FILE):
@@ -144,9 +148,7 @@ def retrain_model():
             'spoilt': 'spoilt'
         }
         
-        # Create dataset structure from feedback
-        dataset_dir = Path('learning_data/retraining_dataset')
-        dataset_dir.mkdir(exist_ok=True)
+        # Create dataset structure from feedback (dataset_dir already created above)
         
         for class_name in ['not_ready', 'ready', 'spoilt']:
             class_dir = dataset_dir / class_mapping.get(class_name, class_name)
@@ -170,6 +172,15 @@ def retrain_model():
             
             if should_include:
                 source_path = Path(entry['image_path'])
+                # Resolve relative paths to absolute
+                if not source_path.is_absolute():
+                    # Try relative to current working directory
+                    source_path = Path.cwd() / source_path
+                    # If still doesn't exist, try relative to script directory
+                    if not source_path.exists():
+                        script_dir = Path(__file__).parent
+                        source_path = script_dir / entry['image_path']
+                
                 if source_path.exists():
                     target_class = class_mapping.get(correct, correct)
                     target_dir = dataset_dir / target_class
@@ -187,6 +198,9 @@ def retrain_model():
                     import shutil
                     shutil.copy2(source_path, target_path)
                     copied_count += 1
+                else:
+                    # Log missing images but don't fail
+                    print(f"Warning: Image not found: {entry['image_path']}", file=sys.stderr)
         
         print(json.dumps({
             'success': True,
@@ -196,9 +210,13 @@ def retrain_model():
         }))
         
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        error_msg = f'Error preparing retraining dataset: {str(e)}'
         print(json.dumps({
             'success': False,
-            'error': f'Error preparing retraining dataset: {str(e)}'
+            'error': error_msg,
+            'details': error_details
         }))
         sys.exit(1)
 

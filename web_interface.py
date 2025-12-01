@@ -152,15 +152,61 @@ CAMERA_CACHE_TTL = 60  # Cache for 60 seconds
 # Statistics storage file
 STATS_FILE = 'monitoring_stats.json'
 
+# Initialize stats on module load
+_initialized_stats = False
+
+def initialize_stats():
+    """Initialize stats file on startup"""
+    global _initialized_stats
+    if not _initialized_stats:
+        stats = load_stats()  # This will create the file if it doesn't exist
+        # Add current session to session history
+        if 'session_history' not in stats:
+            stats['session_history'] = []
+        
+        # Add current session
+        current_session = {
+            'start_time': datetime.now().isoformat(),
+            'session_id': f"session_{int(time.time())}"
+        }
+        stats['session_history'].append(current_session)
+        
+        # Keep only last 50 sessions
+        if len(stats['session_history']) > 50:
+            stats['session_history'] = stats['session_history'][-50:]
+        
+        save_stats(stats)
+        _initialized_stats = True
+        print(f"📊 Monitoring stats initialized: {STATS_FILE}")
+
 def load_stats():
     """Load statistics from file"""
     if os.path.exists(STATS_FILE):
         try:
             with open(STATS_FILE, 'r') as f:
-                return json.load(f)
-        except:
-            pass
-    return {
+                stats = json.load(f)
+                # Ensure all required fields exist
+                if 'detection_history' not in stats:
+                    stats['detection_history'] = []
+                if 'session_history' not in stats:
+                    stats['session_history'] = []
+                return stats
+        except Exception as e:
+            print(f"Error loading stats: {e}")
+            # Return default and save it
+            default_stats = {
+                'total_sorted': 0,
+                'ripe_count': 0,
+                'unripe_count': 0,
+                'spoilt_count': 0,
+                'detection_history': [],
+                'session_history': []
+            }
+            save_stats(default_stats)
+            return default_stats
+    
+    # File doesn't exist, create it with defaults
+    default_stats = {
         'total_sorted': 0,
         'ripe_count': 0,
         'unripe_count': 0,
@@ -168,45 +214,89 @@ def load_stats():
         'detection_history': [],
         'session_history': []
     }
+    save_stats(default_stats)
+    return default_stats
 
 def save_stats(stats):
     """Save statistics to file"""
     try:
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(STATS_FILE) if os.path.dirname(STATS_FILE) else '.', exist_ok=True)
         with open(STATS_FILE, 'w') as f:
             json.dump(stats, f, indent=2)
     except Exception as e:
         print(f"Error saving stats: {e}")
+        import traceback
+        traceback.print_exc()
 
 def update_sorting_stats(class_name):
     """Update sorting statistics when a tomato is sorted"""
-    stats = load_stats()
-    stats['total_sorted'] += 1
-    
-    if class_name == 'ready' or class_name == 'ripe':
-        stats['ripe_count'] += 1
-        system_state['ripe_count'] += 1
-    elif class_name == 'not_ready' or class_name == 'unripe':
-        stats['unripe_count'] += 1
-        system_state['unripe_count'] += 1
-    elif class_name == 'spoilt' or class_name == 'spoiled':
-        stats['spoilt_count'] += 1
-        system_state['spoilt_count'] += 1
-    
-    # Add to detection history (keep last 100)
-    stats['detection_history'].append({
-        'timestamp': datetime.now().isoformat(),
-        'class': class_name
-    })
-    if len(stats['detection_history']) > 100:
-        stats['detection_history'] = stats['detection_history'][-100:]
-    
-    save_stats(stats)
+    try:
+        stats = load_stats()
+        stats['total_sorted'] += 1
+        
+        # Normalize class name for consistency
+        class_name_lower = str(class_name).lower()
+        
+        if class_name_lower in ['ready', 'ripe']:
+            stats['ripe_count'] += 1
+            system_state['ripe_count'] = stats['ripe_count']
+        elif class_name_lower in ['not_ready', 'unripe']:
+            stats['unripe_count'] += 1
+            system_state['unripe_count'] = stats['unripe_count']
+        elif class_name_lower in ['spoilt', 'spoiled']:
+            stats['spoilt_count'] += 1
+            system_state['spoilt_count'] = stats['spoilt_count']
+        
+        # Add to detection history (keep last 1000 for better retention)
+        detection_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'class': class_name_lower
+        }
+        stats['detection_history'].append(detection_entry)
+        if len(stats['detection_history']) > 1000:
+            stats['detection_history'] = stats['detection_history'][-1000:]
+        
+        save_stats(stats)
+        print(f"📊 Stats updated: {class_name_lower} - Total: {stats['total_sorted']}")
+    except Exception as e:
+        print(f"Error updating sorting stats: {e}")
+        import traceback
+        traceback.print_exc()
+
+def rotate_log_if_needed():
+    """Rotate log file if it exceeds 10MB"""
+    try:
+        if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > 10 * 1024 * 1024:  # 10MB
+            # Create logs directory if it doesn't exist
+            logs_dir = 'logs'
+            os.makedirs(logs_dir, exist_ok=True)
+            
+            # Archive old log with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archived_log = os.path.join(logs_dir, f"detection_log_{timestamp}.csv")
+            shutil.move(LOG_FILE, archived_log)
+            print(f"📝 Log rotated: {archived_log}")
+            
+            # Keep only last 10 archived logs
+            archived_logs = sorted([f for f in os.listdir(logs_dir) if f.startswith('detection_log_') and f.endswith('.csv')])
+            if len(archived_logs) > 10:
+                for old_log in archived_logs[:-10]:
+                    try:
+                        os.remove(os.path.join(logs_dir, old_log))
+                    except:
+                        pass
+    except Exception as e:
+        print(f"Error rotating log: {e}")
 
 def log_detection(detection_data):
     """Log detection event to CSV and update statistics"""
     # Update sorting statistics
     if 'class' in detection_data:
         update_sorting_stats(detection_data['class'])
+    
+    # Rotate log if needed
+    rotate_log_if_needed()
     
     # Use file locking to prevent race conditions
     import fcntl
@@ -349,11 +439,47 @@ def pi_status():
     
     return jsonify(system_state)
 
+@app.route('/api/monitor/debug')
+def api_monitor_debug():
+    """Debug endpoint to check stats file status"""
+    try:
+        stats_file_exists = os.path.exists(STATS_FILE)
+        log_file_exists = os.path.exists(LOG_FILE)
+        
+        stats = None
+        if stats_file_exists:
+            try:
+                stats = load_stats()
+            except Exception as e:
+                stats = {'error': str(e)}
+        
+        log_size = 0
+        if log_file_exists:
+            log_size = os.path.getsize(LOG_FILE)
+        
+        return jsonify({
+            'stats_file_exists': stats_file_exists,
+            'stats_file_path': os.path.abspath(STATS_FILE),
+            'log_file_exists': log_file_exists,
+            'log_file_size': log_size,
+            'stats': stats,
+            'system_state': system_state
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/monitor/stats')
 def api_monitor_stats():
     """Get detailed monitoring statistics"""
     try:
+        # Ensure stats are initialized
+        initialize_stats()
         stats = load_stats()
+        
+        # Sync stats with system_state for consistency
+        system_state['ripe_count'] = stats.get('ripe_count', 0)
+        system_state['unripe_count'] = stats.get('unripe_count', 0)
+        system_state['spoilt_count'] = stats.get('spoilt_count', 0)
         
         # Update system state from hardware controller if available
         if HARDWARE_AVAILABLE and hw_controller:
@@ -378,11 +504,16 @@ def api_monitor_stats():
         if len(detection_history) > 0:
             # Calculate detections in last minute
             now = datetime.now()
-            recent_detections = [
-                d for d in detection_history 
-                if (now - datetime.fromisoformat(d['timestamp'])).total_seconds() < 60
-            ]
-            detection_rate = len(recent_detections)
+            try:
+                recent_detections = [
+                    d for d in detection_history 
+                    if isinstance(d, dict) and 'timestamp' in d and
+                    (now - datetime.fromisoformat(d['timestamp'])).total_seconds() < 60
+                ]
+                detection_rate = len(recent_detections)
+            except Exception as e:
+                print(f"Error calculating detection rate: {e}")
+                detection_rate = 0
         else:
             detection_rate = 0
         
@@ -405,21 +536,24 @@ def api_monitor_stats():
             print(f"Error getting tomato detection: {e}")
             pass
         
-        return jsonify({
+        # Ensure we return the latest stats from file
+        response_data = {
             'total_sorted': stats.get('total_sorted', 0),
             'ripe_count': stats.get('ripe_count', 0),
             'unripe_count': stats.get('unripe_count', 0),
             'spoilt_count': stats.get('spoilt_count', 0),
             'detection_count': status.get('detection_count', 0),
             'detection_rate': detection_rate,
-            'detection_history': detection_history[-20:],  # Last 20 detections
+            'detection_history': detection_history[-20:] if detection_history else [],  # Last 20 detections
+            'session_history': stats.get('session_history', [])[-10:] if stats.get('session_history') else [],  # Last 10 sessions
             'tomato_detected': tomato_status.get('detected', False),
             'tomato_count': tomato_status.get('tomato_count', 0),
             'camera_connected': status.get('camera_connected', False),
             'arduino_connected': status.get('arduino_connected', False),
             'auto_mode': status.get('auto_mode', False),
             'session_start': status.get('session_start', datetime.now().isoformat())
-        })
+        }
+        return jsonify(response_data)
     except Exception as e:
         print(f"Error in api_monitor_stats: {e}")
         import traceback
@@ -2067,33 +2201,442 @@ def get_learning_stats():
     except Exception as e:
         return jsonify({'success': False, 'error': f'Stats error: {str(e)}'}), 500
 
+@app.route('/prepare_multi_tomato_dataset', methods=['POST'])
+def prepare_multi_tomato_dataset():
+    """Prepare multi-tomato dataset by cropping individual tomatoes"""
+    try:
+        data = request.get_json()
+        source_dir = data.get('source_dir')
+        output_dir = data.get('output_dir')
+        split = data.get('split', 'train')
+        all_splits = data.get('all_splits', False)
+        
+        if not source_dir or not output_dir:
+            return jsonify({'success': False, 'error': 'Source and output directories are required'}), 400
+        
+        # Get the script path
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(script_dir, 'prepare_multi_tomato_dataset.py')
+        
+        # Build command
+        cmd = [sys.executable, script_path, '--source', source_dir, '--output', output_dir]
+        if all_splits:
+            cmd.append('--all-splits')
+        else:
+            cmd.extend(['--split', split])
+        
+        # Run in background thread to avoid blocking
+        def run_preparation():
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, cwd=script_dir)
+                # Store result in a file or return via status endpoint
+                result_file = os.path.join(script_dir, 'dataset_prep_result.json')
+                with open(result_file, 'w') as f:
+                    json.dump({
+                        'success': result.returncode == 0,
+                        'stdout': result.stdout,
+                        'stderr': result.stderr,
+                        'returncode': result.returncode
+                    }, f)
+            except Exception as e:
+                result_file = os.path.join(script_dir, 'dataset_prep_result.json')
+                with open(result_file, 'w') as f:
+                    json.dump({
+                        'success': False,
+                        'error': str(e)
+                    }, f)
+        
+        thread = threading.Thread(target=run_preparation)
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Dataset preparation started. Check status for progress.'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Error starting preparation: {str(e)}'}), 500
+
+@app.route('/dataset_prep_status')
+def dataset_prep_status():
+    """Get status of dataset preparation"""
+    try:
+        result_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dataset_prep_result.json')
+        if os.path.exists(result_file):
+            with open(result_file, 'r') as f:
+                result = json.load(f)
+            return jsonify(result)
+        else:
+            return jsonify({'success': False, 'status': 'not_started'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/datasets/list', methods=['GET'])
+def list_datasets_api():
+    """API endpoint to list available datasets"""
+    try:
+        datasets_info = []
+        for dataset in get_datasets():
+            datasets_info.append({
+                'name': dataset['name'],
+                'path': os.path.join(UPLOAD_FOLDER, dataset['name']),
+                'display': dataset['name']
+            })
+        return jsonify({'success': True, 'datasets': datasets_info})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/retrain_model', methods=['POST'])
 def retrain_model():
     """Trigger model retraining with continuous learning data"""
     try:
-        cmd = [sys.executable, 'continuous_learning.py', '--action', 'retrain']
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        import os
+        # Get the script path relative to web_interface.py location
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(script_dir, 'continuous_learning.py')
+        
+        cmd = [sys.executable, script_path, '--action', 'retrain']
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=script_dir)
         
         if result.returncode == 0:
             try:
-                response = json.loads(result.stdout.strip())
-                if response.get('success'):
-                    return jsonify({
-                        'success': True, 
-                        'message': response.get('message', 'Model retraining dataset prepared'),
-                        'dataset_path': response.get('dataset_path'),
-                        'images_copied': response.get('images_copied', 0)
-                    })
+                # Try to parse JSON from stdout
+                stdout_lines = result.stdout.strip().split('\n')
+                # Find the last JSON line (in case there are warnings)
+                json_output = None
+                for line in reversed(stdout_lines):
+                    line = line.strip()
+                    if line.startswith('{') and line.endswith('}'):
+                        try:
+                            json_output = json.loads(line)
+                            break
+                        except json.JSONDecodeError:
+                            continue
+                
+                if json_output:
+                    if json_output.get('success'):
+                        return jsonify({
+                            'success': True, 
+                            'message': json_output.get('message', 'Model retraining dataset prepared'),
+                            'dataset_path': json_output.get('dataset_path'),
+                            'images_copied': json_output.get('images_copied', 0)
+                        })
+                    else:
+                        return jsonify({'success': False, 'error': json_output.get('error', 'Retraining failed')}), 500
                 else:
-                    return jsonify({'success': False, 'error': response.get('error', 'Retraining failed')}), 500
-            except json.JSONDecodeError:
-                # If output is not JSON, assume success
-                return jsonify({'success': True, 'message': 'Model retraining dataset prepared'})
+                    # If no JSON found, check stderr for errors
+                    if result.stderr:
+                        return jsonify({'success': False, 'error': f'Retraining failed: {result.stderr}'}), 500
+                    return jsonify({'success': True, 'message': 'Model retraining dataset prepared'})
+            except json.JSONDecodeError as e:
+                # If output is not JSON, check for errors
+                error_msg = result.stderr if result.stderr else str(e)
+                return jsonify({'success': False, 'error': f'Failed to parse response: {error_msg}'}), 500
         else:
-            return jsonify({'success': False, 'error': f'Retraining failed: {result.stderr}'}), 500
+            # Try to extract error from stderr or stdout
+            error_msg = result.stderr if result.stderr else result.stdout
+            # Try to parse JSON error from output
+            try:
+                error_json = json.loads(error_msg.strip().split('\n')[-1])
+                if 'error' in error_json:
+                    error_msg = error_json['error']
+            except:
+                pass
+            return jsonify({'success': False, 'error': f'Retraining failed: {error_msg}'}), 500
             
     except Exception as e:
-        return jsonify({'success': False, 'error': f'Retraining error: {str(e)}'}), 500
+        import traceback
+        error_details = traceback.format_exc()
+        return jsonify({'success': False, 'error': f'Retraining error: {str(e)}\n{error_details}'}), 500
+
+@app.route('/start_continuous_training', methods=['POST'])
+def start_continuous_training():
+    """Start actual training using the prepared retraining dataset"""
+    global training_status
+    
+    if training_status['is_training']:
+        return jsonify({'error': 'Training is already in progress'}), 400
+    
+    # Check if retraining dataset exists
+    retraining_dataset_dir = os.path.join('learning_data', 'retraining_dataset')
+    if not os.path.exists(retraining_dataset_dir):
+        return jsonify({'error': 'Retraining dataset not found. Please prepare the dataset first using "Retrain Model" button.'}), 400
+    
+    # Check if dataset has images
+    class_folders = ['unripe', 'ripe', 'spoilt']
+    total_images = 0
+    for class_folder in class_folders:
+        class_path = os.path.join(retraining_dataset_dir, class_folder)
+        if os.path.exists(class_path):
+            images = [f for f in os.listdir(class_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            total_images += len(images)
+    
+    if total_images == 0:
+        return jsonify({'error': 'No images found in retraining dataset. Please prepare the dataset first.'}), 400
+    
+    # Get training parameters
+    epochs = int(request.json.get('epochs', 30)) if request.is_json else int(request.form.get('epochs', 30))
+    batch_size = int(request.json.get('batch_size', 32)) if request.is_json else int(request.form.get('batch_size', 32))
+    learning_rate = float(request.json.get('learning_rate', 0.001)) if request.is_json else float(request.form.get('learning_rate', 0.001))
+    
+    # Prepare dataset with train/val splits
+    # The training script expects: dataset/train/Unripe/, dataset/train/Ripe/, dataset/train/Old/
+    # But retraining dataset has: retraining_dataset/unripe/, retraining_dataset/ripe/, retraining_dataset/spoilt/
+    # We need to create a temporary dataset with proper structure
+    temp_dataset_dir = os.path.join('learning_data', 'temp_training_dataset')
+    
+    def prepare_and_train():
+        global training_status
+        training_status['is_training'] = True
+        training_status['current_crop'] = 'continuous_learning'
+        training_status['progress'] = 0
+        training_status['status_message'] = 'Preparing dataset...'
+        training_status['logs'] = []
+        
+        try:
+            import shutil
+            import random
+            
+            # Create temp dataset structure
+            os.makedirs(temp_dataset_dir, exist_ok=True)
+            train_dir = os.path.join(temp_dataset_dir, 'train')
+            val_dir = os.path.join(temp_dataset_dir, 'val')
+            os.makedirs(train_dir, exist_ok=True)
+            os.makedirs(val_dir, exist_ok=True)
+            
+            # Class mapping: retraining dataset -> training script expected names
+            class_mapping = {
+                'unripe': 'Unripe',
+                'ripe': 'Ripe',
+                'spoilt': 'Old'  # Training script uses 'Old' for spoilt
+            }
+            
+            # Split images 80/20 train/val
+            val_split = 0.2
+            total_copied = 0
+            
+            for source_class, target_class in class_mapping.items():
+                source_dir = os.path.join(retraining_dataset_dir, source_class)
+                if not os.path.exists(source_dir):
+                    continue
+                
+                # Get all images
+                images = [f for f in os.listdir(source_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+                if len(images) == 0:
+                    continue
+                
+                # Shuffle and split
+                random.shuffle(images)
+                val_count = max(1, int(len(images) * val_split))
+                val_images = images[:val_count]
+                train_images = images[val_count:]
+                
+                # Create class folders
+                train_class_dir = os.path.join(train_dir, target_class)
+                val_class_dir = os.path.join(val_dir, target_class)
+                os.makedirs(train_class_dir, exist_ok=True)
+                os.makedirs(val_class_dir, exist_ok=True)
+                
+                # Copy images
+                for img in train_images:
+                    shutil.copy2(
+                        os.path.join(source_dir, img),
+                        os.path.join(train_class_dir, img)
+                    )
+                    total_copied += 1
+                
+                for img in val_images:
+                    shutil.copy2(
+                        os.path.join(source_dir, img),
+                        os.path.join(val_class_dir, img)
+                    )
+                    total_copied += 1
+                
+                training_status['logs'].append(f'Prepared {len(train_images)} train + {len(val_images)} val images for {target_class}')
+            
+            if total_copied == 0:
+                training_status['status_message'] = 'Error: No images to train with'
+                training_status['is_training'] = False
+                return
+            
+            training_status['status_message'] = f'Starting training with {total_copied} images...'
+            training_status['logs'].append(f'Total images: {total_copied}')
+            
+            # Find existing model to continue training from
+            pretrained_model_path = None
+            # Check common model locations
+            model_locations = [
+                os.path.join('models', 'tomato', 'best_model.pth'),
+                os.path.join('models', 'tomato', 'tomato_classifier.pth'),
+                'tomato_classifier.pth',
+                os.path.join('models', 'tomato', 'model.pth')
+            ]
+            
+            for model_path in model_locations:
+                if os.path.exists(model_path):
+                    pretrained_model_path = model_path
+                    training_status['logs'].append(f'Found existing model: {model_path}')
+                    training_status['logs'].append('Continuing training from existing model (fine-tuning)...')
+                    break
+            
+            if not pretrained_model_path:
+                training_status['logs'].append('No existing model found. Training from scratch.')
+            
+            # Use the virtual environment Python
+            python_cmd = 'python'
+            venv_path = os.path.join(os.getcwd(), 'tomato_sorter_env/bin/python')
+            if os.path.exists(venv_path):
+                python_cmd = venv_path
+            
+            # Run training
+            cmd = [
+                python_cmd, 'train_tomato_classifier.py',
+                '--dataset', temp_dataset_dir,
+                '--epochs', str(epochs),
+                '--batch_size', str(batch_size),
+                '--lr', str(learning_rate)
+            ]
+            
+            # Add pretrained model path if found
+            if pretrained_model_path:
+                cmd.extend(['--resume', pretrained_model_path])
+            
+            training_status['status_message'] = f'Running: {" ".join(cmd)}'
+            training_status['logs'].append(f'Command: {" ".join(cmd)}')
+            
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            # Monitor training progress
+            for line in iter(process.stdout.readline, ''):
+                if line:
+                    training_status['logs'].append(line.strip())
+                    
+                    # Extract progress from training output
+                    if 'Epoch' in line and '/' in line:
+                        try:
+                            # Extract epoch number and progress
+                            parts = line.split()
+                            for i, part in enumerate(parts):
+                                if part == 'Epoch' and i + 1 < len(parts):
+                                    epoch_str = parts[i+1]
+                                    if '/' in epoch_str:
+                                        epoch_num = int(epoch_str.split('/')[0])
+                                        total_epochs = int(epoch_str.split('/')[1])
+                                        training_status['progress'] = int((epoch_num / total_epochs) * 100)
+                                        break
+                        except:
+                            pass
+                    
+                    # Update status message
+                    if 'Training completed' in line or 'Model saved' in line:
+                        training_status['status_message'] = 'Training completed successfully!'
+                    elif 'Error' in line or 'Failed' in line:
+                        training_status['status_message'] = f'Training error: {line.strip()}'
+            
+            process.wait()
+            
+            if process.returncode == 0:
+                training_status['status_message'] = 'Training completed successfully!'
+                training_status['progress'] = 100
+                training_status['logs'].append('Training completed. Model saved to models/tomato/')
+                
+                # Clear retraining dataset after successful training
+                try:
+                    retraining_dataset_dir = os.path.join('learning_data', 'retraining_dataset')
+                    if os.path.exists(retraining_dataset_dir):
+                        # Remove all files in class folders but keep the folder structure
+                        for class_folder in ['unripe', 'ripe', 'spoilt']:
+                            class_path = os.path.join(retraining_dataset_dir, class_folder)
+                            if os.path.exists(class_path):
+                                for file in os.listdir(class_path):
+                                    file_path = os.path.join(class_path, file)
+                                    if os.path.isfile(file_path):
+                                        os.remove(file_path)
+                        training_status['logs'].append('Retraining dataset cleared. Ready for new feedback data.')
+                except Exception as e:
+                    training_status['logs'].append(f'Warning: Could not clear retraining dataset: {str(e)}')
+            else:
+                training_status['status_message'] = f'Training failed with return code: {process.returncode}'
+                
+        except Exception as e:
+            training_status['status_message'] = f'Training error: {str(e)}'
+            training_status['logs'].append(f'Error: {str(e)}')
+            import traceback
+            training_status['logs'].append(traceback.format_exc())
+        finally:
+            training_status['is_training'] = False
+            # Clean up temp dataset
+            try:
+                if os.path.exists(temp_dataset_dir):
+                    shutil.rmtree(temp_dataset_dir)
+            except:
+                pass
+    
+    # Start training thread
+    thread = threading.Thread(target=prepare_and_train)
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'success': True, 'message': 'Continuous learning training started'})
+
+@app.route('/clear_retraining_dataset', methods=['POST'])
+def clear_retraining_dataset():
+    """Clear the retraining dataset to make room for new feedback data"""
+    try:
+        retraining_dataset_dir = os.path.join('learning_data', 'retraining_dataset')
+        
+        if not os.path.exists(retraining_dataset_dir):
+            return jsonify({'success': True, 'message': 'Retraining dataset does not exist (already empty)'})
+        
+        # Count images before clearing
+        total_images = 0
+        for class_folder in ['unripe', 'ripe', 'spoilt']:
+            class_path = os.path.join(retraining_dataset_dir, class_folder)
+            if os.path.exists(class_path):
+                images = [f for f in os.listdir(class_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+                total_images += len(images)
+        
+        # Remove all files in class folders but keep the folder structure
+        removed_count = 0
+        for class_folder in ['unripe', 'ripe', 'spoilt']:
+            class_path = os.path.join(retraining_dataset_dir, class_folder)
+            if os.path.exists(class_path):
+                for file in os.listdir(class_path):
+                    file_path = os.path.join(class_path, file)
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                        removed_count += 1
+        
+        return jsonify({
+            'success': True,
+            'message': f'Retraining dataset cleared. Removed {removed_count} images.',
+            'images_removed': removed_count
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/training_curves')
+def get_training_curves():
+    """Serve training curves image"""
+    # Check multiple possible locations
+    chart_paths = [
+        'training_curves.png',
+        os.path.join('models', 'tomato', 'training_curves.png')
+    ]
+    
+    for chart_path in chart_paths:
+        if os.path.exists(chart_path):
+            return send_file(chart_path, mimetype='image/png')
+    
+    return jsonify({'error': 'Training curves not found'}), 404
 
 @app.route('/recent_learning_images')
 def get_recent_learning_images():
@@ -2163,7 +2706,7 @@ def delete_learning_image():
 @app.route('/continuous_learning')
 def continuous_learning_page():
     """Continuous learning management page"""
-    return render_template('continuous_learning.html')
+    return render_template('continuous_learning.html', training_status=training_status)
 
 # Multi-tomato detection route removed - not needed for robotic sorting system
 
@@ -2538,39 +3081,108 @@ def detect_tomatoes_with_boxes(frame):
     # Combine all masks
     combined_mask = red_mask + green_mask + orange_mask
     
-    # Apply morphological operations to clean up the mask
-    kernel = np.ones((5,5), np.uint8)
-    combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel)
-    combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel)
+    # Apply minimal morphological operations - only opening to remove noise
+    # NO CLOSING to avoid merging tomatoes
+    kernel_small = np.ones((3,3), np.uint8)
+    combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel_small)
     
     # Find contours
     contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    # Extract bounding boxes for tomatoes with stricter criteria
+    # Extract bounding boxes for tomatoes
     tomato_boxes = []
     tomato_count = 0
     
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area > 2000:  # Increased minimum area threshold (was 500)
+        if area > 500:  # Minimum area
             x, y, w, h = cv2.boundingRect(contour)
             
-            # Stricter shape analysis
+            # Check if this bounding box is suspiciously large (likely multiple tomatoes)
+            # Typical single tomato: ~100-200 pixels wide, area ~10000-40000
+            typical_tomato_area = 30000  # Approximate area for a single tomato
+            typical_tomato_width = 150
+            
+            if area > typical_tomato_area * 2 or w > typical_tomato_width * 2:  # Likely multiple tomatoes
+                print(f"[DETECT] Large detection found: {w}x{h}, area={area}, attempting to split...")
+                
+                # Extract ROI mask for this contour
+                roi_mask = np.zeros(combined_mask.shape, dtype=np.uint8)
+                cv2.drawContours(roi_mask, [contour], -1, 255, -1)
+                roi_mask = roi_mask[y:y+h, x:x+w]
+                
+                if roi_mask.size > 0 and roi_mask.sum() > 0:
+                    # Use distance transform to find tomato centers
+                    dist_transform = cv2.distanceTransform(roi_mask, cv2.DIST_L2, 5)
+                    
+                    # Find peaks in distance transform (these are likely tomato centers)
+                    # Use a threshold based on the max distance
+                    max_dist = dist_transform.max()
+                    if max_dist > 10:  # Only if we have substantial distance
+                        # Find local maxima using a more aggressive approach
+                        # Create markers for watershed
+                        _, markers = cv2.connectedComponents(np.uint8(dist_transform > max_dist * 0.3))
+                        
+                        # If we found multiple components, extract them
+                        if markers.max() > 1:  # More than just background
+                            for marker_id in range(1, markers.max() + 1):
+                                marker_mask = (markers == marker_id).astype(np.uint8) * 255
+                                
+                                # Find contours in this marker
+                                sub_contours, _ = cv2.findContours(marker_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                                
+                                for sub_contour in sub_contours:
+                                    sub_area = cv2.contourArea(sub_contour)
+                                    if sub_area > 500:  # Minimum area for a tomato
+                                        sx, sy, sw, sh = cv2.boundingRect(sub_contour)
+                                        # Adjust coordinates to full image
+                                        sx += x
+                                        sy += y
+                                        
+                                        # Validate size
+                                        if sw > 40 and sh > 40 and sw < w and sh < h:
+                                            print(f"[DETECT] Split tomato: {sw}x{sh} at ({sx},{sy})")
+                                            tomato_boxes.append((sx, sy, sw, sh))
+                                            tomato_count += 1
+                            
+                            if tomato_count > 0:
+                                continue  # Skip the original large contour
+                    
+                    # Fallback: Try simpler approach - find connected components in the ROI
+                    num_labels, labels = cv2.connectedComponents(roi_mask)
+                    if num_labels > 2:  # More than background + 1 component
+                        print(f"[DETECT] Found {num_labels-1} connected components")
+                        for label_id in range(1, num_labels):
+                            component_mask = (labels == label_id).astype(np.uint8) * 255
+                            component_contours, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                            
+                            for comp_contour in component_contours:
+                                comp_area = cv2.contourArea(comp_contour)
+                                if comp_area > 500:
+                                    cx, cy, cw, ch = cv2.boundingRect(comp_contour)
+                                    cx += x
+                                    cy += y
+                                    if cw > 40 and ch > 40:
+                                        print(f"[DETECT] Component tomato: {cw}x{ch} at ({cx},{cy})")
+                                        tomato_boxes.append((cx, cy, cw, ch))
+                                        tomato_count += 1
+                        
+                        if tomato_count > 0:
+                            continue  # Skip the original large contour
+            
+            # Single tomato detection (for normal-sized detections)
             aspect_ratio = w / h
-            if 0.6 < aspect_ratio < 1.6:  # More circular requirement (was 0.5-2.0)
-                # Additional circularity check
+            if 0.4 < aspect_ratio < 2.5:  # Lenient aspect ratio
                 perimeter = cv2.arcLength(contour, True)
                 if perimeter > 0:
                     circularity = 4 * np.pi * area / (perimeter * perimeter)
-                    if circularity > 0.3:  # Must be reasonably circular
-                        # Size requirements
-                        if w > 40 and h > 40:  # Increased minimum size (was 20x20)
-                            # Color intensity check - tomatoes should have good color saturation
+                    if circularity > 0.15:  # Lower circularity threshold
+                        if w > 30 and h > 30:  # Minimum size
                             roi = frame[y:y+h, x:x+w]
                             if roi.size > 0:
                                 hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
                                 mean_saturation = np.mean(hsv_roi[:, :, 1])
-                                if mean_saturation > 50:  # Must have good color saturation
+                                if mean_saturation > 20:  # Lower saturation threshold
                                     tomato_boxes.append((x, y, w, h))
                                     tomato_count += 1
     
@@ -2692,7 +3304,7 @@ def count_tomatoes_in_frame(frame):
 
 @app.route('/test_model/<model_name>', methods=['POST'])
 def test_model(model_name):
-    """Test a trained model with an uploaded image"""
+    """Test a trained model with an uploaded image - handles both single and multi-tomato images"""
     if 'image' not in request.files:
         return jsonify({'error': 'No image provided'}), 400
     
@@ -2707,76 +3319,412 @@ def test_model(model_name):
         temp_path = os.path.join(temp_dir, f'test_image.{original_ext}')
         file.save(temp_path)
         
-        # Run inference
-        model_path = os.path.join(MODELS_FOLDER, model_name)
-        inference_script = os.path.join(model_path, f'{model_name}_inference.py')
+        # Load image for processing
+        frame = cv2.imread(temp_path)
+        if frame is None:
+            os.remove(temp_path)
+            return jsonify({'error': 'Could not read image file'}), 400
         
-        if os.path.exists(inference_script):
+        # Try to use hardware controller's classifier if available, otherwise load model directly
+        classifier = None
+        if HARDWARE_AVAILABLE and hw_controller and hasattr(hw_controller, 'classifier') and hw_controller.classifier:
+            classifier = hw_controller.classifier
+        
+        # If no classifier available, try to load model directly
+        if not classifier:
             try:
-                # Use the virtual environment Python
-                python_cmd = 'python'
-                venv_path = os.path.join(os.getcwd(), 'tomato_sorter_env/bin/python')
-                if os.path.exists(venv_path):
-                    python_cmd = venv_path
+                from models.tomato.tomato_inference import TomatoClassifier
+                # Try to find model - first check model_name folder, then default tomato folder
+                model_path = None
+                model_folder = os.path.join(MODELS_FOLDER, model_name)
+                if os.path.exists(model_folder):
+                    # Check for best_model.pth in model folder
+                    potential_path = os.path.join(model_folder, 'best_model.pth')
+                    if os.path.exists(potential_path):
+                        model_path = potential_path
+                # Fallback to default tomato model
+                if not model_path:
+                    default_path = os.path.join(MODELS_FOLDER, 'tomato', 'best_model.pth')
+                    if os.path.exists(default_path):
+                        model_path = default_path
                 
-                result = subprocess.run([
-                    python_cmd, inference_script, '--image', temp_path
-                ], capture_output=True, text=True, timeout=30)
-                
-                if result.returncode == 0:
-                    # Parse output to extract prediction
-                    output_lines = result.stdout.strip().split('\n')
-                    prediction = 'Unknown'
-                    confidence = 0.0
-                    
-                    for line in output_lines:
-                        if 'Predicted Class:' in line:
-                            prediction = line.split('Predicted Class:')[1].strip()
-                        elif 'Confidence:' in line:
-                            try:
-                                confidence = float(line.split('Confidence:')[1].strip())
-                            except:
-                                pass
-                    
-                    # Save image for continuous learning
-                    learning_image_path = os.path.join('learning_data', 'new_images', 'test_uploads', f'test_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{original_ext}')
-                    os.makedirs(os.path.dirname(learning_image_path), exist_ok=True)
-                    shutil.copy2(temp_path, learning_image_path)
-                    
-                    # Save prediction metadata for continuous learning
-                    try:
-                        cmd = [
-                            sys.executable, 'continuous_learning.py',
-                            '--action', 'save_metadata',
-                            '--image', learning_image_path,
-                            '--predicted', prediction.lower().replace(' ', '_'),
-                            '--confidence', str(confidence)
-                        ]
-                        subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                    except:
-                        pass  # Non-critical, continue even if metadata save fails
-                    
-                    # Clean up temp file
-                    os.remove(temp_path)
-                    
-                    return jsonify({
-                        'success': True,
-                        'prediction': prediction,
-                        'confidence': confidence,
-                        'output': result.stdout,
-                        'learning_image_path': learning_image_path,
-                        'continuous_learning': True
-                    })
-                else:
-                    return jsonify({
-                        'error': f'Inference failed: {result.stderr}'
-                    }), 500
-            except subprocess.TimeoutExpired:
-                return jsonify({'error': 'Inference timeout'}), 500
+                if model_path and os.path.exists(model_path):
+                    classifier = TomatoClassifier(model_path=model_path)
             except Exception as e:
-                return jsonify({'error': f'Inference error: {str(e)}'}), 500
+                print(f"Could not load classifier: {e}")
+        
+        results = []
+        saved_crops = []
+        
+        # Use color-based detection to find tomatoes, then classify each one individually
+        if classifier:
+            try:
+                # First, detect tomato bounding boxes using color-based detection
+                tomato_detected, tomato_count, tomato_boxes = detect_tomatoes_with_boxes(frame)
+                
+                print(f"[TEST] Detected {tomato_count} tomatoes with bounding boxes: {tomato_boxes}")
+                
+                # If we only got 1 large detection, try a more aggressive splitting approach
+                if tomato_count == 1 and len(tomato_boxes) == 1:
+                    x, y, w, h = tomato_boxes[0]
+                    # Check if it's suspiciously large (likely multiple tomatoes merged)
+                    if w > 300 or h > 300 or (w * h) > 100000:
+                        print(f"[TEST] Large single detection ({w}x{h}), attempting aggressive splitting...")
+                        try:
+                            # Re-detect with more aggressive settings
+                            # Use the original mask but with different processing
+                            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+                            # More specific red detection - but keep saturation reasonable
+                            lower_red1 = np.array([0, 50, 50])  # Lower saturation to catch all tomatoes
+                            upper_red1 = np.array([15, 255, 255])
+                            lower_red2 = np.array([165, 50, 50])
+                            upper_red2 = np.array([180, 255, 255])
+                            mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+                            mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+                            red_mask_aggressive = mask1 + mask2
+                            
+                            # Add green and orange masks too
+                            lower_green = np.array([35, 50, 50])
+                            upper_green = np.array([85, 255, 255])
+                            green_mask_aggressive = cv2.inRange(hsv, lower_green, upper_green)
+                            
+                            lower_orange = np.array([10, 50, 50])
+                            upper_orange = np.array([25, 255, 255])
+                            orange_mask_aggressive = cv2.inRange(hsv, lower_orange, upper_orange)
+                            
+                            combined_mask_aggressive = red_mask_aggressive + green_mask_aggressive + orange_mask_aggressive
+                            
+                            # Apply minimal opening to remove noise but keep tomatoes separate
+                            kernel_tiny = np.ones((3,3), np.uint8)
+                            combined_mask_aggressive = cv2.morphologyEx(combined_mask_aggressive, cv2.MORPH_OPEN, kernel_tiny)
+                            
+                            # Find ALL contours (including small ones that might be individual tomatoes)
+                            contours_aggressive, _ = cv2.findContours(combined_mask_aggressive, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                            
+                            print(f"[TEST] Aggressive detection found {len(contours_aggressive)} contours")
+                            
+                            # Extract individual tomato boxes with better filtering
+                            new_boxes = []
+                            for i, contour in enumerate(contours_aggressive):
+                                area = cv2.contourArea(contour)
+                                cx, cy, cw, ch = cv2.boundingRect(contour)
+                                
+                                # Check if this contour is within the large detection area
+                                if not (x <= cx <= x+w and y <= cy <= y+h):
+                                    continue  # Skip contours outside the large detection
+                                
+                                print(f"[TEST] Contour {i}: area={area}, size={cw}x{ch} at ({cx},{cy})")
+                                
+                                # More conservative area threshold - typical tomato is 10000-40000 pixels
+                                if area > 3000:  # Increased from 500 to filter out noise
+                                    # Check if it's a reasonable tomato size
+                                    if 50 < cw < 350 and 50 < ch < 350:  # More reasonable size range
+                                        aspect_ratio = cw / ch
+                                        if 0.5 < aspect_ratio < 2.0:  # More reasonable aspect ratio
+                                            # Check if this box overlaps significantly with existing boxes
+                                            overlaps = False
+                                            for existing_box in new_boxes:
+                                                ex, ey, ew, eh = existing_box
+                                                # Calculate overlap
+                                                overlap_x = max(0, min(cx + cw, ex + ew) - max(cx, ex))
+                                                overlap_y = max(0, min(cy + ch, ey + eh) - max(cy, ey))
+                                                overlap_area = overlap_x * overlap_y
+                                                box_area = cw * ch
+                                                if overlap_area > box_area * 0.5:  # More than 50% overlap
+                                                    overlaps = True
+                                                    break
+                                            
+                                            if not overlaps:
+                                                new_boxes.append((cx, cy, cw, ch))
+                                                print(f"[TEST] ✓ Added tomato: {cw}x{ch} at ({cx},{cy}), area={area}")
+                            
+                            if len(new_boxes) > 0:  # Changed from > 1 to > 0 to accept even single detections
+                                print(f"[TEST] Aggressive detection found {len(new_boxes)} tomatoes")
+                                tomato_boxes = new_boxes
+                                tomato_count = len(new_boxes)
+                            else:
+                                print(f"[TEST] Aggressive detection found 0 valid tomatoes, trying alternative method...")
+                                
+                                # Try watershed segmentation to separate individual tomatoes
+                                print(f"[TEST] Attempting watershed segmentation to separate tomatoes...")
+                                roi_mask = np.zeros(combined_mask_aggressive.shape, dtype=np.uint8)
+                                roi_mask[y:y+h, x:x+w] = combined_mask_aggressive[y:y+h, x:x+w]
+                                
+                                watershed_success = False
+                                # Use distance transform to find tomato centers
+                                dist_transform = cv2.distanceTransform(roi_mask, cv2.DIST_L2, 5)
+                                
+                                # Find local maxima (potential tomato centers)
+                                # Use a more aggressive threshold to find more centers
+                                max_dist = dist_transform.max()
+                                if max_dist > 20:
+                                    # Find peaks using a lower threshold
+                                    peaks_mask = (dist_transform > max_dist * 0.4).astype(np.uint8) * 255
+                                    
+                                    # Find connected components in peaks (each should be a tomato center)
+                                    num_peaks, peak_labels = cv2.connectedComponents(peaks_mask)
+                                    print(f"[TEST] Watershed found {num_peaks-1} potential tomato centers")
+                                    
+                                    if num_peaks > 1:  # More than just background
+                                        watershed_boxes = []
+                                        for peak_id in range(1, num_peaks):
+                                            # Get the region around this peak
+                                            peak_mask = (peak_labels == peak_id).astype(np.uint8) * 255
+                                            
+                                            # Find contours in this peak region
+                                            peak_contours, _ = cv2.findContours(peak_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                                            for peak_contour in peak_contours:
+                                                peak_area = cv2.contourArea(peak_contour)
+                                                if peak_area > 100:  # Valid peak region
+                                                    # Expand around the peak to get tomato bounding box
+                                                    px, py, pw, ph = cv2.boundingRect(peak_contour)
+                                                    # Expand by typical tomato radius
+                                                    expand = 75
+                                                    px = max(x, px - expand)
+                                                    py = max(y, py - expand)
+                                                    pw = min(w - (px - x), pw + 2*expand)
+                                                    ph = min(h - (py - y), ph + 2*expand)
+                                                    
+                                                    if pw > 50 and ph > 50 and pw < 300 and ph < 300:
+                                                        watershed_boxes.append((px, py, pw, ph))
+                                                        print(f"[TEST] Watershed tomato: {pw}x{ph} at ({px},{py})")
+                                        
+                                        if len(watershed_boxes) > 0:
+                                            print(f"[TEST] Watershed segmentation found {len(watershed_boxes)} tomatoes")
+                                            tomato_boxes = watershed_boxes
+                                            tomato_count = len(watershed_boxes)
+                                            watershed_success = True
+                                
+                                # Only do grid splitting if watershed didn't work
+                                if not watershed_success:
+                                    # Alternative: Use the large detection but split it into a grid
+                                    # Much more conservative estimation: count actual tomato regions in mask
+                                    roi_mask_cropped = combined_mask_aggressive[y:y+h, x:x+w]
+                                    
+                                    # Count connected components in the mask to estimate tomato count
+                                    num_components, component_labels = cv2.connectedComponents(roi_mask_cropped)
+                                    estimated_from_components = max(1, min(6, num_components - 1))  # Subtract 1 for background
+                                    print(f"[TEST] Mask has {num_components-1} connected components")
+                                    
+                                    # Also use area-based estimation as fallback
+                                    avg_tomato_size = 150
+                                    spacing_factor = 2.0  # Even more conservative
+                                    estimated_from_area = max(2, min(6, int((w * h) / (avg_tomato_size * avg_tomato_size * spacing_factor * 1.5))))
+                                    
+                                    # Use the minimum of the two estimates
+                                    estimated_tomatoes = min(estimated_from_components, estimated_from_area)
+                                    print(f"[TEST] Attempting grid-based split into ~{estimated_tomatoes} tomatoes (from {estimated_from_components} components, {estimated_from_area} area-based)")
+                                    
+                                    # Use a more reasonable grid - aim for roughly square cells
+                                    # Calculate optimal grid dimensions
+                                    aspect_ratio = w / h
+                                    if aspect_ratio > 1:
+                                        # Wider than tall
+                                        cols = int(np.ceil(np.sqrt(estimated_tomatoes * aspect_ratio)))
+                                        rows = int(np.ceil(estimated_tomatoes / cols))
+                                    else:
+                                        # Taller than wide
+                                        rows = int(np.ceil(np.sqrt(estimated_tomatoes / aspect_ratio)))
+                                        cols = int(np.ceil(estimated_tomatoes / rows))
+                                    
+                                    # Ensure we don't create too many cells - very conservative limits
+                                    cols = min(cols, 3)  # Max 3 columns (reduced from 4)
+                                    rows = min(rows, 3)  # Max 3 rows (reduced from 4)
+                                    
+                                    cell_w = w // cols
+                                    cell_h = h // rows
+                                    
+                                    grid_boxes = []
+                                    for row in range(rows):
+                                        for col in range(cols):
+                                            gx = x + col * cell_w
+                                            gy = y + row * cell_h
+                                            gw = cell_w
+                                            gh = cell_h
+                                            
+                                            # Ensure within bounds
+                                            gx = max(0, min(gx, frame.shape[1] - gw))
+                                            gy = max(0, min(gy, frame.shape[0] - gh))
+                                            gw = min(gw, frame.shape[1] - gx)
+                                            gh = min(gh, frame.shape[0] - gy)
+                                            
+                                            # Only add if size is reasonable
+                                            if gw > 60 and gh > 60:  # Minimum size for a tomato
+                                                # Validate that this cell actually contains tomato pixels
+                                                # Extract the cell region from the mask
+                                                cell_mask = roi_mask_cropped[row*cell_h:min((row+1)*cell_h, h), 
+                                                                             col*cell_w:min((col+1)*cell_w, w)]
+                                                
+                                                if cell_mask.size > 0:
+                                                    # Calculate tomato pixel density in this cell
+                                                    tomato_pixels = np.sum(cell_mask > 0)
+                                                    cell_area = cell_mask.size
+                                                    tomato_density = tomato_pixels / cell_area if cell_area > 0 else 0
+                                                    
+                                                    # Only add if at least 15% of the cell contains tomato pixels
+                                                    # This filters out empty or mostly-empty grid cells
+                                                    if tomato_density > 0.15:
+                                                        grid_boxes.append((gx, gy, gw, gh))
+                                                        print(f"[TEST] Grid cell ({row},{col}): {gw}x{gh} at ({gx},{gy}), density={tomato_density:.2f}")
+                                                    
+                                    if len(grid_boxes) > 0:
+                                        print(f"[TEST] Grid split created {len(grid_boxes)} valid boxes from {rows}x{cols} grid (filtered by tomato density)")
+                                        tomato_boxes = grid_boxes
+                                        tomato_count = len(grid_boxes)
+                                    else:
+                                        print(f"[TEST] Grid split found no valid cells with sufficient tomato content")
+                        except Exception as e:
+                            print(f"[TEST] Error in aggressive splitting: {e}")
+                            import traceback
+                            traceback.print_exc()
+                
+                if tomato_count > 0 and tomato_boxes and len(tomato_boxes) > 0:
+                    # Classify each detected tomato individually using the classifier
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    learning_dir = os.path.join('learning_data', 'new_images', 'test_uploads')
+                    os.makedirs(learning_dir, exist_ok=True)
+                    
+                    for i, (x, y, w, h) in enumerate(tomato_boxes):
+                        # Add padding
+                        padding = 15
+                        x_padded = max(0, x - padding)
+                        y_padded = max(0, y - padding)
+                        w_padded = min(frame.shape[1] - x_padded, w + 2 * padding)
+                        h_padded = min(frame.shape[0] - y_padded, h + 2 * padding)
+                        
+                        # Crop the tomato
+                        crop = frame[y_padded:y_padded+h_padded, x_padded:x_padded+w_padded]
+                        
+                        if crop.size == 0:
+                            print(f"[TEST] Skipping empty crop {i+1}")
+                            continue
+                        
+                        # Classify the individual tomato crop
+                        try:
+                            # Convert BGR to RGB for classification
+                            crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+                            classification_result = classifier.classify_crop(crop_rgb, confidence_threshold=0.3)
+                            
+                            if classification_result:
+                                predicted_class = classification_result['class']
+                                confidence = classification_result['confidence']
+                                
+                                print(f"[TEST] Tomato {i+1}: {predicted_class} ({confidence:.2f})")
+                                
+                                # Save cropped tomato
+                                crop_filename = f'test_{timestamp}_tomato_{i+1}.{original_ext}'
+                                crop_path = os.path.join(learning_dir, crop_filename)
+                                cv2.imwrite(crop_path, crop)
+                                saved_crops.append(crop_path)
+                                
+                                # Save metadata for this crop
+                                try:
+                                    cmd = [
+                                        sys.executable, 'continuous_learning.py',
+                                        '--action', 'save_metadata',
+                                        '--image', crop_path,
+                                        '--predicted', predicted_class,
+                                        '--confidence', str(confidence)
+                                    ]
+                                    subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                                except Exception as e:
+                                    print(f"Error saving metadata: {e}")
+                                
+                                results.append({
+                                    'tomato_number': i + 1,
+                                    'prediction': predicted_class,
+                                    'confidence': confidence,
+                                    'bbox': [x_padded, y_padded, w_padded, h_padded],
+                                    'crop_path': crop_path
+                                })
+                            else:
+                                print(f"[TEST] Tomato {i+1}: Classification below threshold")
+                        except Exception as e:
+                            print(f"[TEST] Error classifying crop {i+1}: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            continue
+                else:
+                    print(f"[TEST] No tomatoes detected or empty boxes. Count: {tomato_count}, Boxes: {tomato_boxes}")
+            except Exception as e:
+                print(f"[TEST] Error in multi-tomato detection/classification: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # If no tomatoes detected or no classifier, fall back to full image classification
+        if len(results) == 0:
+            model_path = os.path.join(MODELS_FOLDER, model_name)
+            inference_script = os.path.join(model_path, f'{model_name}_inference.py')
+            
+            if os.path.exists(inference_script):
+                try:
+                    # Use the virtual environment Python
+                    python_cmd = 'python'
+                    venv_path = os.path.join(os.getcwd(), 'tomato_sorter_env/bin/python')
+                    if os.path.exists(venv_path):
+                        python_cmd = venv_path
+                    
+                    result = subprocess.run([
+                        python_cmd, inference_script, '--image', temp_path
+                    ], capture_output=True, text=True, timeout=30)
+                    
+                    if result.returncode == 0:
+                        # Parse output to extract prediction
+                        output_lines = result.stdout.strip().split('\n')
+                        prediction = 'Unknown'
+                        confidence = 0.0
+                        
+                        for line in output_lines:
+                            if 'Predicted Class:' in line:
+                                prediction = line.split('Predicted Class:')[1].strip()
+                            elif 'Confidence:' in line:
+                                try:
+                                    confidence = float(line.split('Confidence:')[1].strip())
+                                except:
+                                    pass
+                        
+                        # Save image for continuous learning
+                        learning_image_path = os.path.join('learning_data', 'new_images', 'test_uploads', f'test_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{original_ext}')
+                        os.makedirs(os.path.dirname(learning_image_path), exist_ok=True)
+                        shutil.copy2(temp_path, learning_image_path)
+                        
+                        # Save prediction metadata for continuous learning
+                        try:
+                            cmd = [
+                                sys.executable, 'continuous_learning.py',
+                                '--action', 'save_metadata',
+                                '--image', learning_image_path,
+                                '--predicted', prediction.lower().replace(' ', '_'),
+                                '--confidence', str(confidence)
+                            ]
+                            subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                        except:
+                            pass
+                        
+                        results.append({
+                            'prediction': prediction,
+                            'confidence': confidence,
+                            'learning_image_path': learning_image_path
+                        })
+                except subprocess.TimeoutExpired:
+                    pass
+                except Exception as e:
+                    print(f"Inference error: {e}")
+        
+        # Clean up temp file
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        
+        if len(results) > 0:
+            return jsonify({
+                'success': True,
+                'tomato_count': tomato_count,
+                'results': results,
+                'multi_tomato': tomato_count > 1,
+                'continuous_learning': True
+            })
         else:
-            return jsonify({'error': 'Inference script not found'}), 404
+            return jsonify({'error': 'Could not process image or no tomatoes detected'}), 400
     else:
         return jsonify({'error': 'Invalid image file'}), 400
 
@@ -2856,10 +3804,21 @@ if __name__ == '__main__':
     os.makedirs('temp', exist_ok=True)
     os.makedirs('learning_data/new_images/test_uploads', exist_ok=True)
     
+    # Initialize monitoring stats
+    initialize_stats()
+    
+    # Load existing stats to sync with system_state
+    stats = load_stats()
+    system_state['ripe_count'] = stats.get('ripe_count', 0)
+    system_state['unripe_count'] = stats.get('unripe_count', 0)
+    system_state['spoilt_count'] = stats.get('spoilt_count', 0)
+    
     print("🤖 FarmBOT - Unified Web Interface")
     print("=" * 60)
     print("📁 Upload folder:", UPLOAD_FOLDER)
     print("💾 Models folder:", MODELS_FOLDER)
+    print("📊 Monitoring stats:", STATS_FILE)
+    print("📝 Detection log:", LOG_FILE)
     print("🔧 Hardware controller:", "Available" if HARDWARE_AVAILABLE else "Not available")
     print("🌐 Web interface: http://0.0.0.0:5000")
     print("📱 Access from any device on the network")

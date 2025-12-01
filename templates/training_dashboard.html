@@ -70,6 +70,12 @@
                         </button>
                     </div>
                     <div class="col-md-4 mb-3">
+                        <button class="btn btn-info btn-lg w-100" onclick="showDatasetPrepModal()">
+                            <i class="fas fa-crop"></i><br>
+                            Prepare Multi-Tomato Dataset
+                        </button>
+                    </div>
+                    <div class="col-md-4 mb-3">
                         <button class="btn btn-secondary btn-lg w-100" onclick="showHelp()">
                             <i class="fas fa-question-circle"></i><br>
                             Help & Guide
@@ -279,10 +285,7 @@
                 </div>
                 <!-- Test Results -->
                 <div id="testResult" class="mt-3" style="display: none;">
-                    <div class="alert alert-info">
-                        <h6><i class="fas fa-check-circle"></i> Prediction Result:</h6>
-                        <p id="predictionText"></p>
-                    </div>
+                    <div id="predictionText"></div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -397,7 +400,7 @@ function resetTestModal() {
         const form = document.getElementById('testForm');
         const formData = new FormData(form);
         
-        // Use single-tomato classification endpoint
+        // Use classification endpoint (handles both single and multi-tomato)
         const endpoint = `/test_model/${currentModel}`;
         
         fetch(endpoint, {
@@ -410,15 +413,56 @@ function resetTestModal() {
         document.getElementById('testButton').disabled = false;
         
             if (data.success) {
-                // Single tomato classification result
-            const confidencePercent = (data.confidence * 100).toFixed(1);
-            let confidenceClass = 'success';
-            if (confidencePercent < 50) confidenceClass = 'danger';
-            else if (confidencePercent < 75) confidenceClass = 'warning';
-            
-                document.getElementById('predictionText').innerHTML = 
-                `<strong>Class:</strong> <span class="badge bg-${confidenceClass}">${data.prediction}</span><br>` +
-                `<strong>Confidence:</strong> <span class="badge bg-${confidenceClass}">${confidencePercent}%</span>`;
+                let resultHtml = '';
+                
+                // Check if multiple tomatoes were detected
+                if (data.multi_tomato && data.results && data.results.length > 1) {
+                    resultHtml = `<div class="alert alert-success">
+                        <h6><i class="fas fa-check-circle"></i> Multiple Tomatoes Detected (${data.tomato_count})</h6>
+                        <p class="mb-2"><small>Each tomato was cropped and classified individually. All crops have been saved for continuous learning.</small></p>
+                    </div>`;
+                    
+                    data.results.forEach((result, index) => {
+                        const confidencePercent = (result.confidence * 100).toFixed(1);
+                        let confidenceClass = 'success';
+                        if (confidencePercent < 50) confidenceClass = 'danger';
+                        else if (confidencePercent < 75) confidenceClass = 'warning';
+                        
+                        resultHtml += `<div class="card mb-2">
+                            <div class="card-body">
+                                <h6 class="card-title">Tomato ${result.tomato_number || (index + 1)}</h6>
+                                <p class="mb-1">
+                                    <strong>Class:</strong> <span class="badge bg-${confidenceClass}">${result.prediction}</span><br>
+                                    <strong>Confidence:</strong> <span class="badge bg-${confidenceClass}">${confidencePercent}%</span>
+                                </p>
+                                <small class="text-muted">Saved for continuous learning</small>
+                            </div>
+                        </div>`;
+                    });
+                } else if (data.results && data.results.length > 0) {
+                    // Single result (either single tomato or fallback to full image)
+                    const result = data.results[0];
+                    const confidencePercent = (result.confidence * 100).toFixed(1);
+                    let confidenceClass = 'success';
+                    if (confidencePercent < 50) confidenceClass = 'danger';
+                    else if (confidencePercent < 75) confidenceClass = 'warning';
+                    
+                    resultHtml = `<div class="alert alert-info">
+                        <h6><i class="fas fa-check-circle"></i> Prediction Result:</h6>
+                        <p class="mb-1">
+                            <strong>Class:</strong> <span class="badge bg-${confidenceClass}">${result.prediction}</span><br>
+                            <strong>Confidence:</strong> <span class="badge bg-${confidenceClass}">${confidencePercent}%</span>
+                        </p>
+                        ${result.learning_image_path ? '<small class="text-muted">Saved for continuous learning</small>' : ''}
+                    </div>`;
+                } else {
+                    resultHtml = `<div class="alert alert-warning">
+                        <h6><i class="fas fa-exclamation-triangle"></i> No Results</h6>
+                        <p>Could not process image or no tomatoes detected.</p>
+                    </div>`;
+                }
+                
+                document.getElementById('predictionText').innerHTML = resultHtml;
                 document.getElementById('testResult').style.display = 'block';
             
             // Scroll to results
@@ -467,6 +511,36 @@ function deleteModel(modelName) {
     }
 }
 
+// Dataset Preparation Functions
+function loadAvailableDatasets() {
+    fetch('/api/datasets/list')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.datasets) {
+                const select = document.getElementById('prepSourceDirSelect');
+                if (select) {
+                    data.datasets.forEach(dataset => {
+                        const option = document.createElement('option');
+                        option.value = dataset.path;
+                        option.textContent = dataset.display;
+                        select.appendChild(option);
+                    });
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error loading datasets:', error);
+        });
+}
+
+function updateSourceDir() {
+    const select = document.getElementById('prepSourceDirSelect');
+    const input = document.getElementById('prepSourceDir');
+    if (select && input && select.value) {
+        input.value = select.value;
+    }
+}
+
 // Auto-refresh training status
 {% if training_status.is_training %}
 setInterval(function() {
@@ -499,5 +573,192 @@ setInterval(function() {
     });
 }, 2000);
 {% endif %}
+
+// Dataset Preparation Functions
+function showDatasetPrepModal() {
+    const modal = new bootstrap.Modal(document.getElementById('datasetPrepModal'));
+    modal.show();
+}
+
+function startDatasetPreparation() {
+    const sourceDir = document.getElementById('prepSourceDir').value;
+    const outputDir = document.getElementById('prepOutputDir').value;
+    const allSplits = document.getElementById('prepAllSplits').checked;
+    const split = document.getElementById('prepSplit').value;
+
+    if (!sourceDir || !outputDir) {
+        alert('Please provide both source and output directories');
+        return;
+    }
+
+    const btn = document.getElementById('prepStartBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
+
+    fetch('/prepare_multi_tomato_dataset', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            source_dir: sourceDir,
+            output_dir: outputDir,
+            all_splits: allSplits,
+            split: split
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            pollDatasetPrepStatus();
+            document.getElementById('prepStatusDiv').style.display = 'block';
+            document.getElementById('prepStatusDiv').innerHTML = '<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Preparation in progress...</div>';
+        } else {
+            alert('Error: ' + (data.error || 'Failed to start preparation'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-play"></i> Start Preparation';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error starting preparation: ' + error.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-play"></i> Start Preparation';
+    });
+}
+
+function pollDatasetPrepStatus() {
+    const statusInterval = setInterval(() => {
+        fetch('/dataset_prep_status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'not_started') {
+                    return;
+                }
+
+                clearInterval(statusInterval);
+                const statusDiv = document.getElementById('prepStatusDiv');
+                const btn = document.getElementById('prepStartBtn');
+
+                if (data.success) {
+                    let statsHtml = '<div class="alert alert-success"><h6><i class="fas fa-check-circle"></i> Preparation Complete!</h6>';
+                    
+                    if (data.stdout) {
+                        const lines = data.stdout.split('\n');
+                        lines.forEach(line => {
+                            if (line.includes('Total source images') || 
+                                line.includes('Single-tomato images') ||
+                                line.includes('Multi-tomato images') ||
+                                line.includes('Total cropped tomatoes') ||
+                                line.includes('Final dataset size') ||
+                                line.includes('By class')) {
+                                statsHtml += '<p class="mb-1"><small>' + line.trim() + '</small></p>';
+                            }
+                        });
+                    }
+                    
+                    statsHtml += '</div>';
+                    statusDiv.innerHTML = statsHtml;
+                } else {
+                    statusDiv.innerHTML = '<div class="alert alert-danger"><h6><i class="fas fa-exclamation-circle"></i> Preparation Failed</h6><p>' + (data.error || data.stderr || 'Unknown error') + '</p></div>';
+                }
+
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-play"></i> Start Preparation';
+            })
+            .catch(error => {
+                console.error('Error checking status:', error);
+            });
+    }, 2000);
+}
+</script>
+
+<!-- Dataset Preparation Modal -->
+<div class="modal fade" id="datasetPrepModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-crop"></i> Prepare Multi-Tomato Dataset
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>What this does:</strong> Automatically detects and crops individual tomatoes from images with multiple tomatoes, 
+                    preparing them for training. Single-tomato images are kept as-is.
+                </div>
+                
+                <form id="datasetPrepForm">
+                    <div class="mb-3">
+                        <label for="prepSourceDir" class="form-label">Source Dataset Directory</label>
+                        <div class="input-group">
+                            <select class="form-select" id="prepSourceDirSelect" onchange="updateSourceDir()">
+                                <option value="">Select a dataset...</option>
+                            </select>
+                            <input type="text" class="form-control" id="prepSourceDir" 
+                                   placeholder="Or enter path manually" required>
+                        </div>
+                        <small class="form-text text-muted">Path to your existing dataset with class folders (train/val/test)</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="prepOutputDir" class="form-label">Output Dataset Directory</label>
+                        <input type="text" class="form-control" id="prepOutputDir" 
+                               placeholder="e.g., /path/to/datasets/tomato_dataset_prepared" required>
+                        <small class="form-text text-muted">Where to save the prepared dataset with cropped tomatoes</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="prepAllSplits" checked>
+                            <label class="form-check-label" for="prepAllSplits">
+                                Process all splits (train, val, test)
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3" id="prepSplitDiv" style="display: none;">
+                        <label for="prepSplit" class="form-label">Split</label>
+                        <select class="form-select" id="prepSplit">
+                            <option value="train">Train</option>
+                            <option value="val">Validation</option>
+                            <option value="test">Test</option>
+                        </select>
+                    </div>
+                </form>
+                
+                <div id="prepStatusDiv" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="prepStartBtn" onclick="startDatasetPreparation()">
+                    <i class="fas fa-play"></i> Start Preparation
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Toggle split selection based on checkbox (when modal is shown)
+    document.addEventListener('DOMContentLoaded', function() {
+        loadAvailableDatasets();
+        
+        // Set up checkbox listener when modal is shown
+        const modal = document.getElementById('datasetPrepModal');
+        if (modal) {
+            modal.addEventListener('shown.bs.modal', function() {
+                const checkbox = document.getElementById('prepAllSplits');
+                const splitDiv = document.getElementById('prepSplitDiv');
+                if (checkbox && splitDiv) {
+                    checkbox.addEventListener('change', function() {
+                        splitDiv.style.display = this.checked ? 'none' : 'block';
+                    });
+                }
+            });
+        }
+    });
 </script>
 {% endblock %}

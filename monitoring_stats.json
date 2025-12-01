@@ -1,0 +1,17 @@
+{
+  "total_sorted": 0,
+  "ripe_count": 0,
+  "unripe_count": 0,
+  "spoilt_count": 0,
+  "detection_history": [],
+  "session_history": [
+    {
+      "start_time": "2025-11-30T18:43:13.133571",
+      "session_id": "session_1764517393"
+    },
+    {
+      "start_time": "2025-11-30T18:49:16.314660",
+      "session_id": "session_1764517756"
+    }
+  ]
+}

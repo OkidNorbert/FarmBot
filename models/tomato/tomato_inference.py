@@ -61,13 +61,74 @@ class TomatoClassifier(nn.Module):
     def forward(self, x):
         return self.backbone(x)
     
-    def detect_tomatoes(self, frame, confidence_threshold=0.3, enhance_for_ugandan=True):
-        """Detect tomatoes in a video frame (OpenCV format)
+    def classify_crop(self, crop_image, confidence_threshold=0.3):
+        """Classify a single cropped tomato image
+        
+        Args:
+            crop_image: PIL Image or numpy array (RGB) of a single tomato
+            confidence_threshold: Minimum confidence to consider a detection
+        
+        Returns:
+            Dictionary with 'class', 'confidence', or None if below threshold
+        """
+        try:
+            # Convert numpy array to PIL if needed
+            if isinstance(crop_image, np.ndarray):
+                # Crop is already RGB from frame_rgb, just convert to PIL
+                if crop_image.dtype != np.uint8:
+                    crop_image = (crop_image * 255).astype(np.uint8)
+                crop_image = Image.fromarray(crop_image)
+            
+            # Ensure it's RGB
+            if isinstance(crop_image, Image.Image):
+                crop_image = crop_image.convert("RGB")
+            
+            # Transform for model input
+            transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+            
+            input_tensor = transform(crop_image).unsqueeze(0)
+            
+            with torch.no_grad():
+                outputs = self(input_tensor)
+                probabilities = torch.softmax(outputs, dim=1)
+                max_prob, predicted_idx = torch.max(probabilities, 1)
+                confidence = max_prob.item()
+                class_idx = predicted_idx.item()
+            
+            # Load class names
+            metadata_path = os.path.join(os.path.dirname(__file__), "training_metadata.json")
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                class_names = metadata.get('class_names', ['not_ready', 'ready', 'spoilt'])
+            else:
+                class_names = ['not_ready', 'ready', 'spoilt']
+            
+            class_name = class_names[class_idx] if class_idx < len(class_names) else 'unknown'
+            
+            # Only return if confidence is above threshold
+            if confidence >= confidence_threshold:
+                return {
+                    'class': class_name,
+                    'confidence': confidence
+                }
+            return None
+        except Exception as e:
+            print(f"Classification error: {e}")
+            return None
+    
+    def detect_tomatoes(self, frame, confidence_threshold=0.3, enhance_for_ugandan=True, bboxes=None):
+        """Detect and classify tomatoes in a video frame (OpenCV format)
         
         Args:
             frame: OpenCV BGR frame (numpy array)
             confidence_threshold: Minimum confidence to consider a detection (lowered for Ugandan tomatoes)
             enhance_for_ugandan: Apply image enhancement optimized for Ugandan tomato varieties
+            bboxes: Optional list of bounding boxes [(x, y, w, h), ...] to classify individually
         
         Returns:
             List of detections with 'class', 'confidence', 'bbox', 'center'
@@ -98,52 +159,80 @@ class TomatoClassifier(nn.Module):
         else:
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        # Try multiple detection strategies for better accuracy
+        # If bounding boxes are provided, classify each one individually
+        if bboxes and len(bboxes) > 0:
+            h, w = frame.shape[:2]
+            for bbox in bboxes:
+                x, y, box_w, box_h = bbox
+                
+                # Ensure bbox is within frame bounds
+                x = max(0, min(x, w))
+                y = max(0, min(y, h))
+                box_w = min(box_w, w - x)
+                box_h = min(box_h, h - y)
+                
+                if box_w > 0 and box_h > 0:
+                    # Extract crop from RGB frame
+                    crop = frame_rgb[y:y+box_h, x:x+box_w]
+                    
+                    if crop.size > 0:
+                        # Classify the individual tomato
+                        result = self.classify_crop(crop, confidence_threshold)
+                        
+                        if result:
+                            # Calculate center of bounding box
+                            center_x = x + box_w // 2
+                            center_y = y + box_h // 2
+                            
+                            detections.append({
+                                'class': result['class'],
+                                'confidence': result['confidence'],
+                                'bbox': [x, y, box_w, box_h],
+                                'center': [center_x, center_y]
+                            })
         
-        # Strategy 1: Full frame detection
-        try:
-            frame_resized = cv2.resize(frame_rgb, (224, 224))
-            transform = transforms.Compose([
-                transforms.ToPILImage(),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-            ])
-            
-            input_tensor = transform(frame_resized).unsqueeze(0)
-            
-            with torch.no_grad():
-                outputs = self(input_tensor)
-                probabilities = torch.softmax(outputs, dim=1)
-                max_prob, predicted_idx = torch.max(probabilities, 1)
-                confidence = max_prob.item()
-                class_idx = predicted_idx.item()
-            
-            # Load class names
-            metadata_path = os.path.join(os.path.dirname(__file__), "training_metadata.json")
-            if os.path.exists(metadata_path):
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
-                class_names = metadata.get('class_names', ['not_ready', 'ready', 'spoilt'])
-            else:
-                class_names = ['not_ready', 'ready', 'spoilt']
-            
-            class_name = class_names[class_idx] if class_idx < len(class_names) else 'unknown'
-            
-            # Only return if confidence is above threshold
-            if confidence >= confidence_threshold:
-                h, w = frame.shape[:2]
-                # Return center of frame as detection (can be improved with object detection)
-                detections.append({
-                    'class': class_name,
-                    'confidence': confidence,
-                    'bbox': [w//2 - 50, h//2 - 50, 100, 100],
-                    'center': [w//2, h//2]
-                })
-        except Exception as e:
-            print(f"Detection error: {e}")
-        
-        # Strategy 2: Sliding window for multiple tomatoes (optional enhancement)
-        # This can be added later for multi-tomato detection
+        # Fallback: If no bboxes provided, use full frame detection (backward compatibility)
+        if not bboxes or len(bboxes) == 0:
+            try:
+                frame_resized = cv2.resize(frame_rgb, (224, 224))
+                transform = transforms.Compose([
+                    transforms.ToPILImage(),
+                    transforms.ToTensor(),
+                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+                ])
+                
+                input_tensor = transform(frame_resized).unsqueeze(0)
+                
+                with torch.no_grad():
+                    outputs = self(input_tensor)
+                    probabilities = torch.softmax(outputs, dim=1)
+                    max_prob, predicted_idx = torch.max(probabilities, 1)
+                    confidence = max_prob.item()
+                    class_idx = predicted_idx.item()
+                
+                # Load class names
+                metadata_path = os.path.join(os.path.dirname(__file__), "training_metadata.json")
+                if os.path.exists(metadata_path):
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                    class_names = metadata.get('class_names', ['not_ready', 'ready', 'spoilt'])
+                else:
+                    class_names = ['not_ready', 'ready', 'spoilt']
+                
+                class_name = class_names[class_idx] if class_idx < len(class_names) else 'unknown'
+                
+                # Only return if confidence is above threshold
+                if confidence >= confidence_threshold:
+                    h, w = frame.shape[:2]
+                    # Return center of frame as detection
+                    detections.append({
+                        'class': class_name,
+                        'confidence': confidence,
+                        'bbox': [w//2 - 50, h//2 - 50, 100, 100],
+                        'center': [w//2, h//2]
+                    })
+            except Exception as e:
+                print(f"Detection error: {e}")
         
         return detections
     
