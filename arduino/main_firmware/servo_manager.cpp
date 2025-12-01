@@ -20,11 +20,11 @@ void ServoManager::begin() {
     attachServo(4, PIN_SERVO_PITCH,    PULSE_MIN_SG90,  PULSE_MAX_SG90,  LIMIT_PITCH_MIN,    LIMIT_PITCH_MAX, false);
     attachServo(5, PIN_SERVO_CLAW,     PULSE_MIN_SG90,  PULSE_MAX_SG90,  LIMIT_CLAW_MIN,     LIMIT_CLAW_MAX, false);
     
-    // Set claw to closed position (0°) immediately on power-on for safety
+    // Set claw to open position (0° = open) immediately on power-on
     servos[5].servo.write(0);
     servos[5].current_angle = 0;
     servos[5].target_angle = 0;
-    delay(500); // Give servo time to move to closed position
+    delay(500); // Give servo time to move to open position
     
     home();
 }
@@ -37,7 +37,7 @@ void ServoManager::attachServo(int id, int pin, int min_p, int max_p, int min_a,
     servos[id].max_angle = max_a;
     servos[id].is_continuous = continuous;
     
-    // Claw (id=5) starts at 0° (closed) for safety, all others at 90° (home)
+    // Claw (id=5) starts at 0° (open), all others at 90° (home)
     int initial_angle = (id == 5) ? 0 : HOME_ANGLE;
     servos[id].current_angle = initial_angle;
     servos[id].target_angle = initial_angle;
@@ -127,8 +127,8 @@ void ServoManager::home() {
     for (int i = 0; i < 5; i++) {  // Servos 0-4 (Base through Pitch)
         setTarget(i, HOME_ANGLE);
     }
-    // Claw stays closed (0°) - it was set to closed in begin() for safety
-    // Claw: 0° = Closed, 90° = Open
+    // Claw stays open (0° = open) - it was set to open in begin()
+    // Claw: 0° = Open, 90° = Closed (REVERSED)
 }
 
 void ServoManager::emergencyStop() {

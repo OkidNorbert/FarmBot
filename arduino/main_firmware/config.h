@@ -30,7 +30,7 @@
 #define PULSE_MAX_MG99X     2400
 
 // Safety Limits (Degrees)
-// Claw (SG90) - 0° = Closed, 90° = Open
+// Claw (SG90) - 0° = Open, 90° = Closed (REVERSED)
 #define LIMIT_CLAW_MIN      0
 #define LIMIT_CLAW_MAX      90
 

@@ -15,7 +15,7 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
     _binRipe.forearm = 110;
     _binRipe.elbow = 90;
     _binRipe.pitch = 80;
-    _binRipe.claw = 90;
+    _binRipe.claw = 0;  // Open for release (0° = open - REVERSED)
     
     // Left bin (other categories) - a few cm to the left
     _binUnripe.base = 30;      // Left side (30° = ~60° left of center)
@@ -23,7 +23,7 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
     _binUnripe.forearm = 110;
     _binUnripe.elbow = 90;
     _binUnripe.pitch = 80;
-    _binUnripe.claw = 90;
+    _binUnripe.claw = 0;  // Open for release (0° = open - REVERSED)
 }
 
 bool MotionPlanner::startPick(int pixel_x, int pixel_y, float confidence, String class_type) {
@@ -80,7 +80,7 @@ void MotionPlanner::update() {
             int approach_forearm = 100;
             int approach_elbow = 90;
             int approach_pitch = 100; // Pitch down for approach
-            int approach_claw = 90; // Open (90° = open, 0° = closed)
+            int approach_claw = 0; // Open (0° = open, 90° = closed - REVERSED)
             
             if (moveToPose(approach_base, approach_shoulder, approach_forearm, 
                           approach_elbow, approach_pitch, approach_claw)) {
@@ -131,8 +131,8 @@ void MotionPlanner::update() {
         }
         
         case PICK_GRASP: {
-            // Close claw (0° = closed)
-            _servoMgr->setTarget(5, 0); // Claw closed (index 5)
+            // Close claw (90° = closed - REVERSED)
+            _servoMgr->setTarget(5, 90); // Claw closed (index 5)
             
             // Wait for claw to close
             delay(500); // Give time to grasp
@@ -171,8 +171,8 @@ void MotionPlanner::update() {
         }
         
         case PICK_RELEASE: {
-            // Open claw (90° = open)
-            _servoMgr->setTarget(5, 90); // Claw open
+            // Open claw (0° = open - REVERSED)
+            _servoMgr->setTarget(5, 0); // Claw open
             
             delay(300); // Wait for release
             
