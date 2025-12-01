@@ -50,13 +50,9 @@
 #define LIMIT_FOREARM_MIN   10
 #define LIMIT_FOREARM_MAX   170
 
-// Shoulder (MG99x or HTS-16L)
-// Set to true if using HTS-16L serial servo for shoulder
-#define SHOULDER_USE_HTS16L  true  // Change to false for standard PWM servo (MG996R)
+// Shoulder (MG99x)
 #define LIMIT_SHOULDER_MIN  15
-#define LIMIT_SHOULDER_MAX  165  // For HTS-16L, can go up to 240, but constrained to 165 for safety
-#define HTS16L_SERVO_ID     1     // HTS-16L servo ID (default is 1)
-#define HTS16L_BAUD_RATE    115200 // HTS-16L communication baud rate
+#define LIMIT_SHOULDER_MAX  165
 
 // Base (MG99x)
 // Set to true if using a continuous rotation servo for base
