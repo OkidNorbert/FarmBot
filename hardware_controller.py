@@ -195,13 +195,26 @@ class BLEClient:
         return False
     
     def disconnect(self):
-        """Disconnect from BLE device"""
+        """Disconnect from BLE device and clean up"""
+        old_connected = self.connected
         self.connected = False
-        if self.client:
+        
+        if self.client and old_connected:
             try:
-                self.loop.call_soon_threadsafe(self.client.disconnect)
-            except:
-                pass
+                if self.loop and self.loop.is_running():
+                    # Try to schedule disconnect in the event loop
+                    try:
+                        future = asyncio.run_coroutine_threadsafe(self.client.disconnect(), self.loop)
+                        # Wait up to 2 seconds for disconnect to complete
+                        future.result(timeout=2)
+                    except Exception as e:
+                        self.logger.debug(f"Could not schedule async disconnect: {e}")
+            except Exception as e:
+                self.logger.warning(f"Error during BLE disconnect: {e}")
+        
+        # Reset client reference - the thread will exit naturally when connected is False
+        # Give it a moment to clean up
+        time.sleep(0.5)
 
 class HardwareController:
     def __init__(self, connection_type='auto', ble_device_name="Arduino"):
@@ -678,6 +691,21 @@ class HardwareController:
 
     def connect_hardware(self):
         """Attempt to connect to hardware"""
+        # Reset connection status
+        self.arduino_connected = False
+        
+        # Clean up existing BLE client if reconnecting
+        if hasattr(self, 'ble_client') and self.ble_client:
+            try:
+                self.logger.info("Stopping existing BLE client before reconnection...")
+                self.ble_client.disconnect()
+                # Give it a moment to clean up
+                time.sleep(1)
+            except Exception as e:
+                self.logger.warning(f"Error stopping existing BLE client: {e}")
+            finally:
+                self.ble_client = None
+        
         # Connect Arduino via Serial or Bluetooth
         if self.connection_type == 'bluetooth' or (self.connection_type == 'auto' and BLE_AVAILABLE):
             # Try Bluetooth connection
@@ -693,6 +721,7 @@ class HardwareController:
                                 self.arduino_connected = False
                             self.logger.warning("BLE connection lost")
                     
+                    self.logger.info(f"Creating new BLE client for reconnection...")
                     self.ble_client = BLEClient(target_name=self.ble_device_name, on_connect_callback=on_ble_connect)
                     self.ble_client.start(logger=self.logger)
                     time.sleep(3)  # Give it time to scan and connect
@@ -732,6 +761,17 @@ class HardwareController:
         
         # Try Serial connection (if bluetooth failed or not preferred)
         if not self.arduino_connected and self.connection_type != 'bluetooth':
+            # Close existing serial connection if reconnecting
+            if hasattr(self, 'arduino') and self.arduino:
+                try:
+                    self.logger.info("Closing existing serial connection before reconnection...")
+                    self.arduino.close()
+                    time.sleep(0.5)
+                except Exception as e:
+                    self.logger.warning(f"Error closing existing serial connection: {e}")
+                finally:
+                    self.arduino = None
+            
             try:
                 # Try auto-detecting port if default doesn't exist
                 port = self.arduino_port
@@ -742,6 +782,7 @@ class HardwareController:
                             break
                 
                 if os.path.exists(port):
+                    self.logger.info(f"Attempting serial connection on {port}...")
                     self.arduino = serial.Serial(port, self.arduino_baud, timeout=1)
                     time.sleep(2) # Wait for reset
                     self.arduino_connected = True

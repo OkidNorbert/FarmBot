@@ -1434,12 +1434,18 @@ def handle_servo_command(data):
             if HARDWARE_AVAILABLE and hw_controller:
                 # Try to connect if not connected
                 if not hw_controller.arduino_connected:
+                    print("🔄 Attempting to reconnect to Arduino...")
                     hw_controller.connect_hardware()
+                    # Wait a bit longer for BLE to establish connection
+                    time.sleep(2)
                     
-                # Get actual connection status
+                # Get actual connection status (refresh it)
                 status = hw_controller.get_status()
                 arduino_connected = status.get('arduino_connected', False)
                 connection_type = status.get('connection_type', 'none')
+                
+                # Update internal connection status
+                hw_controller.arduino_connected = arduino_connected
                 
                 if arduino_connected:
                     emit('status', {
