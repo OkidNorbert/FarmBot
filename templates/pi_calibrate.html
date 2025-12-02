@@ -377,10 +377,15 @@
 
     // Handle camera click
         document.getElementById('camera-container').addEventListener('click', function(e) {
+        console.log('Camera clicked, testMode:', testMode, 'calibrationData:', !!calibrationData);
+        
         if (testMode && calibrationData) {
+            console.log('Handling test click');
             handleTestClick(e);
             return;
         }
+        
+        console.log('Handling normal calibration point click');
 
         const img = document.getElementById('camera-feed');
         const rect = img.getBoundingClientRect();
@@ -464,6 +469,9 @@
         
             if (calibrationPoints.length === 0) {
             list.innerHTML = '<p class="text-muted small text-center">No points added yet. Click on the camera feed to start.</p>';
+                // Disable buttons when no points
+                document.getElementById('clear-btn').disabled = true;
+                document.getElementById('calibrate-btn').disabled = true;
                 return;
             }
             
@@ -489,6 +497,12 @@
             `;
         });
             list.innerHTML = html;
+            
+            // Update button states based on point count
+            document.getElementById('clear-btn').disabled = calibrationPoints.length === 0;
+            document.getElementById('calibrate-btn').disabled = calibrationPoints.length < 4;
+            
+            console.log(`updatePointsList: ${calibrationPoints.length} points, calibrate-btn disabled: ${document.getElementById('calibrate-btn').disabled}`);
         }
 
     function removePoint(index) {
@@ -524,47 +538,106 @@
                 updatePointsList();
                 document.getElementById('clear-btn').disabled = true;
                 document.getElementById('calibrate-btn').disabled = true;
-            document.getElementById('test-btn').disabled = true;
+                document.getElementById('test-btn').disabled = true;
                 document.getElementById('point-input-form').style.display = 'none';
-            testMode = false;
-            document.getElementById('test-section').style.display = 'none';
-        }
+                testMode = false;
+                document.getElementById('test-section').style.display = 'none';
+            }
         }
 
         async function runCalibration() {
+            console.log('runCalibration called, points:', calibrationPoints.length);
+            console.log('calibrationPoints:', calibrationPoints);
+            
+            // Double-check button state
+            const btn = document.getElementById('calibrate-btn');
+            console.log('Button disabled state:', btn.disabled);
+            console.log('Button element:', btn);
+            
             if (calibrationPoints.length < 4) {
-                alert('Need at least 4 points for calibration');
+                alert('Need at least 4 points for calibration. You have ' + calibrationPoints.length + ' points.');
                 return;
             }
             
+            // Force enable button (in case it's stuck disabled)
+            btn.disabled = false;
+            
+            // Disable button during processing
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Calculating...';
+            
             try {
-            const response = await fetch('/api/calibration/calculate', {
+                console.log('Sending calibration request with', calibrationPoints.length, 'points');
+                console.log('Calibration points data:', JSON.stringify(calibrationPoints, null, 2));
+                
+                // Create AbortController for timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+                
+                const response = await fetch('/api/calibration/calculate', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({points: calibrationPoints})
+                    body: JSON.stringify({points: calibrationPoints}),
+                    signal: controller.signal
                 });
                 
+                clearTimeout(timeoutId);
+                
+                console.log('Response status:', response.status);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Server error: ${response.status} - ${errorText}`);
+                }
+                
                 const result = await response.json();
+                console.log('Response result:', result);
+                
                 if (result.success) {
-                calibrationData = result.data;
-                updateCalibrationInfo(result.data);
-                showStatus('Calibration calculated successfully!', 'good');
+                    calibrationData = result.data;
+                    updateCalibrationInfo(result.data);
+                    showStatus('Calibration calculated successfully!', 'good');
+                    
+                    // Save calibration
+                    console.log('Saving calibration...');
+                    await saveCalibration();
+                    
+                    // Enable test button
+                    document.getElementById('test-btn').disabled = false;
+                    btn.innerHTML = '<i class="fas fa-calculator"></i> Calculate & Save Calibration';
+                    btn.disabled = false;
+                } else {
+                    showStatus('Calibration failed: ' + result.message, 'error');
+                    btn.innerHTML = '<i class="fas fa-calculator"></i> Calculate & Save Calibration';
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Error calculating calibration:', error);
+                let errorMessage = 'Error calculating calibration: ';
                 
-                // Save calibration
-                await saveCalibration();
+                if (error.name === 'AbortError') {
+                    errorMessage += 'Request timed out after 30 seconds. The server may be busy or unresponsive.';
+                } else if (error.message) {
+                    errorMessage += error.message;
+                } else {
+                    errorMessage += 'Unknown error occurred. Check console for details.';
+                }
                 
-                // Enable test button
-                document.getElementById('test-btn').disabled = false;
-            } else {
-                showStatus('Calibration failed: ' + result.message, 'error');
+                showStatus(errorMessage, 'error');
+                btn.innerHTML = '<i class="fas fa-calculator"></i> Calculate & Save Calibration';
+                btn.disabled = false;
             }
-        } catch (error) {
-            showStatus('Error calculating calibration: ' + error.message, 'error');
         }
-    }
 
     async function saveCalibration() {
         try {
+            console.log('saveCalibration called');
+            if (!calibrationData) {
+                console.error('No calibration data to save');
+                showStatus('Error: No calibration data to save. Calculate calibration first.', 'error');
+                return;
+            }
+            
             const response = await fetch('/api/calibration/save', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -574,26 +647,67 @@
                 })
             });
             
+            console.log('Save response status:', response.status);
             const result = await response.json();
+            console.log('Save response result:', result);
+            
             if (result.success) {
                 showStatus('Calibration saved successfully!', 'good');
-                } else {
+            } else {
                 showStatus('Error saving calibration: ' + result.message, 'error');
             }
         } catch (error) {
+            console.error('Error saving calibration:', error);
             showStatus('Error saving calibration: ' + error.message, 'error');
         }
     }
 
     async function loadCalibration() {
         try {
+            console.log('Loading calibration...');
             const response = await fetch('/api/calibration/load');
             const result = await response.json();
             
+            console.log('Load calibration response:', result);
+            
             if (result.success && result.data) {
-                calibrationData = result.data.calibration;
-                if (result.data.points) {
+                // Handle different data structures
+                if (result.data.calibration) {
+                    calibrationData = result.data.calibration;
+                } else if (result.data.matrix) {
+                    // If matrix is at top level, create calibration object
+                    calibrationData = {
+                        matrix: result.data.matrix,
+                        point_count: result.data.point_count || 0
+                    };
+                }
+                
+                if (result.data.points && result.data.points.length > 0) {
                     calibrationPoints = result.data.points;
+                    
+                    // Calculate displayX and displayY for each point if missing
+                    const img = document.getElementById('camera-feed');
+                    if (img) {
+                        const rect = img.getBoundingClientRect();
+                        const imgWidth = img.naturalWidth || 640;
+                        const imgHeight = img.naturalHeight || 480;
+                        const scaleX = rect.width / imgWidth;
+                        const scaleY = rect.height / imgHeight;
+                        
+                        calibrationPoints.forEach((p, i) => {
+                            if (!p.displayX || !p.displayY) {
+                                // Calculate display coordinates from pixel coordinates
+                                // Validate pixel property exists and is a valid array
+                                if (p.pixel && Array.isArray(p.pixel) && p.pixel.length >= 2) {
+                                    p.displayX = p.pixel[0] * scaleX;
+                                    p.displayY = p.pixel[1] * scaleY;
+                                } else {
+                                    console.warn(`Point ${i} missing valid pixel coordinates, skipping display calculation`);
+                                }
+                            }
+                        });
+                    }
+                    
                     // Re-add visual markers
                     const container = document.getElementById('camera-container');
                     const markers = container.querySelectorAll('.calibration-point, .point-label');
@@ -603,13 +717,20 @@
                     });
                     updatePointsList();
                 }
-                updateCalibrationInfo(calibrationData);
+                
+                if (calibrationData) {
+                    updateCalibrationInfo(calibrationData);
+                }
+                
                 showStatus('Calibration loaded successfully!', 'good');
                 document.getElementById('test-btn').disabled = false;
+                console.log('Calibration loaded:', calibrationData);
             } else {
                 showStatus('No calibration found or error loading: ' + (result.message || 'Unknown error'), 'warning');
+                console.warn('Load calibration failed:', result);
             }
         } catch (error) {
+            console.error('Error loading calibration:', error);
             showStatus('Error loading calibration: ' + error.message, 'error');
         }
     }
@@ -652,21 +773,42 @@
     }
 
     function testCalibration() {
+        console.log('testCalibration called');
+        console.log('calibrationData:', calibrationData);
+        
         if (!calibrationData) {
             alert('Please calculate calibration first');
             return;
         }
         
         testMode = true;
+        console.log('Test mode enabled:', testMode);
         document.getElementById('test-section').style.display = 'block';
         showStatus('Test mode active - Click on camera feed to test calibration', 'info');
+        console.log('Test section displayed, ready for clicks');
     }
 
     async function handleTestClick(e) {
+        console.log('handleTestClick called', e);
+        console.log('testMode:', testMode, 'calibrationData:', calibrationData);
+        
+        if (!testMode || !calibrationData) {
+            console.warn('Test mode not active or no calibration data');
+            return;
+        }
+        
         const img = document.getElementById('camera-feed');
+        if (!img) {
+            console.error('Camera feed image not found');
+            showStatus('Error: Camera feed not found', 'error');
+            return;
+        }
+        
         const rect = img.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+        
+        console.log('Click position:', x, y, 'Image rect:', rect);
         
         const imgWidth = img.naturalWidth || 640;
         const imgHeight = img.naturalHeight || 480;
@@ -676,6 +818,13 @@
         const pixelX = Math.round(x * scaleX);
         const pixelY = Math.round(y * scaleY);
         
+        console.log('Pixel coordinates:', pixelX, pixelY);
+        
+        // Add visual marker on camera feed to show where user clicked
+        addTestMarker(x, y, pixelX, pixelY);
+        
+        showStatus('Testing calibration...', 'info');
+        
         try {
             const response = await fetch('/api/calibration/test', {
                 method: 'POST',
@@ -683,52 +832,144 @@
                 body: JSON.stringify({pixel: [pixelX, pixelY]})
             });
             
+            console.log('Test response status:', response.status);
             const result = await response.json();
+            console.log('Test response result:', result);
+            
             if (result.success) {
                 const resultsDiv = document.getElementById('test-results');
-                const resultClass = result.error < 5 ? 'success' : 'error';
+                if (!resultsDiv) {
+                    console.error('test-results div not found');
+                    showStatus('Error: Test results container not found', 'error');
+                    return;
+                }
+                
+                // Update the marker with results
+                updateTestMarker(x, y, result.predicted, result.error);
+                
+                const resultClass = result.error < 5 ? 'success' : 'warning';
                 const resultHtml = `
-                    <div class="test-result ${resultClass}">
+                    <div class="alert alert-${resultClass} mb-2">
                         <strong>Test Point:</strong> Pixel(${pixelX}, ${pixelY})<br>
-                        <strong>Predicted:</strong> (${result.predicted[0].toFixed(1)}, ${result.predicted[1].toFixed(1)}) mm<br>
+                        <strong>Predicted World Coordinates:</strong> (${result.predicted[0].toFixed(1)}, ${result.predicted[1].toFixed(1)}) mm<br>
                         ${result.actual ? `<strong>Actual:</strong> (${result.actual[0].toFixed(1)}, ${result.actual[1].toFixed(1)}) mm<br>` : ''}
                         <strong>Error:</strong> ${result.error.toFixed(2)} mm
                     </div>
                 `;
                 resultsDiv.innerHTML = resultHtml + resultsDiv.innerHTML;
+                showStatus(`Test complete: Pixel(${pixelX}, ${pixelY}) → (${result.predicted[0].toFixed(1)}, ${result.predicted[1].toFixed(1)}) mm`, 'good');
+            } else {
+                showStatus('Test failed: ' + result.message, 'error');
             }
         } catch (error) {
+            console.error('Error testing calibration:', error);
             showStatus('Error testing calibration: ' + error.message, 'error');
+        }
+    }
+    
+    function addTestMarker(displayX, displayY, pixelX, pixelY) {
+        const container = document.getElementById('camera-container');
+        
+        // Remove any existing test markers
+        const existingMarkers = container.querySelectorAll('.test-marker, .test-label');
+        existingMarkers.forEach(m => m.remove());
+        
+        // Create marker circle
+        const marker = document.createElement('div');
+        marker.className = 'test-marker';
+        marker.style.left = displayX + 'px';
+        marker.style.top = displayY + 'px';
+        marker.style.position = 'absolute';
+        marker.style.width = '20px';
+        marker.style.height = '20px';
+        marker.style.borderRadius = '50%';
+        marker.style.border = '3px solid #00ff00';
+        marker.style.backgroundColor = 'rgba(0, 255, 0, 0.3)';
+        marker.style.transform = 'translate(-50%, -50%)';
+        marker.style.pointerEvents = 'none';
+        marker.style.zIndex = '1000';
+        
+        // Create label
+        const label = document.createElement('div');
+        label.className = 'test-label';
+        label.style.left = (displayX + 15) + 'px';
+        label.style.top = (displayY - 15) + 'px';
+        label.style.position = 'absolute';
+        label.style.backgroundColor = 'rgba(0, 255, 0, 0.9)';
+        label.style.color = '#000';
+        label.style.padding = '2px 6px';
+        label.style.borderRadius = '3px';
+        label.style.fontSize = '11px';
+        label.style.fontWeight = 'bold';
+        label.style.pointerEvents = 'none';
+        label.style.zIndex = '1001';
+        label.textContent = `P(${pixelX}, ${pixelY})`;
+        label.id = 'test-label';
+        
+        container.appendChild(marker);
+        container.appendChild(label);
+    }
+    
+    function updateTestMarker(displayX, displayY, predicted, error) {
+        const label = document.getElementById('test-label');
+        if (label) {
+            const color = error < 5 ? '#00ff00' : (error < 10 ? '#ffaa00' : '#ff0000');
+            label.style.backgroundColor = color;
+            label.textContent = `(${predicted[0].toFixed(0)}, ${predicted[1].toFixed(0)})mm`;
         }
     }
 
     function clearTestResults() {
         document.getElementById('test-results').innerHTML = '';
+        // Remove test markers from camera feed
+        const container = document.getElementById('camera-container');
+        const markers = container.querySelectorAll('.test-marker, .test-label');
+        markers.forEach(m => m.remove());
     }
 
     async function moveArmToPosition() {
-        const x = parseFloat(document.getElementById('move-x').value);
-        const y = parseFloat(document.getElementById('move-y').value);
+        const xInput = document.getElementById('move-x');
+        const yInput = document.getElementById('move-y');
         
-        if (isNaN(x) || isNaN(y)) {
-            alert('Please enter valid coordinates');
+        if (!xInput || !yInput) {
+            console.error('Move X or Y input not found');
+            showStatus('Error: Move position inputs not found', 'error');
             return;
         }
         
+        const x = parseFloat(xInput.value);
+        const y = parseFloat(yInput.value);
+        
+        console.log('moveArmToPosition called with:', x, y);
+        
+        if (isNaN(x) || isNaN(y)) {
+            alert('Please enter valid coordinates (numbers only)');
+            return;
+        }
+        
+        // Show loading state
+        showStatus(`Moving arm to (${x}, ${y}) mm...`, 'info');
+        
         try {
+            console.log('Sending move command:', {x, y, z: 50});
             const response = await fetch('/api/arm/move', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({x: x, y: y, z: 0})
+                body: JSON.stringify({x: x, y: y, z: 50})  // Add default Z height
             });
             
+            console.log('Move response status:', response.status);
             const result = await response.json();
+            console.log('Move response result:', result);
+            
             if (result.success) {
-                showStatus(`Arm moving to (${x}, ${y}) mm`, 'good');
+                showStatus(`Arm moving to (${x}, ${y}) mm - ${result.message}`, 'good');
             } else {
                 showStatus('Error moving arm: ' + result.message, 'error');
-                }
-            } catch (error) {
+                console.error('Move arm failed:', result);
+            }
+        } catch (error) {
+            console.error('Error moving arm:', error);
             showStatus('Error moving arm: ' + error.message, 'error');
         }
     }
@@ -908,14 +1149,61 @@
         stopCameraFeed();
     });
     
-    // Make functions globally accessible
+    // Make functions globally accessible for onclick handlers
     window.startCameraFeed = startCameraFeed;
     window.stopCameraFeed = stopCameraFeed;
+    window.loadCalibration = loadCalibration;
+    window.runCalibration = runCalibration;
+    window.testCalibration = testCalibration;
+    window.moveArmToPosition = moveArmToPosition;
+    window.homeArm = homeArm;
+    window.clearTestResults = clearTestResults;
+    window.resetCalibration = resetCalibration;
+    window.clearLastPoint = clearLastPoint;
+    window.confirmPoint = confirmPoint;
+    window.cancelPoint = cancelPoint;
+    window.toggleFullscreen = toggleFullscreen;
+    if (typeof refreshCameraList !== 'undefined') {
+        window.refreshCameraList = refreshCameraList;
+    } else {
+        window.refreshCameraList = loadCameraList;  // Fallback alias
+    }
+    window.refreshCamera = refreshCamera;
+    
+    // Debug function to check button state (call from console: checkCalibrationButton())
+    window.checkCalibrationButton = function() {
+        const btn = document.getElementById('calibrate-btn');
+        const points = calibrationPoints.length;
+        console.log('=== Calibration Button Debug ===');
+        console.log('Points:', points);
+        console.log('Button disabled:', btn.disabled);
+        console.log('Button onclick:', btn.onclick);
+        console.log('Button HTML:', btn.outerHTML);
+        console.log('Should be enabled:', points >= 4);
+        if (points >= 4 && btn.disabled) {
+            console.log('⚠️  Button should be enabled but is disabled! Fixing...');
+            btn.disabled = false;
+            console.log('✅ Button enabled');
+        }
+        return {
+            points: points,
+            disabled: btn.disabled,
+            shouldBeEnabled: points >= 4
+        };
+    };
     
     // Load calibration and camera list on page load
     document.addEventListener('DOMContentLoaded', function() {
         loadCalibration();
         loadCameraList();
+        
+        // Ensure button state is correct after page loads
+        setTimeout(function() {
+            updatePointsList();
+            console.log('Page loaded, calibration points:', calibrationPoints.length);
+            console.log('Button state after load:', document.getElementById('calibrate-btn').disabled);
+        }, 1500);
+        
         // Auto-select USB camera after a short delay
         setTimeout(autoSelectUSBCamera, 1000);
     });

@@ -1,0 +1,1459 @@
+{
+  "timestamp": "20251202_145051",
+  "datetime": "2025-12-02T14:50:51.278416",
+  "name": "Recording_2025-12-02T11-50-51-265Z",
+  "duration_ms": 338340,
+  "movement_count": 290,
+  "movements": [
+    {
+      "timestamp": 4655,
+      "servo": "forearm",
+      "angle": 98
+    },
+    {
+      "timestamp": 4738,
+      "servo": "forearm",
+      "angle": 99
+    },
+    {
+      "timestamp": 4846,
+      "servo": "forearm",
+      "angle": 100
+    },
+    {
+      "timestamp": 4942,
+      "servo": "forearm",
+      "angle": 101
+    },
+    {
+      "timestamp": 5149,
+      "servo": "forearm",
+      "angle": 102
+    },
+    {
+      "timestamp": 5328,
+      "servo": "forearm",
+      "angle": 103
+    },
+    {
+      "timestamp": 5409,
+      "servo": "forearm",
+      "angle": 104
+    },
+    {
+      "timestamp": 6663,
+      "servo": "forearm",
+      "angle": 107
+    },
+    {
+      "timestamp": 6760,
+      "servo": "forearm",
+      "angle": 108
+    },
+    {
+      "timestamp": 7081,
+      "servo": "forearm",
+      "angle": 109
+    },
+    {
+      "timestamp": 7211,
+      "servo": "forearm",
+      "angle": 110
+    },
+    {
+      "timestamp": 7704,
+      "servo": "forearm",
+      "angle": 116
+    },
+    {
+      "timestamp": 7843,
+      "servo": "forearm",
+      "angle": 118
+    },
+    {
+      "timestamp": 7956,
+      "servo": "forearm",
+      "angle": 119
+    },
+    {
+      "timestamp": 8029,
+      "servo": "forearm",
+      "angle": 120
+    },
+    {
+      "timestamp": 8172,
+      "servo": "forearm",
+      "angle": 123
+    },
+    {
+      "timestamp": 8245,
+      "servo": "forearm",
+      "angle": 124
+    },
+    {
+      "timestamp": 11240,
+      "servo": "elbow",
+      "angle": 88
+    },
+    {
+      "timestamp": 11299,
+      "servo": "elbow",
+      "angle": 87
+    },
+    {
+      "timestamp": 11383,
+      "servo": "elbow",
+      "angle": 86
+    },
+    {
+      "timestamp": 11503,
+      "servo": "elbow",
+      "angle": 85
+    },
+    {
+      "timestamp": 12320,
+      "servo": "elbow",
+      "angle": 103
+    },
+    {
+      "timestamp": 12380,
+      "servo": "elbow",
+      "angle": 104
+    },
+    {
+      "timestamp": 12474,
+      "servo": "elbow",
+      "angle": 105
+    },
+    {
+      "timestamp": 12593,
+      "servo": "elbow",
+      "angle": 106
+    },
+    {
+      "timestamp": 12724,
+      "servo": "elbow",
+      "angle": 107
+    },
+    {
+      "timestamp": 12808,
+      "servo": "elbow",
+      "angle": 108
+    },
+    {
+      "timestamp": 12927,
+      "servo": "elbow",
+      "angle": 110
+    },
+    {
+      "timestamp": 12998,
+      "servo": "elbow",
+      "angle": 111
+    },
+    {
+      "timestamp": 13190,
+      "servo": "elbow",
+      "angle": 115
+    },
+    {
+      "timestamp": 14017,
+      "servo": "elbow",
+      "angle": 106
+    },
+    {
+      "timestamp": 14344,
+      "servo": "elbow",
+      "angle": 96
+    },
+    {
+      "timestamp": 14404,
+      "servo": "elbow",
+      "angle": 95
+    },
+    {
+      "timestamp": 17178,
+      "servo": "pitch",
+      "angle": 100
+    },
+    {
+      "timestamp": 17239,
+      "servo": "pitch",
+      "angle": 101
+    },
+    {
+      "timestamp": 17358,
+      "servo": "pitch",
+      "angle": 103
+    },
+    {
+      "timestamp": 17500,
+      "servo": "pitch",
+      "angle": 104
+    },
+    {
+      "timestamp": 17622,
+      "servo": "pitch",
+      "angle": 105
+    },
+    {
+      "timestamp": 17752,
+      "servo": "pitch",
+      "angle": 106
+    },
+    {
+      "timestamp": 17886,
+      "servo": "pitch",
+      "angle": 107
+    },
+    {
+      "timestamp": 18127,
+      "servo": "pitch",
+      "angle": 108
+    },
+    {
+      "timestamp": 18506,
+      "servo": "pitch",
+      "angle": 109
+    },
+    {
+      "timestamp": 19600,
+      "servo": "pitch",
+      "angle": 73
+    },
+    {
+      "timestamp": 19708,
+      "servo": "pitch",
+      "angle": 71
+    },
+    {
+      "timestamp": 19826,
+      "servo": "pitch",
+      "angle": 69
+    },
+    {
+      "timestamp": 19934,
+      "servo": "pitch",
+      "angle": 67
+    },
+    {
+      "timestamp": 20017,
+      "servo": "pitch",
+      "angle": 66
+    },
+    {
+      "timestamp": 20258,
+      "servo": "pitch",
+      "angle": 65
+    },
+    {
+      "timestamp": 20521,
+      "servo": "pitch",
+      "angle": 64
+    },
+    {
+      "timestamp": 24964,
+      "servo": "claw",
+      "angle": 12
+    },
+    {
+      "timestamp": 25036,
+      "servo": "claw",
+      "angle": 13
+    },
+    {
+      "timestamp": 25096,
+      "servo": "claw",
+      "angle": 14
+    },
+    {
+      "timestamp": 25237,
+      "servo": "claw",
+      "angle": 15
+    },
+    {
+      "timestamp": 25360,
+      "servo": "claw",
+      "angle": 16
+    },
+    {
+      "timestamp": 25513,
+      "servo": "claw",
+      "angle": 17
+    },
+    {
+      "timestamp": 25934,
+      "servo": "claw",
+      "angle": 18
+    },
+    {
+      "timestamp": 26054,
+      "servo": "claw",
+      "angle": 20
+    },
+    {
+      "timestamp": 26124,
+      "servo": "claw",
+      "angle": 21
+    },
+    {
+      "timestamp": 26233,
+      "servo": "claw",
+      "angle": 22
+    },
+    {
+      "timestamp": 26415,
+      "servo": "claw",
+      "angle": 26
+    },
+    {
+      "timestamp": 26473,
+      "servo": "claw",
+      "angle": 28
+    },
+    {
+      "timestamp": 26570,
+      "servo": "claw",
+      "angle": 30
+    },
+    {
+      "timestamp": 26677,
+      "servo": "claw",
+      "angle": 32
+    },
+    {
+      "timestamp": 26739,
+      "servo": "claw",
+      "angle": 33
+    },
+    {
+      "timestamp": 26808,
+      "servo": "claw",
+      "angle": 34
+    },
+    {
+      "timestamp": 26916,
+      "servo": "claw",
+      "angle": 35
+    },
+    {
+      "timestamp": 26999,
+      "servo": "claw",
+      "angle": 36
+    },
+    {
+      "timestamp": 27154,
+      "servo": "claw",
+      "angle": 37
+    },
+    {
+      "timestamp": 27560,
+      "servo": "claw",
+      "angle": 38
+    },
+    {
+      "timestamp": 27655,
+      "servo": "claw",
+      "angle": 39
+    },
+    {
+      "timestamp": 27917,
+      "servo": "claw",
+      "angle": 40
+    },
+    {
+      "timestamp": 28049,
+      "servo": "claw",
+      "angle": 41
+    },
+    {
+      "timestamp": 31103,
+      "servo": "claw",
+      "angle": 52
+    },
+    {
+      "timestamp": 34230,
+      "servo": "pitch",
+      "angle": 61
+    },
+    {
+      "timestamp": 34589,
+      "servo": "pitch",
+      "angle": 65
+    },
+    {
+      "timestamp": 34682,
+      "servo": "pitch",
+      "angle": 66
+    },
+    {
+      "timestamp": 34816,
+      "servo": "pitch",
+      "angle": 67
+    },
+    {
+      "timestamp": 35186,
+      "servo": "pitch",
+      "angle": 72
+    },
+    {
+      "timestamp": 35260,
+      "servo": "pitch",
+      "angle": 73
+    },
+    {
+      "timestamp": 35341,
+      "servo": "pitch",
+      "angle": 74
+    },
+    {
+      "timestamp": 36386,
+      "servo": "pitch",
+      "angle": 34
+    },
+    {
+      "timestamp": 36503,
+      "servo": "pitch",
+      "angle": 32
+    },
+    {
+      "timestamp": 39691,
+      "servo": "pitch",
+      "angle": 41
+    },
+    {
+      "timestamp": 45630,
+      "servo": "pitch",
+      "angle": 37
+    },
+    {
+      "timestamp": 45867,
+      "servo": "pitch",
+      "angle": 36
+    },
+    {
+      "timestamp": 45988,
+      "servo": "pitch",
+      "angle": 33
+    },
+    {
+      "timestamp": 46060,
+      "servo": "pitch",
+      "angle": 32
+    },
+    {
+      "timestamp": 48628,
+      "servo": "claw",
+      "angle": 45
+    },
+    {
+      "timestamp": 48687,
+      "servo": "claw",
+      "angle": 44
+    },
+    {
+      "timestamp": 48840,
+      "servo": "claw",
+      "angle": 41
+    },
+    {
+      "timestamp": 50582,
+      "servo": "claw",
+      "angle": 32
+    },
+    {
+      "timestamp": 50643,
+      "servo": "claw",
+      "angle": 31
+    },
+    {
+      "timestamp": 51406,
+      "servo": "claw",
+      "angle": 69
+    },
+    {
+      "timestamp": 51588,
+      "servo": "claw",
+      "angle": 70
+    },
+    {
+      "timestamp": 51876,
+      "servo": "claw",
+      "angle": 75
+    },
+    {
+      "timestamp": 52069,
+      "servo": "claw",
+      "angle": 76
+    },
+    {
+      "timestamp": 52607,
+      "servo": "claw",
+      "angle": 77
+    },
+    {
+      "timestamp": 52713,
+      "servo": "claw",
+      "angle": 78
+    },
+    {
+      "timestamp": 61450,
+      "servo": "forearm",
+      "angle": 134
+    },
+    {
+      "timestamp": 61524,
+      "servo": "forearm",
+      "angle": 135
+    },
+    {
+      "timestamp": 62014,
+      "servo": "forearm",
+      "angle": 137
+    },
+    {
+      "timestamp": 62096,
+      "servo": "forearm",
+      "angle": 138
+    },
+    {
+      "timestamp": 64231,
+      "servo": "elbow",
+      "angle": 98
+    },
+    {
+      "timestamp": 64921,
+      "servo": "elbow",
+      "angle": 77
+    },
+    {
+      "timestamp": 65260,
+      "servo": "elbow",
+      "angle": 67
+    },
+    {
+      "timestamp": 65321,
+      "servo": "elbow",
+      "angle": 66
+    },
+    {
+      "timestamp": 65799,
+      "servo": "elbow",
+      "angle": 65
+    },
+    {
+      "timestamp": 67081,
+      "servo": "elbow",
+      "angle": 91
+    },
+    {
+      "timestamp": 67574,
+      "servo": "elbow",
+      "angle": 92
+    },
+    {
+      "timestamp": 69610,
+      "servo": "pitch",
+      "angle": 34
+    },
+    {
+      "timestamp": 70014,
+      "servo": "pitch",
+      "angle": 44
+    },
+    {
+      "timestamp": 70181,
+      "servo": "pitch",
+      "angle": 45
+    },
+    {
+      "timestamp": 70411,
+      "servo": "pitch",
+      "angle": 54
+    },
+    {
+      "timestamp": 71080,
+      "servo": "pitch",
+      "angle": 84
+    },
+    {
+      "timestamp": 71465,
+      "servo": "pitch",
+      "angle": 95
+    },
+    {
+      "timestamp": 71584,
+      "servo": "pitch",
+      "angle": 96
+    },
+    {
+      "timestamp": 71849,
+      "servo": "pitch",
+      "angle": 97
+    },
+    {
+      "timestamp": 72016,
+      "servo": "pitch",
+      "angle": 98
+    },
+    {
+      "timestamp": 72146,
+      "servo": "pitch",
+      "angle": 99
+    },
+    {
+      "timestamp": 74257,
+      "servo": "pitch",
+      "angle": 85
+    },
+    {
+      "timestamp": 74318,
+      "servo": "pitch",
+      "angle": 84
+    },
+    {
+      "timestamp": 74379,
+      "servo": "pitch",
+      "angle": 83
+    },
+    {
+      "timestamp": 76402,
+      "servo": "pitch",
+      "angle": 82
+    },
+    {
+      "timestamp": 76473,
+      "servo": "pitch",
+      "angle": 79
+    },
+    {
+      "timestamp": 80473,
+      "servo": "forearm",
+      "angle": 142
+    },
+    {
+      "timestamp": 80760,
+      "servo": "forearm",
+      "angle": 144
+    },
+    {
+      "timestamp": 80956,
+      "servo": "forearm",
+      "angle": 145
+    },
+    {
+      "timestamp": 82855,
+      "servo": "forearm",
+      "angle": 142
+    },
+    {
+      "timestamp": 82950,
+      "servo": "forearm",
+      "angle": 141
+    },
+    {
+      "timestamp": 83059,
+      "servo": "forearm",
+      "angle": 139
+    },
+    {
+      "timestamp": 83120,
+      "servo": "forearm",
+      "angle": 138
+    },
+    {
+      "timestamp": 93719,
+      "servo": "pitch",
+      "angle": 83
+    },
+    {
+      "timestamp": 95089,
+      "servo": "pitch",
+      "angle": 74
+    },
+    {
+      "timestamp": 95195,
+      "servo": "pitch",
+      "angle": 72
+    },
+    {
+      "timestamp": 98162,
+      "servo": "claw",
+      "angle": 76
+    },
+    {
+      "timestamp": 102944,
+      "servo": "claw",
+      "angle": 67
+    },
+    {
+      "timestamp": 105178,
+      "servo": "claw",
+      "angle": 56
+    },
+    {
+      "timestamp": 105238,
+      "servo": "claw",
+      "angle": 55
+    },
+    {
+      "timestamp": 105300,
+      "servo": "claw",
+      "angle": 54
+    },
+    {
+      "timestamp": 108414,
+      "servo": "claw",
+      "angle": 49
+    },
+    {
+      "timestamp": 115352,
+      "servo": "elbow",
+      "angle": 82
+    },
+    {
+      "timestamp": 115412,
+      "servo": "elbow",
+      "angle": 81
+    },
+    {
+      "timestamp": 115494,
+      "servo": "elbow",
+      "angle": 80
+    },
+    {
+      "timestamp": 115567,
+      "servo": "elbow",
+      "angle": 79
+    },
+    {
+      "timestamp": 115699,
+      "servo": "elbow",
+      "angle": 78
+    },
+    {
+      "timestamp": 115819,
+      "servo": "elbow",
+      "angle": 77
+    },
+    {
+      "timestamp": 115948,
+      "servo": "elbow",
+      "angle": 76
+    },
+    {
+      "timestamp": 119966,
+      "servo": "elbow",
+      "angle": 81
+    },
+    {
+      "timestamp": 120062,
+      "servo": "elbow",
+      "angle": 82
+    },
+    {
+      "timestamp": 122006,
+      "servo": "elbow",
+      "angle": 86
+    },
+    {
+      "timestamp": 122130,
+      "servo": "elbow",
+      "angle": 87
+    },
+    {
+      "timestamp": 126711,
+      "servo": "claw",
+      "angle": 48
+    },
+    {
+      "timestamp": 126795,
+      "servo": "claw",
+      "angle": 47
+    },
+    {
+      "timestamp": 126930,
+      "servo": "claw",
+      "angle": 46
+    },
+    {
+      "timestamp": 137491,
+      "servo": "elbow",
+      "angle": 88
+    },
+    {
+      "timestamp": 137585,
+      "servo": "elbow",
+      "angle": 87
+    },
+    {
+      "timestamp": 137728,
+      "servo": "elbow",
+      "angle": 86
+    },
+    {
+      "timestamp": 138290,
+      "servo": "elbow",
+      "angle": 98
+    },
+    {
+      "timestamp": 138385,
+      "servo": "elbow",
+      "angle": 99
+    },
+    {
+      "timestamp": 140095,
+      "servo": "elbow",
+      "angle": 90
+    },
+    {
+      "timestamp": 140167,
+      "servo": "elbow",
+      "angle": 89
+    },
+    {
+      "timestamp": 145386,
+      "servo": "forearm",
+      "angle": 118
+    },
+    {
+      "timestamp": 145458,
+      "servo": "forearm",
+      "angle": 117
+    },
+    {
+      "timestamp": 145529,
+      "servo": "forearm",
+      "angle": 116
+    },
+    {
+      "timestamp": 146774,
+      "servo": "forearm",
+      "angle": 126
+    },
+    {
+      "timestamp": 146836,
+      "servo": "forearm",
+      "angle": 127
+    },
+    {
+      "timestamp": 146894,
+      "servo": "forearm",
+      "angle": 128
+    },
+    {
+      "timestamp": 147099,
+      "servo": "forearm",
+      "angle": 129
+    },
+    {
+      "timestamp": 147315,
+      "servo": "forearm",
+      "angle": 130
+    },
+    {
+      "timestamp": 147589,
+      "servo": "forearm",
+      "angle": 133
+    },
+    {
+      "timestamp": 149095,
+      "servo": "forearm",
+      "angle": 139
+    },
+    {
+      "timestamp": 150677,
+      "servo": "forearm",
+      "angle": 142
+    },
+    {
+      "timestamp": 154027,
+      "servo": "claw",
+      "angle": 44
+    },
+    {
+      "timestamp": 154345,
+      "servo": "claw",
+      "angle": 41
+    },
+    {
+      "timestamp": 154403,
+      "servo": "claw",
+      "angle": 40
+    },
+    {
+      "timestamp": 156885,
+      "servo": "claw",
+      "angle": 37
+    },
+    {
+      "timestamp": 159253,
+      "servo": "claw",
+      "angle": 33
+    },
+    {
+      "timestamp": 159313,
+      "servo": "claw",
+      "angle": 32
+    },
+    {
+      "timestamp": 159388,
+      "servo": "claw",
+      "angle": 31
+    },
+    {
+      "timestamp": 161716,
+      "servo": "claw",
+      "angle": 29
+    },
+    {
+      "timestamp": 163199,
+      "servo": "claw",
+      "angle": 33
+    },
+    {
+      "timestamp": 163259,
+      "servo": "claw",
+      "angle": 34
+    },
+    {
+      "timestamp": 167048,
+      "servo": "forearm",
+      "angle": 128
+    },
+    {
+      "timestamp": 170228,
+      "servo": "claw",
+      "angle": 36
+    },
+    {
+      "timestamp": 170536,
+      "servo": "claw",
+      "angle": 44
+    },
+    {
+      "timestamp": 170762,
+      "servo": "claw",
+      "angle": 52
+    },
+    {
+      "timestamp": 172116,
+      "servo": "claw",
+      "angle": 49
+    },
+    {
+      "timestamp": 172583,
+      "servo": "claw",
+      "angle": 29
+    },
+    {
+      "timestamp": 175019,
+      "servo": "claw",
+      "angle": 5
+    },
+    {
+      "timestamp": 179272,
+      "servo": "claw",
+      "angle": 48
+    },
+    {
+      "timestamp": 181905,
+      "servo": "claw",
+      "angle": 69
+    },
+    {
+      "timestamp": 184534,
+      "servo": "claw",
+      "angle": 30
+    },
+    {
+      "timestamp": 187680,
+      "servo": "claw",
+      "angle": 10
+    },
+    {
+      "timestamp": 190124,
+      "servo": "claw",
+      "angle": 0
+    },
+    {
+      "timestamp": 196772,
+      "servo": "claw",
+      "angle": 10
+    },
+    {
+      "timestamp": 196892,
+      "servo": "claw",
+      "angle": 13
+    },
+    {
+      "timestamp": 200260,
+      "servo": "claw",
+      "angle": 19
+    },
+    {
+      "timestamp": 200678,
+      "servo": "claw",
+      "angle": 34
+    },
+    {
+      "timestamp": 202384,
+      "servo": "claw",
+      "angle": 43
+    },
+    {
+      "timestamp": 203833,
+      "servo": "claw",
+      "angle": 47
+    },
+    {
+      "timestamp": 209841,
+      "servo": "forearm",
+      "angle": 130
+    },
+    {
+      "timestamp": 210270,
+      "servo": "forearm",
+      "angle": 123
+    },
+    {
+      "timestamp": 210342,
+      "servo": "forearm",
+      "angle": 122
+    },
+    {
+      "timestamp": 210456,
+      "servo": "forearm",
+      "angle": 121
+    },
+    {
+      "timestamp": 211954,
+      "servo": "forearm",
+      "angle": 136
+    },
+    {
+      "timestamp": 212047,
+      "servo": "forearm",
+      "angle": 137
+    },
+    {
+      "timestamp": 212215,
+      "servo": "forearm",
+      "angle": 138
+    },
+    {
+      "timestamp": 212458,
+      "servo": "forearm",
+      "angle": 139
+    },
+    {
+      "timestamp": 212728,
+      "servo": "forearm",
+      "angle": 144
+    },
+    {
+      "timestamp": 212846,
+      "servo": "forearm",
+      "angle": 145
+    },
+    {
+      "timestamp": 218128,
+      "servo": "claw",
+      "angle": 40
+    },
+    {
+      "timestamp": 218639,
+      "servo": "claw",
+      "angle": 57
+    },
+    {
+      "timestamp": 218751,
+      "servo": "claw",
+      "angle": 58
+    },
+    {
+      "timestamp": 221336,
+      "servo": "claw",
+      "angle": 60
+    },
+    {
+      "timestamp": 221645,
+      "servo": "claw",
+      "angle": 62
+    },
+    {
+      "timestamp": 221741,
+      "servo": "claw",
+      "angle": 63
+    },
+    {
+      "timestamp": 224169,
+      "servo": "forearm",
+      "angle": 142
+    },
+    {
+      "timestamp": 224551,
+      "servo": "forearm",
+      "angle": 151
+    },
+    {
+      "timestamp": 224633,
+      "servo": "forearm",
+      "angle": 152
+    },
+    {
+      "timestamp": 226396,
+      "servo": "forearm",
+      "angle": 121
+    },
+    {
+      "timestamp": 226514,
+      "servo": "forearm",
+      "angle": 119
+    },
+    {
+      "timestamp": 226656,
+      "servo": "forearm",
+      "angle": 118
+    },
+    {
+      "timestamp": 226944,
+      "servo": "forearm",
+      "angle": 112
+    },
+    {
+      "timestamp": 227039,
+      "servo": "forearm",
+      "angle": 111
+    },
+    {
+      "timestamp": 227243,
+      "servo": "forearm",
+      "angle": 110
+    },
+    {
+      "timestamp": 227375,
+      "servo": "forearm",
+      "angle": 109
+    },
+    {
+      "timestamp": 227519,
+      "servo": "forearm",
+      "angle": 108
+    },
+    {
+      "timestamp": 231824,
+      "servo": "forearm",
+      "angle": 118
+    },
+    {
+      "timestamp": 232598,
+      "servo": "forearm",
+      "angle": 146
+    },
+    {
+      "timestamp": 232887,
+      "servo": "forearm",
+      "angle": 147
+    },
+    {
+      "timestamp": 232993,
+      "servo": "forearm",
+      "angle": 148
+    },
+    {
+      "timestamp": 233065,
+      "servo": "forearm",
+      "angle": 149
+    },
+    {
+      "timestamp": 233258,
+      "servo": "forearm",
+      "angle": 150
+    },
+    {
+      "timestamp": 236941,
+      "servo": "forearm",
+      "angle": 152
+    },
+    {
+      "timestamp": 237060,
+      "servo": "forearm",
+      "angle": 153
+    },
+    {
+      "timestamp": 241034,
+      "servo": "claw",
+      "angle": 57
+    },
+    {
+      "timestamp": 245763,
+      "servo": "forearm",
+      "angle": 131
+    },
+    {
+      "timestamp": 245847,
+      "servo": "forearm",
+      "angle": 130
+    },
+    {
+      "timestamp": 248874,
+      "servo": "forearm",
+      "angle": 133
+    },
+    {
+      "timestamp": 249209,
+      "servo": "forearm",
+      "angle": 137
+    },
+    {
+      "timestamp": 249301,
+      "servo": "forearm",
+      "angle": 139
+    },
+    {
+      "timestamp": 251381,
+      "servo": "forearm",
+      "angle": 145
+    },
+    {
+      "timestamp": 254777,
+      "servo": "claw",
+      "angle": 63
+    },
+    {
+      "timestamp": 254840,
+      "servo": "claw",
+      "angle": 64
+    },
+    {
+      "timestamp": 256655,
+      "servo": "claw",
+      "angle": 58
+    },
+    {
+      "timestamp": 256764,
+      "servo": "claw",
+      "angle": 57
+    },
+    {
+      "timestamp": 256992,
+      "servo": "claw",
+      "angle": 54
+    },
+    {
+      "timestamp": 257127,
+      "servo": "claw",
+      "angle": 51
+    },
+    {
+      "timestamp": 265194,
+      "servo": "forearm",
+      "angle": 126
+    },
+    {
+      "timestamp": 265323,
+      "servo": "forearm",
+      "angle": 125
+    },
+    {
+      "timestamp": 265443,
+      "servo": "forearm",
+      "angle": 124
+    },
+    {
+      "timestamp": 265836,
+      "servo": "forearm",
+      "angle": 123
+    },
+    {
+      "timestamp": 266013,
+      "servo": "forearm",
+      "angle": 122
+    },
+    {
+      "timestamp": 268957,
+      "servo": "forearm",
+      "angle": 143
+    },
+    {
+      "timestamp": 269029,
+      "servo": "forearm",
+      "angle": 144
+    },
+    {
+      "timestamp": 269086,
+      "servo": "forearm",
+      "angle": 145
+    },
+    {
+      "timestamp": 269158,
+      "servo": "forearm",
+      "angle": 146
+    },
+    {
+      "timestamp": 269278,
+      "servo": "forearm",
+      "angle": 148
+    },
+    {
+      "timestamp": 269385,
+      "servo": "forearm",
+      "angle": 150
+    },
+    {
+      "timestamp": 269479,
+      "servo": "forearm",
+      "angle": 151
+    },
+    {
+      "timestamp": 273293,
+      "servo": "forearm",
+      "angle": 134
+    },
+    {
+      "timestamp": 279385,
+      "servo": "claw",
+      "angle": 48
+    },
+    {
+      "timestamp": 279460,
+      "servo": "claw",
+      "angle": 46
+    },
+    {
+      "timestamp": 282623,
+      "servo": "claw",
+      "angle": 41
+    },
+    {
+      "timestamp": 282717,
+      "servo": "claw",
+      "angle": 40
+    },
+    {
+      "timestamp": 286212,
+      "servo": "forearm",
+      "angle": 110
+    },
+    {
+      "timestamp": 291867,
+      "servo": "forearm",
+      "angle": 112
+    },
+    {
+      "timestamp": 292392,
+      "servo": "forearm",
+      "angle": 139
+    },
+    {
+      "timestamp": 292607,
+      "servo": "forearm",
+      "angle": 144
+    },
+    {
+      "timestamp": 296353,
+      "servo": "forearm",
+      "angle": 140
+    },
+    {
+      "timestamp": 296652,
+      "servo": "forearm",
+      "angle": 132
+    },
+    {
+      "timestamp": 296727,
+      "servo": "forearm",
+      "angle": 131
+    },
+    {
+      "timestamp": 298611,
+      "servo": "forearm",
+      "angle": 138
+    },
+    {
+      "timestamp": 301337,
+      "servo": "forearm",
+      "angle": 140
+    },
+    {
+      "timestamp": 304817,
+      "servo": "claw",
+      "angle": 27
+    },
+    {
+      "timestamp": 304876,
+      "servo": "claw",
+      "angle": 26
+    },
+    {
+      "timestamp": 307690,
+      "servo": "claw",
+      "angle": 19
+    },
+    {
+      "timestamp": 310554,
+      "servo": "forearm",
+      "angle": 124
+    },
+    {
+      "timestamp": 313532,
+      "servo": "forearm",
+      "angle": 140
+    },
+    {
+      "timestamp": 313615,
+      "servo": "forearm",
+      "angle": 141
+    },
+    {
+      "timestamp": 313747,
+      "servo": "forearm",
+      "angle": 144
+    },
+    {
+      "timestamp": 313831,
+      "servo": "forearm",
+      "angle": 145
+    },
+    {
+      "timestamp": 317656,
+      "servo": "claw",
+      "angle": 17
+    },
+    {
+      "timestamp": 318111,
+      "servo": "claw",
+      "angle": 0
+    },
+    {
+      "timestamp": 320595,
+      "servo": "claw",
+      "angle": 12
+    },
+    {
+      "timestamp": 320679,
+      "servo": "claw",
+      "angle": 13
+    },
+    {
+      "timestamp": 323634,
+      "servo": "claw",
+      "angle": 17
+    },
+    {
+      "timestamp": 323729,
+      "servo": "claw",
+      "angle": 18
+    },
+    {
+      "timestamp": 331265,
+      "servo": "forearm",
+      "angle": 99
+    },
+    {
+      "timestamp": 335968,
+      "servo": "forearm",
+      "angle": 37
+    }
+  ]
+}

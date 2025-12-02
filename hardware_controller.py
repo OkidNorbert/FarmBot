@@ -275,9 +275,13 @@ class HardwareController:
         self.workspace_bounds = {
             'x_min': -150, 'x_max': 150,  # mm
             'y_min': 50, 'y_max': 250,    # mm
-            'z_min': 20, 'z_max': 150     # mm
+            'z_min': 5, 'z_max': 150      # mm (lowered to 5mm to allow surface-level tomatoes)
         }
-        self.load_calibration_matrix()
+        calibration_loaded = self.load_calibration_matrix()
+        if calibration_loaded:
+            self.logger.info("✅ Calibration loaded - coordinate mapping active")
+        else:
+            self.logger.warning("⚠️  No calibration found - using fallback coordinate mapping")
         
         # Pick tracking
         self.pending_picks = {}  # Track pick commands sent to Arduino
@@ -463,6 +467,7 @@ class HardwareController:
                     continue
                 
                 arm_x, arm_y = arm_coords
+                self.logger.debug(f"[AUTO] Pixel ({center_x:.0f}, {center_y:.0f}) -> Arm ({arm_x:.1f}, {arm_y:.1f}) mm {'[CALIBRATED]' if self.homography_matrix is not None else '[FALLBACK]'}")
                 
                 # Get distance from ToF sensor (on claw) to tomato
                 # NOTE: ToF is on the claw, so it moves with the arm
@@ -1356,10 +1361,16 @@ class HardwareController:
                 import json
                 with open(calib_json, 'r') as f:
                     data = json.load(f)
+                    # Check for homography directly or in calibration.matrix
                     if 'homography' in data:
                         self.homography_matrix = np.array(data['homography'])
                         self.logger.info("✅ Loaded calibration from calibration_data.json")
                         return True
+                    elif 'calibration' in data and isinstance(data['calibration'], dict):
+                        if 'matrix' in data['calibration']:
+                            self.homography_matrix = np.array(data['calibration']['matrix'])
+                            self.logger.info("✅ Loaded calibration from calibration_data.json (matrix)")
+                            return True
             
             # Try homography.npy (from calibrate_homography.py)
             homography_file = self.project_root / 'homography.npy'

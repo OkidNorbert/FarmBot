@@ -119,7 +119,15 @@ def add_no_cache_headers(response):
 
 # Initialize SocketIO if available
 if SOCKETIO_AVAILABLE:
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+    socketio = SocketIO(
+        app, 
+        cors_allowed_origins="*", 
+        async_mode='eventlet',
+        ping_timeout=60,  # Increase ping timeout to 60 seconds
+        ping_interval=25,  # Send ping every 25 seconds
+        logger=False,  # Disable verbose logging
+        engineio_logger=False  # Disable engineio logging
+    )
 else:
     socketio = SocketIO(app)  # Dummy instance
 
@@ -1396,13 +1404,22 @@ def handle_controller_disconnect():
 @socketio.on('servo_command')
 def handle_servo_command(data):
     """Handle servo commands from modern controller"""
+    global hw_controller, HARDWARE_AVAILABLE
     print(f'📨 Received servo command: {data}')
     try:
+        # Check hardware availability first
+        if not HARDWARE_AVAILABLE or hw_controller is None:
+            print("❌ Hardware controller not available")
+            emit('status', {
+                'message': 'Hardware controller not initialized. Please restart the server.',
+                'connected': False
+            })
+            return
+        
         cmd = data.get('cmd', '').lower()
         
         if cmd == 'connect':
             # Try to re-initialize hardware controller if it's missing
-            global hw_controller, HARDWARE_AVAILABLE
             if not HARDWARE_AVAILABLE or hw_controller is None:
                 try:
                     from hardware_controller import HardwareController
@@ -1485,6 +1502,13 @@ def handle_servo_command(data):
                 
                 hw_servo = servo_map[servo_name]
                 if hw_servo in servo_index_map:
+                    # Verify connection status before sending command
+                    if not hw_controller.arduino_connected:
+                        # Try to refresh connection status
+                        if hasattr(hw_controller, 'get_status'):
+                            status = hw_controller.get_status()
+                            hw_controller.arduino_connected = status.get('arduino_connected', False)
+                    
                     # Check if servo is available
                     if HARDWARE_AVAILABLE and hw_controller:
                         if hasattr(hw_controller, 'servo_available'):
@@ -1511,10 +1535,17 @@ def handle_servo_command(data):
                             
                             speed_command = f"SPEED {speed_deg_per_sec}"
                             if hw_controller.arduino_connected:
-                                if hw_controller.ble_client and hw_controller.ble_client.connected:
-                                    hw_controller.ble_client.send_command(speed_command)
-                                elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
-                                    hw_controller.arduino.write(f"{speed_command}\n".encode())
+                                try:
+                                    if hw_controller.ble_client and hw_controller.ble_client.connected:
+                                        hw_controller.ble_client.send_command(speed_command)
+                                        print(f"✅ Speed command sent via BLE: {speed_command}")
+                                    elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
+                                        hw_controller.arduino.write(f"{speed_command}\n".encode())
+                                        print(f"✅ Speed command sent via Serial: {speed_command}")
+                                except Exception as e:
+                                    print(f"❌ Error sending speed command: {e}")
+                            else:
+                                print(f"⚠️  Speed command not sent - Arduino not connected")
                             hw_controller._last_speed = speed
                     
                     # Update tracked servo angle in hardware controller
@@ -1526,11 +1557,36 @@ def handle_servo_command(data):
                     angles[servo_index_map[hw_servo]] = int(angle)
                     
                     command = f"ANGLE {' '.join(str(a) for a in angles)}"
+                    print(f"🔧 Sending command to Arduino: {command}")
+                    
                     if hw_controller.arduino_connected:
+                        command_sent = False
                         if hw_controller.ble_client and hw_controller.ble_client.connected:
-                            hw_controller.ble_client.send_command(command)
+                            try:
+                                hw_controller.ble_client.send_command(command)
+                                command_sent = True
+                                print(f"✅ Command sent via BLE: {command}")
+                            except Exception as e:
+                                print(f"❌ Error sending command via BLE: {e}")
+                                emit('status', {'message': f'Error sending command: {e}', 'connected': False})
                         elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:
-                            hw_controller.arduino.write(f"{command}\n".encode())
+                            try:
+                                hw_controller.arduino.write(f"{command}\n".encode())
+                                command_sent = True
+                                print(f"✅ Command sent via Serial: {command}")
+                            except Exception as e:
+                                print(f"❌ Error sending command via Serial: {e}")
+                                emit('status', {'message': f'Error sending command: {e}', 'connected': False})
+                        
+                        if not command_sent:
+                            print(f"⚠️  Command not sent - no active connection method")
+                            emit('status', {'message': 'Arduino connection lost. Please reconnect.', 'connected': False})
+                    else:
+                        print(f"❌ Arduino not connected - command dropped: {command}")
+                        emit('status', {
+                            'message': 'Arduino not connected. Click Connect to establish connection.',
+                            'connected': False
+                        })
                     
                     # Don't emit status for every command to reduce overhead
                     # emit('status', {'message': f'{servo_name} moved to {angle}°'})
@@ -1880,24 +1936,49 @@ def api_socketio_status():
 def api_calibration_calculate():
     """Calculate calibration transformation matrix from points"""
     try:
+        print("DEBUG: /api/calibration/calculate endpoint called")
         data = request.get_json()
+        print(f"DEBUG: Received data keys: {list(data.keys()) if data else 'None'}")
+        
         if not data or 'points' not in data:
+            print("ERROR: No points provided in request")
             return jsonify({'success': False, 'message': 'No points provided'}), 400
         
         points = data['points']
+        print(f"DEBUG: Processing {len(points)} calibration points")
+        
         if len(points) < 4:
+            print(f"ERROR: Insufficient points: {len(points)}")
             return jsonify({'success': False, 'message': 'Need at least 4 calibration points'}), 400
         
+        # Validate point structure
+        for i, p in enumerate(points):
+            if 'pixel' not in p or 'world' not in p:
+                print(f"ERROR: Point {i} missing pixel or world coordinates: {p}")
+                return jsonify({'success': False, 'message': f'Point {i} missing required coordinates'}), 400
+            if not isinstance(p['pixel'], (list, tuple)) or len(p['pixel']) < 2:
+                print(f"ERROR: Point {i} has invalid pixel format: {p['pixel']}")
+                return jsonify({'success': False, 'message': f'Point {i} has invalid pixel coordinates'}), 400
+            if not isinstance(p['world'], (list, tuple)) or len(p['world']) < 2:
+                print(f"ERROR: Point {i} has invalid world format: {p['world']}")
+                return jsonify({'success': False, 'message': f'Point {i} has invalid world coordinates'}), 400
+        
+        print("DEBUG: Extracting pixel and world coordinates")
         # Extract pixel and world coordinates
         pixel_coords = np.array([p['pixel'] for p in points], dtype=np.float32)
         world_coords = np.array([p['world'] for p in points], dtype=np.float32)
+        print(f"DEBUG: Pixel coords shape: {pixel_coords.shape}, World coords shape: {world_coords.shape}")
         
         # Calculate homography matrix using OpenCV
+        print("DEBUG: Calculating homography matrix...")
         homography_matrix, mask = cv2.findHomography(pixel_coords, world_coords, 
                                                       cv2.RANSAC, 5.0)
         
         if homography_matrix is None:
+            print("ERROR: Failed to calculate homography matrix")
             return jsonify({'success': False, 'message': 'Failed to calculate transformation matrix'}), 500
+        
+        print("DEBUG: Homography matrix calculated successfully")
         
         # Calculate accuracy (reprojection error)
         errors = []
@@ -1914,6 +1995,8 @@ def api_calibration_calculate():
         avg_error = np.mean(errors)
         max_error = np.max(errors)
         
+        print(f"DEBUG: Calibration complete - avg error: {avg_error:.2f}mm, max error: {max_error:.2f}mm")
+        
         calibration_data = {
             'matrix': homography_matrix.tolist(),
             'point_count': len(points),
@@ -1923,6 +2006,7 @@ def api_calibration_calculate():
             'timestamp': datetime.now().isoformat()
         }
         
+        print("DEBUG: Returning calibration result")
         return jsonify({
             'success': True,
             'data': calibration_data,
@@ -1930,7 +2014,7 @@ def api_calibration_calculate():
         })
         
     except Exception as e:
-        print(f"Error calculating calibration: {e}")
+        print(f"ERROR: Exception in api_calibration_calculate: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -1941,25 +2025,26 @@ def api_calibration_save():
     try:
         data = request.get_json()
         if not data:
+            print("ERROR: No data provided to save calibration")
             return jsonify({'success': False, 'message': 'No data provided'}), 400
+        
+        print(f"DEBUG: Saving calibration with {len(data.get('points', []))} points")
+        
+        saved_files = []
         
         # Save using hardware controller if available
         if HARDWARE_AVAILABLE and hw_controller:
             points = data.get('points', [])
             if points:
+                print("DEBUG: Attempting to save via hardware controller")
                 success = hw_controller.update_calibration(points)
                 if success:
-                    return jsonify({
-                        'success': True,
-                        'message': 'Calibration saved successfully'
-                    })
+                    saved_files.append('calibration.npz (via hardware controller)')
+                    print("DEBUG: Saved via hardware controller")
                 else:
-                    return jsonify({
-                        'success': False,
-                        'message': 'Failed to save calibration via hardware controller'
-                    }), 500
+                    print("WARNING: Hardware controller save failed, using fallback")
         
-        # Fallback: Save to JSON file
+        # Always save to JSON file (fallback or additional)
         calibration_file = 'calibration_data.json'
         calibration_data = {
             'points': data.get('points', []),
@@ -1969,6 +2054,8 @@ def api_calibration_save():
         
         with open(calibration_file, 'w') as f:
             json.dump(calibration_data, f, indent=2)
+        saved_files.append(calibration_file)
+        print(f"DEBUG: Saved to {calibration_file}")
         
         # Also save as numpy format if calibration matrix exists
         if 'calibration' in data and data['calibration'] and 'matrix' in data['calibration']:
@@ -1981,16 +2068,23 @@ def api_calibration_save():
                         homography=matrix,
                         pixel_coords=pixel_coords,
                         world_coords=world_coords)
+                saved_files.append('calibration.npz')
+                print(f"DEBUG: Saved to calibration.npz")
             except Exception as e:
-                print(f"Warning: Could not save numpy format: {e}")
+                print(f"WARNING: Could not save numpy format: {e}")
+                import traceback
+                traceback.print_exc()
         
+        message = f'Calibration saved successfully to: {", ".join(saved_files)}'
+        print(f"SUCCESS: {message}")
         return jsonify({
             'success': True,
-            'message': 'Calibration saved successfully'
+            'message': message,
+            'files': saved_files
         })
         
     except Exception as e:
-        print(f"Error saving calibration: {e}")
+        print(f"ERROR: Error saving calibration: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -2004,6 +2098,12 @@ def api_calibration_load():
         if os.path.exists(calibration_file):
             with open(calibration_file, 'r') as f:
                 data = json.load(f)
+                print(f"DEBUG: Loaded calibration_data.json with keys: {list(data.keys())}")
+                # Ensure calibration structure is correct
+                if 'calibration' in data and isinstance(data['calibration'], dict):
+                    if 'matrix' not in data['calibration'] and 'homography' in data:
+                        # Fix structure if needed
+                        data['calibration']['matrix'] = data['homography']
                 return jsonify({
                     'success': True,
                     'data': data,
