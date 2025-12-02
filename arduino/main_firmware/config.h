@@ -58,11 +58,16 @@
 // Set to true if using a continuous rotation servo for base
 // NOTE: Continuous rotation servos don't have position feedback, so the firmware
 //       tracks a "virtual position" based on rotation time and speed.
+//       The continuous rotation servo now respects the global speed setting (setSpeed()).
+//       BASE_ROTATION_SPEED is used as a calibration factor - it represents the maximum
+//       rotation speed when the servo command is at full speed (60° CCW or 120° CW).
 //       You may need to calibrate BASE_ROTATION_SPEED to match your servo's actual speed.
 #define BASE_CONTINUOUS_ROTATION  true  // Change to false for standard 180° servo
 #define LIMIT_BASE_MIN      0
 #define LIMIT_BASE_MAX      180  // Virtual limits for continuous rotation servo
-#define BASE_ROTATION_SPEED 30   // Degrees per second for continuous rotation base (calibrate this!)
+#define BASE_ROTATION_SPEED 30   // Max degrees per second at full servo command (calibrate this!)
+#define BASE_COASTING_TIME_MS 100 // Estimated coasting time in milliseconds after stop command
+#define BASE_STOP_TOLERANCE  2    // Stop tolerance in degrees (virtual position)
 
 // Motion - Speed Configuration
 #define DEFAULT_SPEED       20  // Default speed (degrees per second)

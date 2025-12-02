@@ -128,7 +128,34 @@ class BLEClient:
                 self.logger.warning("Device not found, retrying in 5 seconds...")
                 await asyncio.sleep(5)
         except Exception as e:
-            self.logger.error(f"BLE scan error: {e}")
+            # Check for specific Bluetooth adapter errors
+            error_str = str(e)
+            if "No Bluetooth adapters found" in error_str or "NO_BLUETOOTH" in str(e):
+                # Only log this error once per minute to avoid spam
+                current_time = time.time()
+                if not hasattr(self, '_last_bluetooth_error_time') or \
+                   (current_time - getattr(self, '_last_bluetooth_error_time', 0)) > 60:
+                    self.logger.error("=" * 60)
+                    self.logger.error("❌ BLUETOOTH ADAPTER NOT FOUND")
+                    self.logger.error("=" * 60)
+                    self.logger.error("Your system does not have a Bluetooth adapter available.")
+                    self.logger.error("")
+                    self.logger.error("To fix this:")
+                    self.logger.error("1. Check if your computer has Bluetooth hardware")
+                    self.logger.error("2. Enable Bluetooth in system settings")
+                    self.logger.error("3. Start Bluetooth service:")
+                    self.logger.error("   sudo systemctl start bluetooth")
+                    self.logger.error("   sudo systemctl enable bluetooth")
+                    self.logger.error("4. Check Bluetooth status:")
+                    self.logger.error("   bluetoothctl power on")
+                    self.logger.error("   bluetoothctl show")
+                    self.logger.error("")
+                    self.logger.error("If you don't have Bluetooth, use Serial connection instead:")
+                    self.logger.error("   Set connection_type='serial' in HardwareController")
+                    self.logger.error("=" * 60)
+                    self._last_bluetooth_error_time = current_time
+            else:
+                self.logger.error(f"BLE scan error: {e}")
             await asyncio.sleep(5)
     
     async def _send_command(self, command):
@@ -194,6 +221,7 @@ class HardwareController:
         self.ble_client = None
         self.camera = None
         self.classifier = None
+        self.yolo_detector = None
         self.camera_lock = threading.Lock()
         
         # State
@@ -234,7 +262,34 @@ class HardwareController:
         threading.Thread(target=self._auto_loop, daemon=True).start()
 
     def initialize_classifier(self):
-        """Initialize AI Model"""
+        """Initialize AI Model - tries YOLO first, falls back to ResNet"""
+        # Try YOLO first
+        try:
+            from models.tomato.yolo_inference import load_yolo_model, YOLO_AVAILABLE
+            if YOLO_AVAILABLE:
+                # Try to find YOLO model
+                possible_paths = [
+                    self.project_root / "models" / "tomato" / "best.pt",
+                    self.project_root / "models" / "tomato" / "yolov8_tomato.pt",
+                    self.project_root / "runs" / "detect" / "train" / "weights" / "best.pt",
+                    self.project_root / "runs" / "detect" / "tomato_detector" / "weights" / "best.pt"
+                ]
+                
+                for model_path in possible_paths:
+                    if model_path.exists():
+                        self.yolo_detector = load_yolo_model(str(model_path), confidence_threshold=0.5)
+                        if self.yolo_detector and self.yolo_detector.is_available():
+                            self.logger.info(f"✅ YOLO Model Loaded: {model_path}")
+                            self.logger.info("   Using YOLO for detection. ResNet will not be loaded.")
+                            return  # YOLO loaded successfully, skip ResNet initialization
+                
+                self.logger.info("⚠️  YOLO available but no model found. Falling back to ResNet.")
+        except ImportError:
+            self.logger.info("⚠️  YOLO not available. Using ResNet classifier.")
+        except Exception as e:
+            self.logger.warning(f"YOLO initialization error: {e}, falling back to ResNet")
+        
+        # Fallback to ResNet classifier
         if not TOMATO_CLASSIFIER_AVAILABLE or not TomatoClassifier:
             self.logger.warning("TomatoClassifier not available. Model detection disabled.")
             self.logger.warning("Make sure PyTorch and the model files are installed.")
@@ -245,13 +300,13 @@ class HardwareController:
             model_path = self.project_root / "models" / "tomato" / "best_model.pth"
             model_path_str = str(model_path)
             
-            self.logger.info(f"Looking for model at: {model_path_str}")
+            self.logger.info(f"Looking for ResNet model at: {model_path_str}")
             
             if model_path.exists():
                 self.logger.info(f"Model file found: {model_path_str}")
                 try:
                     self.classifier = TomatoClassifier(model_path_str)
-                    self.logger.info("✅ AI Model Loaded successfully")
+                    self.logger.info("✅ ResNet Model Loaded successfully")
                 except Exception as load_error:
                     self.logger.error(f"Failed to load model (file exists but load failed): {load_error}")
                     import traceback
@@ -383,8 +438,18 @@ class HardwareController:
         self.logger.info(f"[AUTO] Completed picking {len(ready_tomatoes)} ready tomato(s) from this frame")
 
     def detect_tomatoes(self, frame):
-        """Run detection on frame with enhanced support for Ugandan tomatoes
-        Now classifies each detected tomato individually"""
+        """Run detection on frame - uses YOLO if available, otherwise ResNet + color detection"""
+        # Try YOLO first if available
+        if self.yolo_detector and self.yolo_detector.is_available():
+            try:
+                detections = self.yolo_detector.detect(frame, conf=0.5)
+                if detections:
+                    self.logger.debug(f"[DETECT] YOLO detected {len(detections)} tomatoes")
+                    return detections
+            except Exception as e:
+                self.logger.warning(f"YOLO detection error: {e}, falling back to ResNet")
+        
+        # Fallback to ResNet classifier with color-based detection
         if self.classifier:
             # First, detect tomato bounding boxes using color-based detection
             import cv2
@@ -539,7 +604,26 @@ class HardwareController:
                 else:
                     self.logger.warning("BLE library not available, trying serial...")
             except Exception as e:
-                self.logger.error(f"Bluetooth connection failed: {e}")
+                error_str = str(e)
+                # Check for Bluetooth adapter not found error
+                if "No Bluetooth adapters found" in error_str or "NO_BLUETOOTH" in error_str:
+                    self.logger.error("=" * 60)
+                    self.logger.error("❌ BLUETOOTH ADAPTER NOT AVAILABLE")
+                    self.logger.error("=" * 60)
+                    self.logger.error("Your system does not have a Bluetooth adapter.")
+                    self.logger.error("")
+                    if self.connection_type == 'bluetooth':
+                        self.logger.error("Bluetooth is required but not available.")
+                        self.logger.error("Options:")
+                        self.logger.error("  1. Use Serial connection instead (set connection_type='serial')")
+                        self.logger.error("  2. Install a USB Bluetooth adapter")
+                        self.logger.error("  3. Enable Bluetooth in BIOS/UEFI if available")
+                        return
+                    else:
+                        self.logger.error("Falling back to Serial connection...")
+                        self.logger.error("(To use Serial, connect Arduino via USB cable)")
+                else:
+                    self.logger.error(f"Bluetooth connection failed: {e}")
                 if self.connection_type == 'bluetooth':
                     return
         

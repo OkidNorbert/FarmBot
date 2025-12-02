@@ -29,6 +29,15 @@ import yaml
 import cv2
 import numpy as np
 
+# Try to import YOLO inference module
+try:
+    from models.tomato.yolo_inference import YOLOTomatoDetector, load_yolo_model, YOLO_AVAILABLE
+    YOLO_DETECTOR_AVAILABLE = True
+except ImportError:
+    YOLO_DETECTOR_AVAILABLE = False
+    YOLO_AVAILABLE = False
+    print("⚠️  YOLO inference module not available")
+
 # Set OpenCV log level to suppress warnings
 try:
     cv2.setLogLevel(0)  # 0 = SILENT, 1 = ERROR, 2 = WARN, 3 = INFO, 4 = DEBUG
@@ -2189,6 +2198,8 @@ def start_training(dataset_name):
     epochs = int(request.form.get('epochs', 30))
     batch_size = int(request.form.get('batch_size', 32))
     learning_rate = float(request.form.get('learning_rate', 0.001))
+    model_type = request.form.get('model_type', 'resnet')  # 'resnet' or 'yolo'
+    model_size = request.form.get('model_size', 'n')  # For YOLO: n, s, m, l, x
     
     # Start training in background thread
     def train_model():
@@ -2206,15 +2217,80 @@ def start_training(dataset_name):
             if os.path.exists(venv_path):
                 python_cmd = venv_path
             
-            # Run the automated training
-            cmd = [
-                python_cmd, 'auto_train.py',
-                '--dataset_path', os.path.join(UPLOAD_FOLDER, dataset_name),
-                '--crop_name', dataset_name,
-                '--epochs', str(epochs),
-                '--batch_size', str(batch_size),
-                '--learning_rate', str(learning_rate)
-            ]
+            # Choose training script based on model type
+            if model_type == 'yolo':
+                # Check if ultralytics is available
+                try:
+                    import ultralytics
+                    yolo_available = True
+                except ImportError:
+                    yolo_available = False
+                    training_status['status_message'] = 'ERROR: Ultralytics not installed. Install with: pip install ultralytics'
+                    training_status['logs'].append('ERROR: Ultralytics not installed')
+                    training_status['is_training'] = False
+                    return
+                
+                # For YOLO, we need to convert dataset first or use existing YOLO dataset
+                dataset_path = os.path.join(UPLOAD_FOLDER, dataset_name)
+                yolo_output = os.path.join(UPLOAD_FOLDER, f'{dataset_name}_yolo')
+                
+                # Check if YOLO dataset already exists
+                if not os.path.exists(yolo_output) or not os.path.exists(os.path.join(yolo_output, 'images')):
+                    training_status['status_message'] = 'Converting dataset to YOLO format...'
+                    training_status['logs'].append('Converting classification dataset to YOLO format...')
+                    
+                    # Run conversion
+                    convert_cmd = [
+                        python_cmd, 'train_yolo.py',
+                        '--dataset', dataset_path,
+                        '--output', yolo_output,
+                        '--convert-only'
+                    ]
+                    
+                    convert_process = subprocess.Popen(
+                        convert_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True
+                    )
+                    
+                    convert_output, _ = convert_process.communicate()
+                    training_status['logs'].append(convert_output)
+                    
+                    if convert_process.returncode != 0:
+                        training_status['status_message'] = 'ERROR: Dataset conversion failed'
+                        training_status['logs'].append(f'Conversion failed: {convert_output}')
+                        training_status['is_training'] = False
+                        return
+                    
+                    training_status['logs'].append('⚠️  NOTE: Converted dataset has placeholder labels (whole image as bounding box).')
+                    training_status['logs'].append('   For proper YOLO training, annotate images with bounding boxes using LabelImg.')
+                
+                # Run YOLO training
+                # Create output directory for training results
+                training_output_dir = os.path.join(yolo_output, 'training_results')
+                os.makedirs(training_output_dir, exist_ok=True)
+                
+                cmd = [
+                    python_cmd, 'train_yolo.py',
+                    '--dataset', dataset_path,
+                    '--output', yolo_output,
+                    '--epochs', str(epochs),
+                    '--batch', str(batch_size),
+                    '--model', model_size
+                ]
+                
+                training_status['logs'].append(f'YOLO Training Output Directory: {training_output_dir}')
+            else:
+                # ResNet training (original)
+                cmd = [
+                    python_cmd, 'auto_train.py',
+                    '--dataset_path', os.path.join(UPLOAD_FOLDER, dataset_name),
+                    '--crop_name', dataset_name,
+                    '--epochs', str(epochs),
+                    '--batch_size', str(batch_size),
+                    '--learning_rate', str(learning_rate)
+                ]
             
             training_status['status_message'] = f'Running: {" ".join(cmd)}'
             training_status['logs'].append(f'Command: {" ".join(cmd)}')
@@ -2231,27 +2307,52 @@ def start_training(dataset_name):
             # Monitor training progress
             for line in iter(process.stdout.readline, ''):
                 if line:
-                    training_status['logs'].append(line.strip())
+                    # Clean line and add to logs
+                    clean_line = line.strip()
+                    training_status['logs'].append(clean_line)
                     
                     # Extract progress from training output
-                    if 'Epoch' in line and '%' in line:
+                    # For YOLO: "Epoch 1/100: ..."
+                    # For ResNet: "Epoch 1/30: ..."
+                    if 'Epoch' in clean_line and ('/' in clean_line or 'epoch' in clean_line.lower()):
                         try:
-                            # Extract epoch number and progress
-                            parts = line.split()
-                            for i, part in enumerate(parts):
-                                if part == 'Epoch':
-                                    epoch_num = int(parts[i+1].split('/')[0])
-                                    total_epochs = int(parts[i+1].split('/')[1])
+                            # Try different patterns
+                            import re
+                            # Pattern 1: "Epoch 1/100"
+                            match = re.search(r'Epoch\s+(\d+)/(\d+)', clean_line)
+                            if match:
+                                epoch_num = int(match.group(1))
+                                total_epochs = int(match.group(2))
+                                training_status['progress'] = int((epoch_num / total_epochs) * 100)
+                                training_status['status_message'] = f'Training epoch {epoch_num}/{total_epochs}...'
+                            # Pattern 2: "epoch 1 of 100"
+                            else:
+                                match = re.search(r'epoch\s+(\d+)\s+of\s+(\d+)', clean_line, re.IGNORECASE)
+                                if match:
+                                    epoch_num = int(match.group(1))
+                                    total_epochs = int(match.group(2))
                                     training_status['progress'] = int((epoch_num / total_epochs) * 100)
-                                    break
-                        except:
+                                    training_status['status_message'] = f'Training epoch {epoch_num}/{total_epochs}...'
+                        except Exception as e:
+                            pass
+                    
+                    # Extract YOLO-specific metrics
+                    if model_type == 'yolo':
+                        # Look for mAP, precision, recall in YOLO output
+                        if 'mAP50' in clean_line or 'mAP' in clean_line:
+                            training_status['status_message'] = f'YOLO Training: {clean_line[:80]}...'
+                        if 'precision' in clean_line.lower() or 'recall' in clean_line.lower():
+                            # Update status with latest metrics
                             pass
                     
                     # Update status message
-                    if 'Training completed' in line:
+                    if 'Training completed' in clean_line or 'training complete' in clean_line.lower():
                         training_status['status_message'] = 'Training completed successfully!'
-                    elif 'Error' in line or 'Failed' in line:
-                        training_status['status_message'] = f'Training error: {line.strip()}'
+                        training_status['progress'] = 100
+                    elif 'Error' in clean_line or 'Failed' in clean_line or 'error' in clean_line.lower():
+                        training_status['status_message'] = f'Training error: {clean_line[:100]}'
+                    elif 'saved' in clean_line.lower() and 'model' in clean_line.lower():
+                        training_status['status_message'] = f'Model saved: {clean_line[:80]}...'
             
             process.wait()
             
@@ -3167,7 +3268,17 @@ def gen_frames():
     cap.release()
 
 def detect_tomatoes_in_frame(frame):
-    """Detect if tomatoes are present in the frame using computer vision"""
+    """Detect if tomatoes are present in the frame - uses YOLO if available, otherwise color detection"""
+    # Try YOLO first
+    yolo_detector = get_yolo_detector()
+    if yolo_detector and yolo_detector.is_available():
+        try:
+            detected, count, boxes = yolo_detector.detect_with_boxes(frame)
+            return detected
+        except Exception as e:
+            print(f"[DETECT] YOLO detection error: {e}, falling back to color detection")
+    
+    # Fallback to color-based detection
     import cv2
     import numpy as np
     
@@ -3224,10 +3335,70 @@ def detect_tomatoes_in_frame(frame):
     
     return tomato_count > 0
 
+# Global YOLO detector instance (lazy loaded)
+_yolo_detector = None
+
+def get_yolo_detector():
+    """Get or create YOLO detector instance"""
+    global _yolo_detector
+    if _yolo_detector is None and YOLO_DETECTOR_AVAILABLE:
+        # Try to find YOLO model
+        possible_paths = [
+            'models/tomato/best.pt',
+            'models/tomato/yolov8_tomato.pt',
+            'runs/detect/train/weights/best.pt',
+            'runs/detect/tomato_detector/weights/best.pt'
+        ]
+        
+        model_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                model_path = path
+                break
+        
+        if model_path:
+            _yolo_detector = load_yolo_model(model_path, confidence_threshold=0.5)
+            if _yolo_detector and _yolo_detector.is_available():
+                print(f"✅ YOLO detector initialized with model: {model_path}")
+            else:
+                _yolo_detector = None
+        else:
+            print("⚠️  YOLO model not found. Using color-based detection as fallback.")
+            print("   Train a YOLO model or place it in one of these locations:")
+            for path in possible_paths:
+                print(f"     - {path}")
+    
+    return _yolo_detector
+
 def detect_tomatoes_with_boxes(frame):
-    """Detect tomatoes in the frame and return detection status, count, and bounding boxes"""
+    """Detect tomatoes in the frame and return detection status, count, and bounding boxes
+    
+    Priority: YOLO > Color Detection
+    Only one method is used per detection call - no conflicts.
+    Tries YOLO first, falls back to color-based detection if YOLO not available.
+    """
     import cv2
     import numpy as np
+    
+    # Try YOLO detection first (priority)
+    yolo_detector = get_yolo_detector()
+    if yolo_detector and yolo_detector.is_available():
+        try:
+            detected, count, boxes = yolo_detector.detect_with_boxes(frame)
+            if detected and count > 0:
+                print(f"[DETECT] YOLO detected {count} tomatoes")
+                return detected, count, boxes
+            else:
+                # YOLO found no tomatoes - return empty (don't fallback, YOLO is authoritative)
+                print(f"[DETECT] YOLO found no tomatoes")
+                return False, 0, []
+        except Exception as e:
+            print(f"[DETECT] YOLO detection error: {e}, falling back to color detection")
+            import traceback
+            traceback.print_exc()
+    
+    # Fallback to color-based detection (only if YOLO not available or error)
+    print(f"[DETECT] Using color-based detection (YOLO not available)")
     
     # Convert to HSV for better color detection
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -3256,10 +3427,11 @@ def detect_tomatoes_with_boxes(frame):
     # Combine all masks
     combined_mask = red_mask + green_mask + orange_mask
     
-    # Apply minimal morphological operations - only opening to remove noise
-    # NO CLOSING to avoid merging tomatoes
-    kernel_small = np.ones((3,3), np.uint8)
-    combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel_small)
+    # Apply morphological operations to merge nearby regions (fixes single tomato split issue)
+    # Use closing to merge nearby regions that are part of the same tomato
+    kernel_small = np.ones((5,5), np.uint8)
+    combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel_small)  # Merge nearby regions
+    combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel_small)  # Remove noise
     
     # Find contours
     contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -3268,9 +3440,14 @@ def detect_tomatoes_with_boxes(frame):
     tomato_boxes = []
     tomato_count = 0
     
+    # Filter and merge nearby small detections that are likely part of the same tomato
+    # This prevents a single tomato from being split into multiple detections
+    min_tomato_area = 2000  # Increased minimum area to filter out noise
+    min_tomato_size = 50  # Minimum width/height for a valid tomato
+    
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area > 500:  # Minimum area
+        if area > min_tomato_area:  # Increased minimum area
             x, y, w, h = cv2.boundingRect(contour)
             
             # Check if this bounding box is suspiciously large (likely multiple tomatoes)
@@ -3346,13 +3523,13 @@ def detect_tomatoes_with_boxes(frame):
                             continue  # Skip the original large contour
             
             # Single tomato detection (for normal-sized detections)
-            aspect_ratio = w / h
+            aspect_ratio = w / h if h > 0 else 0
             if 0.4 < aspect_ratio < 2.5:  # Lenient aspect ratio
                 perimeter = cv2.arcLength(contour, True)
                 if perimeter > 0:
                     circularity = 4 * np.pi * area / (perimeter * perimeter)
                     if circularity > 0.15:  # Lower circularity threshold
-                        if w > 30 and h > 30:  # Minimum size
+                        if w > min_tomato_size and h > min_tomato_size:  # Minimum size
                             roi = frame[y:y+h, x:x+w]
                             if roi.size > 0:
                                 hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
@@ -3360,6 +3537,58 @@ def detect_tomatoes_with_boxes(frame):
                                 if mean_saturation > 20:  # Lower saturation threshold
                                     tomato_boxes.append((x, y, w, h))
                                     tomato_count += 1
+    
+    # Post-process: Merge nearby boxes that are likely the same tomato
+    # This handles cases where a single tomato still gets split
+    if len(tomato_boxes) > 1:
+        merged_boxes = []
+        used = [False] * len(tomato_boxes)
+        
+        for i, (x1, y1, w1, h1) in enumerate(tomato_boxes):
+            if used[i]:
+                continue
+            
+            # Find center of this box
+            cx1 = x1 + w1 // 2
+            cy1 = y1 + h1 // 2
+            
+            # Check if this box overlaps or is very close to another box
+            merged = False
+            for j, (x2, y2, w2, h2) in enumerate(tomato_boxes):
+                if i == j or used[j]:
+                    continue
+                
+                cx2 = x2 + w2 // 2
+                cy2 = y2 + h2 // 2
+                
+                # Calculate distance between centers
+                dist = np.sqrt((cx1 - cx2)**2 + (cy1 - cy2)**2)
+                
+                # Calculate average size
+                avg_size = (w1 + h1 + w2 + h2) / 4
+                
+                # If boxes are close relative to their size, merge them
+                if dist < avg_size * 0.8:  # Merge if centers are within 80% of average size
+                    # Merge boxes: take the union
+                    min_x = min(x1, x2)
+                    min_y = min(y1, y2)
+                    max_x = max(x1 + w1, x2 + w2)
+                    max_y = max(y1 + h1, y2 + h2)
+                    merged_w = max_x - min_x
+                    merged_h = max_y - min_y
+                    
+                    merged_boxes.append((min_x, min_y, merged_w, merged_h))
+                    used[i] = True
+                    used[j] = True
+                    merged = True
+                    break
+            
+            if not merged:
+                merged_boxes.append((x1, y1, w1, h1))
+                used[i] = True
+        
+        tomato_boxes = merged_boxes
+        tomato_count = len(tomato_boxes)
     
     return tomato_count > 0, tomato_count, tomato_boxes
 
@@ -3447,7 +3676,17 @@ def tomato_detection_status():
     })
 
 def count_tomatoes_in_frame(frame):
-    """Count the number of tomatoes in the frame"""
+    """Count the number of tomatoes in the frame - uses YOLO if available, otherwise color detection"""
+    # Try YOLO first
+    yolo_detector = get_yolo_detector()
+    if yolo_detector and yolo_detector.is_available():
+        try:
+            detected, count, boxes = yolo_detector.detect_with_boxes(frame)
+            return count
+        except Exception as e:
+            print(f"[DETECT] YOLO detection error: {e}, falling back to color detection")
+    
+    # Fallback to color-based detection
     import cv2
     import numpy as np
     
@@ -3560,6 +3799,94 @@ def test_model(model_name):
         results = []
         saved_crops = []
         
+        # Try YOLO detection first (if available)
+        yolo_detector = get_yolo_detector()
+        if yolo_detector and yolo_detector.is_available():
+            try:
+                print(f"[TEST] Using YOLO for detection and classification...")
+                detections = yolo_detector.detect(frame, conf=0.5)
+                
+                if len(detections) > 0:
+                    print(f"[TEST] YOLO detected {len(detections)} tomatoes")
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    learning_dir = os.path.join('learning_data', 'new_images', 'test_uploads')
+                    os.makedirs(learning_dir, exist_ok=True)
+                    
+                    for i, det in enumerate(detections):
+                        x, y, w, h = det['bbox']
+                        predicted_class = det['class']
+                        confidence = det['confidence']
+                        
+                        # Add padding for crop
+                        padding = 15
+                        x_padded = max(0, x - padding)
+                        y_padded = max(0, y - padding)
+                        w_padded = min(frame.shape[1] - x_padded, w + 2 * padding)
+                        h_padded = min(frame.shape[0] - y_padded, h + 2 * padding)
+                        
+                        # Crop the tomato
+                        crop = frame[y_padded:y_padded+h_padded, x_padded:x_padded+w_padded]
+                        
+                        if crop.size > 0:
+                            # Save cropped tomato
+                            crop_filename = f'test_{timestamp}_tomato_{i+1}.{original_ext}'
+                            crop_path = os.path.join(learning_dir, crop_filename)
+                            cv2.imwrite(crop_path, crop)
+                            saved_crops.append(crop_path)
+                            
+                            # Save metadata
+                            try:
+                                cmd = [
+                                    sys.executable, 'continuous_learning.py',
+                                    '--action', 'save_metadata',
+                                    '--image', crop_path,
+                                    '--predicted', predicted_class,
+                                    '--confidence', str(confidence)
+                                ]
+                                subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                            except Exception as e:
+                                print(f"Error saving metadata: {e}")
+                            
+                            results.append({
+                                'tomato_number': i + 1,
+                                'prediction': predicted_class,
+                                'confidence': float(confidence),
+                                'bbox': [x_padded, y_padded, w_padded, h_padded],
+                                'crop_path': crop_path
+                            })
+                    
+                    # Return YOLO results
+                    if len(results) > 0:
+                        response_data = {
+                            'success': True,
+                            'tomato_count': len(results),
+                            'multiple_tomatoes': len(results) > 1,
+                            'results': results,
+                            'saved_crops': saved_crops,
+                            'detection_method': 'YOLO',
+                            'continuous_learning': True
+                        }
+                        
+                        if len(results) > 1:
+                            response_data['message'] = f"Multiple Tomatoes Detected ({len(results)})"
+                            response_data['note'] = "Each tomato was detected and classified individually by YOLO. All crops have been saved for continuous learning."
+                            response_data['multi_tomato'] = True
+                        else:
+                            result = results[0]
+                            response_data['prediction'] = result['prediction']
+                            response_data['confidence'] = result['confidence']
+                            response_data['message'] = f"Tomato detected and classified as: {result['prediction']}"
+                            response_data['multi_tomato'] = False
+                        
+                        os.remove(temp_path)
+                        return jsonify(response_data)
+                
+            except Exception as e:
+                print(f"[TEST] YOLO detection error: {e}, falling back to ResNet + color detection")
+                import traceback
+                traceback.print_exc()
+        
+        # Fallback to ResNet classifier with color-based detection
         # Use color-based detection to find tomatoes, then classify each one individually
         if classifier:
             try:
@@ -3961,7 +4288,8 @@ def test_model(model_name):
                         'prediction': predicted_class,
                         'confidence': float(classification_result.get('confidence', 0.0)) if classification_result.get('confidence') is not None else 0.0,
                         'learning_image_path': learning_image_path,
-                        'note': 'Whole image classified (no individual tomatoes detected)'
+                        'note': 'Whole image classified (no individual tomatoes detected)',
+                        'detection_method': 'ResNet (fallback)'
                     })
                 else:
                     print(f"[TEST] Whole image classification below threshold")
@@ -3978,10 +4306,11 @@ def test_model(model_name):
             # For single tomato, also include direct prediction/confidence for backward compatibility
             response_data = {
                 'success': True,
-                'tomato_count': tomato_count,
+                'tomato_count': len(results),
                 'results': results,
-                'multi_tomato': tomato_count > 1,
-                'continuous_learning': True
+                'multi_tomato': len(results) > 1,
+                'continuous_learning': True,
+                'detection_method': 'ResNet + Color Detection'
             }
             
             # Add direct prediction/confidence for single tomato (for frontend compatibility)

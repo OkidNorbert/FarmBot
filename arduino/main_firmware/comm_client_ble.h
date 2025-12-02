@@ -26,6 +26,7 @@ private:
     BLEStringCharacteristic* _telemetryChar;
     bool _connected;
     void (*_messageCallback)(String);
+    unsigned long _last_status_print;
     
     void processReceivedCommand();
     String createJSON(const char* type, const char* data);

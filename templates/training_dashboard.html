@@ -35,10 +35,13 @@
                         </div>
                     </div>
                 </div>
-                <div class="log-container" id="training-logs">
+                <div class="log-container" id="training-logs" style="max-height: 400px; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 12px;">
                     {% for log in training_status.logs %}
-                        <div>{{ log }}</div>
+                        <div style="margin-bottom: 2px;">{{ log }}</div>
                     {% endfor %}
+                </div>
+                <div class="mt-2">
+                    <small class="text-muted">Logs update in real-time. Scroll to see latest entries.</small>
                 </div>
             </div>
         </div>
@@ -232,6 +235,29 @@
             <div class="modal-body">
                 <form id="trainingForm">
                     <div class="mb-3">
+                        <label for="model_type" class="form-label">Model Type</label>
+                        <select class="form-select" id="model_type" name="model_type" onchange="toggleModelOptions()">
+                            <option value="resnet">ResNet (Classification)</option>
+                            <option value="yolo">YOLO (Detection + Classification)</option>
+                        </select>
+                        <small class="form-text text-muted">
+                            <span id="model_type_help">
+                                ResNet: Classifies pre-cropped images. Requires color-based detection for finding tomatoes.
+                            </span>
+                        </small>
+                    </div>
+                    <div class="mb-3" id="yolo_model_size_group" style="display: none;">
+                        <label for="model_size" class="form-label">YOLO Model Size</label>
+                        <select class="form-select" id="model_size" name="model_size">
+                            <option value="n">Nano (n) - Fastest, Smallest</option>
+                            <option value="s">Small (s)</option>
+                            <option value="m">Medium (m)</option>
+                            <option value="l">Large (l)</option>
+                            <option value="x">XLarge (x) - Slowest, Most Accurate</option>
+                        </select>
+                        <small class="form-text text-muted">Larger models are more accurate but slower</small>
+                    </div>
+                    <div class="mb-3">
                         <label for="epochs" class="form-label">Epochs</label>
                         <input type="number" class="form-control" id="epochs" name="epochs" value="30" min="1" max="200">
                     </div>
@@ -239,9 +265,17 @@
                         <label for="batch_size" class="form-label">Batch Size</label>
                         <input type="number" class="form-control" id="batch_size" name="batch_size" value="32" min="1" max="128">
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-3" id="learning_rate_group">
                         <label for="learning_rate" class="form-label">Learning Rate</label>
                         <input type="number" class="form-control" id="learning_rate" name="learning_rate" value="0.001" step="0.0001" min="0.0001" max="0.1">
+                        <small class="form-text text-muted">Only used for ResNet training</small>
+                    </div>
+                    <div class="alert alert-info" id="yolo_info" style="display: none;">
+                        <strong>YOLO Training Info:</strong><br>
+                        • Dataset will be automatically converted to YOLO format<br>
+                        • For best results, annotate images with bounding boxes using LabelImg<br>
+                        • YOLO does both detection and classification in one model<br>
+                        • Requires: pip install ultralytics
                     </div>
                 </form>
             </div>
@@ -316,7 +350,30 @@ function showHelp() {
           '4. Test your model with new images\n' +
           '5. Download trained models for deployment\n\n' +
           'Supported image formats: JPG, PNG, GIF, BMP, TIFF\n' +
-          'Recommended: 50+ images per class for best results');
+          'Recommended: 50+ images per class for best results\n\n' +
+          'Model Types:\n' +
+          '• ResNet: Classification only (requires color detection)\n' +
+          '• YOLO: Detection + Classification (recommended)');
+}
+
+function toggleModelOptions() {
+    const modelType = document.getElementById('model_type').value;
+    const yoloGroup = document.getElementById('yolo_model_size_group');
+    const learningRateGroup = document.getElementById('learning_rate_group');
+    const yoloInfo = document.getElementById('yolo_info');
+    const modelTypeHelp = document.getElementById('model_type_help');
+    
+    if (modelType === 'yolo') {
+        yoloGroup.style.display = 'block';
+        learningRateGroup.style.display = 'none';
+        yoloInfo.style.display = 'block';
+        modelTypeHelp.textContent = 'YOLO: Detects and classifies tomatoes in one model. Better accuracy, single model.';
+    } else {
+        yoloGroup.style.display = 'none';
+        learningRateGroup.style.display = 'block';
+        yoloInfo.style.display = 'none';
+        modelTypeHelp.textContent = 'ResNet: Classifies pre-cropped images. Requires color-based detection for finding tomatoes.';
+    }
 }
 
 function startTraining(datasetName) {
@@ -543,6 +600,15 @@ function updateSourceDir() {
 
 // Auto-refresh training status
 {% if training_status.is_training %}
+// Auto-scroll logs to bottom
+function scrollLogsToBottom() {
+    const logContainer = document.getElementById('training-logs');
+    if (logContainer) {
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+}
+
+// Poll training status and update logs in real-time
 setInterval(function() {
     fetch('/training_status')
     .then(response => response.json())
@@ -560,10 +626,27 @@ setInterval(function() {
                 statusElement.textContent = data.status_message;
             }
             
-            // Update logs
+            // Update logs with better formatting
             const logContainer = document.getElementById('training-logs');
-            if (logContainer) {
-                logContainer.innerHTML = data.logs.map(log => `<div>${log}</div>`).join('');
+            if (logContainer && data.logs) {
+                // Format logs with color coding for YOLO/ResNet
+                const formattedLogs = data.logs.map(log => {
+                    let formatted = log;
+                    // Color code YOLO-specific messages
+                    if (log.includes('YOLO') || log.includes('yolo')) {
+                        formatted = `<span style="color: #4ec9b0;">${log}</span>`;
+                    } else if (log.includes('Epoch') || log.includes('epoch')) {
+                        formatted = `<span style="color: #dcdcaa;">${log}</span>`;
+                    } else if (log.includes('mAP') || log.includes('precision') || log.includes('recall')) {
+                        formatted = `<span style="color: #4fc1ff;">${log}</span>`;
+                    } else if (log.includes('ERROR') || log.includes('Error') || log.includes('Failed')) {
+                        formatted = `<span style="color: #f48771;">${log}</span>`;
+                    } else if (log.includes('✅') || log.includes('complete') || log.includes('saved')) {
+                        formatted = `<span style="color: #89d185;">${log}</span>`;
+                    }
+                    return `<div style="margin-bottom: 2px; word-wrap: break-word;">${formatted}</div>`;
+                }).join('');
+                logContainer.innerHTML = formattedLogs;
                 logContainer.scrollTop = logContainer.scrollHeight;
             }
         } else {
@@ -671,6 +754,44 @@ function pollDatasetPrepStatus() {
             });
     }, 2000);
 }
+
+// Load training charts after page load
+function loadTrainingCharts() {
+    const chartsSection = document.getElementById('training-charts-section');
+    const chartsContainer = document.getElementById('training-charts-container');
+    const chartsImg = document.getElementById('training-charts-img');
+    const noChartsMsg = document.getElementById('no-charts-message');
+    
+    if (!chartsSection || !chartsContainer) return;
+    
+    // Try to load charts from multiple locations
+    const chartPaths = [
+        '/training_curves',
+        'runs/detect/tomato_detector/training_curves.png',
+        'training_curves.png',
+        'models/tomato/training_curves.png'
+    ];
+    
+    // Test if chart exists
+    if (chartsImg) {
+        chartsImg.onload = function() {
+            this.style.display = 'block';
+            if (noChartsMsg) noChartsMsg.style.display = 'none';
+            chartsSection.style.display = 'block';
+        };
+        chartsImg.onerror = function() {
+            this.style.display = 'none';
+            if (noChartsMsg) noChartsMsg.style.display = 'block';
+        };
+        // Try loading with timestamp to avoid cache
+        chartsImg.src = '/training_curves?t=' + Date.now();
+    }
+}
+
+// Load charts on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadTrainingCharts();
+});
 </script>
 
 <!-- Dataset Preparation Modal -->

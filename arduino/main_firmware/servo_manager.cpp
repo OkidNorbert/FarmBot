@@ -177,17 +177,6 @@ void ServoManager::updateContinuousRotation(int id) {
         diff = diff + 180; // Go the other way
     }
     
-    // If we're at target, stop rotation
-    if (abs(diff) < 2) { // 2 degree tolerance
-        if (_base_rotation_direction != 0) {
-            servos[id].servo.write(90); // Stop (90° = stop for continuous rotation)
-            _base_rotation_direction = 0;
-            servos[id].current_angle = target; // Snap to target
-            _base_virtual_angle = target;
-        }
-        return;
-    }
-    
     // Determine rotation direction
     int new_direction = (diff > 0) ? 1 : -1;
     
@@ -197,25 +186,91 @@ void ServoManager::updateContinuousRotation(int id) {
         _base_rotation_start_time = now;
     }
     
-    // Calculate servo command for continuous rotation
+    // Calculate servo command for continuous rotation based on current speed
     // For continuous rotation: 0° = full CCW, 90° = stop, 180° = full CW
-    // Use a moderate speed (around 75° or 105° for consistent rotation)
+    // Scale servo command angle based on current speed setting
+    // Speed range: MIN_SPEED to MAX_SPEED (typically 1-180 deg/s)
+    // Servo angle range: 0-90° (CCW) and 90-180° (CW)
+    // Map speed to servo angle: faster speed = further from 90° (stop)
+    
     int servo_angle;
+    int speed = (_current_speed > 0) ? _current_speed : DEFAULT_SPEED;
+    
+    // Normalize speed to 0-100% range (MIN_SPEED to MAX_SPEED)
+    // Then map to servo command range: 60-90° (CCW) and 90-120° (CW)
+    // This gives a safe operating range that avoids full speed extremes
+    int speed_percent = map(constrain(speed, MIN_SPEED, MAX_SPEED), MIN_SPEED, MAX_SPEED, 0, 100);
+    
     if (_base_rotation_direction == 1) {
-        // Rotate clockwise (toward higher angles) - use 105° for moderate CW speed
-        servo_angle = 105;
+        // Rotate clockwise (toward higher angles)
+        // Map speed: 0% = 90° (stop), 100% = 120° (max CW)
+        servo_angle = map(speed_percent, 0, 100, 90, 120);
     } else if (_base_rotation_direction == -1) {
-        // Rotate counter-clockwise (toward lower angles) - use 75° for moderate CCW speed
-        servo_angle = 75;
+        // Rotate counter-clockwise (toward lower angles)
+        // Map speed: 0% = 90° (stop), 100% = 60° (max CCW)
+        servo_angle = map(speed_percent, 0, 100, 90, 60);
     } else {
         servo_angle = 90; // Stop
     }
     
+    // Calculate speed factor for coasting compensation
+    float speed_factor;
+    if (_base_rotation_direction == 1) {
+        // CW: 90° = 0, 120° = 1.0 (full speed)
+        speed_factor = (float)(servo_angle - 90) / 30.0; // 30° range (90-120)
+    } else if (_base_rotation_direction == -1) {
+        // CCW: 90° = 0, 60° = 1.0 (full speed)
+        speed_factor = (float)(90 - servo_angle) / 30.0; // 30° range (60-90)
+    } else {
+        speed_factor = 0.0;
+    }
+    
+    // Calculate coasting distance based on current rotation speed
+    // Coasting occurs because servo doesn't stop instantly
+    float actual_rotation_speed = BASE_ROTATION_SPEED * speed_factor;
+    float coasting_distance = (actual_rotation_speed * BASE_COASTING_TIME_MS) / 1000.0; // Convert to degrees
+    
+    // Stop tolerance includes coasting compensation
+    float stop_threshold = BASE_STOP_TOLERANCE + coasting_distance;
+    
+    // If we're at target (accounting for coasting), stop rotation early
+    if (abs(diff) < stop_threshold) {
+        if (_base_rotation_direction != 0) {
+            servos[id].servo.write(90); // Stop (90° = stop for continuous rotation)
+            
+            // Store direction before resetting for coasting calculation
+            int coast_direction = _base_rotation_direction;
+            _base_rotation_direction = 0;
+            
+            // Account for coasting in final position
+            if (abs(diff) > BASE_STOP_TOLERANCE) {
+                // We stopped early to account for coasting
+                // Update virtual position to account for remaining coast
+                if (coast_direction == 1) {
+                    _base_virtual_angle = target - coasting_distance;
+                } else if (coast_direction == -1) {
+                    _base_virtual_angle = target + coasting_distance;
+                }
+            } else {
+                _base_virtual_angle = target;
+            }
+            
+            servos[id].current_angle = (int)_base_virtual_angle;
+        }
+        return;
+    }
+    
     servos[id].servo.write(servo_angle);
     
-    // Update virtual position based on time and rotation speed
+    // Update virtual position based on time and ACTUAL rotation speed
+    // Use current speed setting instead of hardcoded BASE_ROTATION_SPEED
+    // BASE_ROTATION_SPEED is now used as a calibration factor to convert
+    // servo command angle to actual rotation speed
     unsigned long elapsed = now - _base_rotation_start_time;
-    float degrees_rotated = (BASE_ROTATION_SPEED * elapsed) / 1000.0; // Convert ms to seconds
+    
+    // Calculate degrees rotated using calibrated base speed and speed factor
+    // Reuse actual_rotation_speed calculated earlier for coasting compensation
+    float degrees_rotated = (actual_rotation_speed * elapsed) / 1000.0; // Convert ms to seconds
     
     if (_base_rotation_direction == 1) {
         _base_virtual_angle = _base_virtual_angle + degrees_rotated;

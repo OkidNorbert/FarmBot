@@ -7,21 +7,31 @@ CommClientBLE::CommClientBLE() {
     _telemetryChar = nullptr;
     _connected = false;
     _messageCallback = nullptr;
+    _last_status_print = 0;
 }
 
 bool CommClientBLE::begin() {
+    Serial.println("========================================");
     Serial.println("Initializing BLE...");
+    Serial.println("========================================");
     
     if (!BLE.begin()) {
-        Serial.println("BLE initialization failed!");
+        Serial.println("❌ BLE initialization failed!");
+        Serial.println("   Check that you're using Arduino UNO R4 WiFi board");
         return false;
     }
     
+    Serial.println("✅ BLE hardware initialized");
+    
     // Set local name
     BLE.setLocalName(BLE_DEVICE_NAME);
+    Serial.print("✅ Device name set to: ");
+    Serial.println(BLE_DEVICE_NAME);
     
     // Create service
     _service = new BLEService(BLE_SERVICE_UUID);
+    Serial.print("✅ Service created: ");
+    Serial.println(BLE_SERVICE_UUID);
     
     // Create characteristics
     // Command characteristic (write from central, read by central)
@@ -30,6 +40,8 @@ bool CommClientBLE::begin() {
         BLERead | BLEWrite | BLENotify,
         512  // Max 512 bytes
     );
+    Serial.print("✅ Command characteristic created: ");
+    Serial.println(BLE_CHAR_UUID);
     
     // Telemetry characteristic (read by central, notify)
     _telemetryChar = new BLEStringCharacteristic(
@@ -37,20 +49,34 @@ bool CommClientBLE::begin() {
         BLERead | BLENotify,
         512
     );
+    Serial.println("✅ Telemetry characteristic created");
     
     // Add characteristics to service
     _service->addCharacteristic(*_commandChar);
     _service->addCharacteristic(*_telemetryChar);
+    Serial.println("✅ Characteristics added to service");
     
     // Add service
     BLE.addService(*_service);
+    Serial.println("✅ Service added to BLE");
     
     // Start advertising
     BLE.advertise();
     
-    Serial.print("BLE device advertising as: ");
+    Serial.println("========================================");
+    Serial.print("📡 BLE device advertising as: ");
     Serial.println(BLE_DEVICE_NAME);
-    Serial.println("Waiting for BLE central to connect...");
+    Serial.print("   Service UUID: ");
+    Serial.println(BLE_SERVICE_UUID);
+    Serial.print("   Characteristic UUID: ");
+    Serial.println(BLE_CHAR_UUID);
+    Serial.println("========================================");
+    Serial.println("⏳ Waiting for BLE central to connect...");
+    Serial.println("   (Use Python client or mobile app to connect)");
+    Serial.println("========================================");
+    
+    // Print status every 10 seconds if not connected
+    _last_status_print = 0;
     
     return true;
 }
@@ -61,17 +87,41 @@ void CommClientBLE::update() {
     
     if (central) {
         if (!_connected) {
-            Serial.print("Connected to BLE central: ");
+            Serial.println("========================================");
+            Serial.println("✅ BLE CONNECTION ESTABLISHED!");
+            Serial.print("   Central device: ");
             Serial.println(central.address());
+            Serial.print("   RSSI: ");
+            Serial.print(central.rssi());
+            Serial.println(" dBm");
+            Serial.println("========================================");
             _connected = true;
         }
         
-        // Check if command received
-        processReceivedCommand();
+        // Check if still connected
+        if (central.connected()) {
+            // Check if command received
+            processReceivedCommand();
+        } else {
+            // Connection lost
+            if (_connected) {
+                Serial.println("⚠️  BLE central disconnected");
+                _connected = false;
+            }
+        }
     } else {
         if (_connected) {
-            Serial.println("BLE central disconnected");
+            Serial.println("⚠️  BLE central disconnected");
             _connected = false;
+        }
+        
+        // Print status every 10 seconds if not connected
+        unsigned long now = millis();
+        if (now - _last_status_print > 10000) {
+            Serial.println("📡 BLE advertising... Waiting for connection...");
+            Serial.print("   Device name: ");
+            Serial.println(BLE_DEVICE_NAME);
+            _last_status_print = now;
         }
     }
 }
@@ -92,8 +142,13 @@ void CommClientBLE::onMessage(void (*callback)(String)) {
 void CommClientBLE::processReceivedCommand() {
     if (_commandChar && _commandChar->written()) {
         String command = _commandChar->value();
+        Serial.print("📥 BLE command received: ");
+        Serial.println(command);
+        
         if (_messageCallback) {
             _messageCallback(command);
+        } else {
+            Serial.println("⚠️  Warning: No message callback set!");
         }
     }
 }
