@@ -156,7 +156,7 @@ class BLEClient:
                     self._last_bluetooth_error_time = current_time
             else:
                 self.logger.error(f"BLE scan error: {e}")
-            await asyncio.sleep(5)
+                await asyncio.sleep(5)
     
     async def _send_command(self, command):
         """Send command via BLE"""
@@ -234,11 +234,29 @@ class HardwareController:
         self.frame_update_thread = None
         self.frame_update_running = False
         
+        # Servo availability configuration
+        # Set to False for servos that are not available (manually fixed)
+        self.servo_available = {
+            'base': False,      # Base servo not available - manually fixed
+            'shoulder': False,  # Shoulder servo not available - manually adjusted
+            'forearm': True,   # Forearm servo available
+            'elbow': True,     # Elbow servo available
+            'pitch': True,     # Pitch servo available
+            'claw': True       # Claw servo available
+        }
+        
+        # Fixed positions for unavailable servos (manually set)
+        # These should match your manual adjustments
+        self.fixed_servo_angles = {
+            'base': 90,        # Manually fixed base position
+            'shoulder': 135,   # Manually adjusted shoulder (gives forearm clearance to reach floor)
+        }
+        
         # Track current servo angles (for front/back detection)
         # Servo indices: 0=base, 1=shoulder/arm, 2=forearm, 3=elbow/wrist_yaw, 4=pitch, 5=claw
         self.current_servo_angles = {
-            'base': 90,
-            'shoulder': 90,  # Also called 'arm' in backend
+            'base': self.fixed_servo_angles['base'],
+            'shoulder': self.fixed_servo_angles['shoulder'],
             'forearm': 90,
             'elbow': 90,  # Also called 'wrist_yaw' in backend
             'pitch': 90,  # Also called 'wrist_pitch' in backend
@@ -251,6 +269,20 @@ class HardwareController:
         self.camera_index = 0
         self.detection_interval = 1.0 # Seconds between detections
         self.last_detection_time = 0
+        
+        # Calibration and coordinate mapping
+        self.homography_matrix = None
+        self.workspace_bounds = {
+            'x_min': -150, 'x_max': 150,  # mm
+            'y_min': 50, 'y_max': 250,    # mm
+            'z_min': 20, 'z_max': 150     # mm
+        }
+        self.load_calibration_matrix()
+        
+        # Pick tracking
+        self.pending_picks = {}  # Track pick commands sent to Arduino
+        self.pick_timeout = 10.0  # seconds to wait for pick completion
+        self.max_pick_retries = 2
         
         # Initialize AI
         self.initialize_classifier()
@@ -345,7 +377,12 @@ class HardwareController:
         Returns:
             bool: True if arm is facing front (shoulder and forearm 90-180°), False otherwise
         """
-        shoulder_angle = self.current_servo_angles.get('shoulder', 90)
+        # If shoulder is fixed, use fixed angle; otherwise use tracked angle
+        if not self.servo_available.get('shoulder', True):
+            shoulder_angle = self.fixed_servo_angles.get('shoulder', 135)
+        else:
+            shoulder_angle = self.current_servo_angles.get('shoulder', 90)
+        
         forearm_angle = self.current_servo_angles.get('forearm', 90)
         
         # Front: shoulder and forearm are 90-180 degrees
@@ -403,39 +440,100 @@ class HardwareController:
         self.logger.info(f"[AUTO] Found {len(ready_tomatoes)} ready tomato(s) to pick")
         
         # 4. Pick ALL ready tomatoes in sequence
+        picked_count = 0
+        skipped_count = 0
+        
         for i, target in enumerate(ready_tomatoes):
-            self.logger.info(f"[AUTO] Picking ready tomato {i+1}/{len(ready_tomatoes)} (confidence: {target['confidence']:.2f}, class: {target['class']})")
+            self.logger.info(f"[AUTO] Processing tomato {i+1}/{len(ready_tomatoes)} (confidence: {target['confidence']:.2f}, class: {target['class']})")
             
             # Act (if connected)
-            if self.arduino_connected:
-                # Calculate coordinates (Simplified mapping)
-                # In real usage, map pixels to mm
+            if not self.arduino_connected:
+                self.logger.info(f"[AUTO] Simulation: Pick command {i+1}/{len(ready_tomatoes)} (Arduino not connected)")
+                continue
+            
+            try:
+                # Get pixel coordinates from detection
                 center_x, center_y = target['center']
                 
-                # Get Depth from VL53L0X sensor
-                z_depth = self.get_distance_sensor()
+                # Convert pixel coordinates to arm coordinates (mm)
+                arm_coords = self.pixel_to_arm_coordinates(center_x, center_y)
+                if arm_coords is None:
+                    self.logger.error(f"[AUTO] Failed to convert coordinates for tomato {i+1}, skipping")
+                    skipped_count += 1
+                    continue
                 
-                # Use default distance if sensor fails to prevent command parsing errors
-                DEFAULT_DISTANCE_MM = 50  # Safe default distance
-                if z_depth is None:
-                    self.logger.warning(f"[AUTO] Distance sensor unavailable, using default {DEFAULT_DISTANCE_MM}mm")
-                    z_depth = DEFAULT_DISTANCE_MM
+                arm_x, arm_y = arm_coords
                 
-                self.logger.info(f"[AUTO] Picking ready tomato at {center_x}, {center_y}, {z_depth}mm")
+                # Get distance from ToF sensor (on claw) to tomato
+                # NOTE: ToF is on the claw, so it moves with the arm
+                # When arm is at approach position, ToF reads distance from claw to tomato
+                tof_distance = self.get_distance_sensor()
+                
+                # Calculate accurate depth for tomato
+                # Since ToF is on claw, distance is from claw to tomato surface
+                z_depth = self.calculate_tomato_depth(target, tof_distance)
+                
+                if tof_distance is None:
+                    self.logger.warning(f"[AUTO] ToF sensor unavailable, using calculated depth: {z_depth:.1f}mm")
+                else:
+                    self.logger.debug(f"[AUTO] ToF distance (claw to tomato): {tof_distance:.1f}mm, Calculated depth: {z_depth:.1f}mm")
+                
+                # Validate position is reachable
+                if not self.is_position_reachable(arm_x, arm_y, z_depth):
+                    self.logger.warning(f"[AUTO] Position ({arm_x:.1f}, {arm_y:.1f}, {z_depth:.1f}) out of reach, skipping tomato {i+1}")
+                    skipped_count += 1
+                    continue
+                
+                self.logger.info(f"[AUTO] Picking tomato {i+1} at arm coordinates: ({arm_x:.1f}, {arm_y:.1f}, {z_depth:.1f}) mm")
                 
                 # Send Pick Command
                 # Format: PICK <x> <y> <z> <class_id>
                 # class_id: 1=Ready/Ripe (goes to right), 0=Other (goes to left)
                 # Since we only pick ready tomatoes, always use class_id=1 (right bin)
                 class_id = 1  # Ready tomatoes go to the right
-                self.send_command(f"PICK {center_x} {center_y} {z_depth} {class_id}")
                 
-                # Wait for operation to complete before picking next tomato
-                time.sleep(5)
-            else:
-                self.logger.info(f"[AUTO] Simulation: Pick command {i+1}/{len(ready_tomatoes)} sent")
+                # Generate unique pick ID for tracking
+                pick_id = f"auto_{int(time.time() * 1000)}_{i}"
+                
+                # Send pick command
+                pick_command = f"PICK {int(arm_x)} {int(arm_y)} {int(z_depth)} {class_id}"
+                self.send_command(pick_command)
+                
+                # Track pick command
+                self.pending_picks[pick_id] = {
+                    'target': target,
+                    'arm_coords': (arm_x, arm_y, z_depth),
+                    'timestamp': time.time(),
+                    'retries': 0
+                }
+                
+                # Wait for pick operation to complete
+                # Arduino pick sequence typically takes 3-8 seconds
+                wait_time = 8.0
+                time.sleep(wait_time)
+                
+                # Check if pick completed (would need Arduino feedback for accurate tracking)
+                # For now, assume success after wait time
+                if pick_id in self.pending_picks:
+                    # Pick should have completed by now
+                    del self.pending_picks[pick_id]
+                    picked_count += 1
+                    self.logger.info(f"[AUTO] Pick {i+1} completed (assumed success)")
+                
+            except Exception as e:
+                self.logger.error(f"[AUTO] Error picking tomato {i+1}: {e}")
+                import traceback
+                traceback.print_exc()
+                skipped_count += 1
+                continue
         
-        self.logger.info(f"[AUTO] Completed picking {len(ready_tomatoes)} ready tomato(s) from this frame")
+        # Summary
+        if picked_count > 0:
+            self.logger.info(f"[AUTO] ✅ Successfully picked {picked_count} tomato(s)")
+        if skipped_count > 0:
+            self.logger.warning(f"[AUTO] ⚠️  Skipped {skipped_count} tomato(s)")
+        
+        self.logger.info(f"[AUTO] Completed cycle: {picked_count} picked, {skipped_count} skipped out of {len(ready_tomatoes)} ready tomatoes")
 
     def detect_tomatoes(self, frame):
         """Run detection on frame - uses YOLO if available, otherwise ResNet + color detection"""
@@ -624,8 +722,8 @@ class HardwareController:
                         self.logger.error("(To use Serial, connect Arduino via USB cable)")
                 else:
                     self.logger.error(f"Bluetooth connection failed: {e}")
-                if self.connection_type == 'bluetooth':
-                    return
+                    if self.connection_type == 'bluetooth':
+                        return
         
         # Try Serial connection (if bluetooth failed or not preferred)
         if not self.arduino_connected and self.connection_type != 'bluetooth':
@@ -1070,8 +1168,53 @@ class HardwareController:
             self.current_servo_angles[tracked_name] = int(angle)
             self.logger.debug(f"Updated {tracked_name} angle to {angle}°")
 
+    def filter_servo_command(self, command):
+        """Filter servo commands to skip unavailable servos
+        
+        Args:
+            command: Command string (e.g., "ANGLE 90 90 90 90 90 0")
+        
+        Returns:
+            str: Filtered command with unavailable servos set to -1 (no change)
+        """
+        if not command.startswith("ANGLE"):
+            return command  # Not a servo command, return as-is
+        
+        try:
+            # Parse ANGLE command: "ANGLE base shoulder forearm elbow pitch claw"
+            parts = command.split()
+            if len(parts) != 7:  # "ANGLE" + 6 servo values
+                return command
+            
+            angles = [int(parts[i]) if parts[i] != '-1' else -1 for i in range(1, 7)]
+            
+            # Map servo indices to names
+            servo_map = ['base', 'shoulder', 'forearm', 'elbow', 'pitch', 'claw']
+            
+            # Replace unavailable servos with -1 (no change) or use fixed angle
+            for i, servo_name in enumerate(servo_map):
+                if not self.servo_available.get(servo_name, True):
+                    # Use -1 to keep current position (servo is manually fixed)
+                    # The fixed angle is just for tracking, not sent to Arduino
+                    angles[i] = -1
+                    # Update our tracking with fixed angle
+                    if servo_name in self.fixed_servo_angles:
+                        self.current_servo_angles[servo_name] = self.fixed_servo_angles[servo_name]
+            
+            # Reconstruct command
+            filtered_command = f"ANGLE {' '.join(str(a) for a in angles)}"
+            return filtered_command
+            
+        except Exception as e:
+            self.logger.warning(f"Error filtering servo command: {e}, using original")
+            return command
+
     def send_command(self, command):
         """Send G-code style command to Arduino (via Serial or Bluetooth)"""
+        # Filter servo commands to skip unavailable servos
+        if command.startswith("ANGLE"):
+            command = self.filter_servo_command(command)
+        
         # Parse ANGLE commands to track servo angles
         if command.startswith("ANGLE"):
             try:
@@ -1136,10 +1279,224 @@ class HardwareController:
         """Control gripper (OPEN/CLOSE)"""
         return self.send_command(f"GRIPPER {state}")
     
+    def handle_pick_result(self, pick_id, status, result, duration_ms=0):
+        """Handle pick result from Arduino
+        
+        Args:
+            pick_id: Unique pick identifier
+            status: 'SUCCESS', 'FAILED', 'ABORTED', etc.
+            result: Result details (e.g., 'ripe', 'unripe', 'none')
+            duration_ms: Pick operation duration in milliseconds
+        """
+        if pick_id in self.pending_picks:
+            pick_info = self.pending_picks[pick_id]
+            if status == 'SUCCESS':
+                self.logger.info(f"[AUTO] ✅ Pick {pick_id} succeeded: {result} ({duration_ms}ms)")
+                del self.pending_picks[pick_id]
+            elif status == 'FAILED' or status == 'ABORTED':
+                pick_info['retries'] += 1
+                if pick_info['retries'] < self.max_pick_retries:
+                    self.logger.warning(f"[AUTO] ⚠️  Pick {pick_id} failed ({status}), will retry (attempt {pick_info['retries']}/{self.max_pick_retries})")
+                    # Could retry here if needed
+                else:
+                    self.logger.error(f"[AUTO] ❌ Pick {pick_id} failed after {pick_info['retries']} attempts: {status}")
+                    del self.pending_picks[pick_id]
+            else:
+                self.logger.warning(f"[AUTO] Unknown pick status: {status} for {pick_id}")
+        else:
+            self.logger.debug(f"[AUTO] Received pick result for unknown pick_id: {pick_id}")
+    
+    def cleanup_old_picks(self, timeout_seconds=30):
+        """Remove old pending picks that haven't completed
+        
+        Args:
+            timeout_seconds: Time after which a pick is considered stale
+        """
+        current_time = time.time()
+        stale_picks = []
+        
+        for pick_id, pick_info in self.pending_picks.items():
+            age = current_time - pick_info['timestamp']
+            if age > timeout_seconds:
+                stale_picks.append(pick_id)
+        
+        for pick_id in stale_picks:
+            self.logger.warning(f"[AUTO] Removing stale pick {pick_id} (age: {current_time - self.pending_picks[pick_id]['timestamp']:.1f}s)")
+            del self.pending_picks[pick_id]
+    
     # Conveyor belt not available in current setup
     # def set_conveyor(self, speed):
     #     """Control conveyor speed (0-100)"""
     #     return self.send_command(f"CONVEYOR {speed}")
+
+    def load_calibration_matrix(self):
+        """Load homography matrix from calibration file
+        
+        Tries multiple locations:
+        1. calibration.npz (from update_calibration)
+        2. calibration_data.json (from web interface)
+        3. homography.npy (from calibrate_homography.py)
+        
+        Returns:
+            bool: True if calibration loaded successfully
+        """
+        try:
+            # Try calibration.npz first
+            calib_file = self.project_root / 'calibration.npz'
+            if calib_file.exists():
+                data = np.load(str(calib_file))
+                if 'homography' in data:
+                    self.homography_matrix = data['homography']
+                    self.logger.info("✅ Loaded calibration from calibration.npz")
+                    return True
+            
+            # Try calibration_data.json (from web interface)
+            calib_json = self.project_root / 'calibration_data.json'
+            if calib_json.exists():
+                import json
+                with open(calib_json, 'r') as f:
+                    data = json.load(f)
+                    if 'homography' in data:
+                        self.homography_matrix = np.array(data['homography'])
+                        self.logger.info("✅ Loaded calibration from calibration_data.json")
+                        return True
+            
+            # Try homography.npy (from calibrate_homography.py)
+            homography_file = self.project_root / 'homography.npy'
+            if homography_file.exists():
+                self.homography_matrix = np.load(str(homography_file))
+                self.logger.info("✅ Loaded calibration from homography.npy")
+                return True
+            
+            self.logger.warning("⚠️  No calibration file found. Using fallback coordinate mapping.")
+            self.logger.warning("   Please calibrate the system for accurate automatic picking.")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load calibration: {e}")
+            return False
+    
+    def pixel_to_arm_coordinates(self, pixel_x, pixel_y):
+        """Convert pixel coordinates to arm coordinates (millimeters)
+        
+        Args:
+            pixel_x: X coordinate in pixels
+            pixel_y: Y coordinate in pixels
+        
+        Returns:
+            tuple: (arm_x, arm_y) in millimeters, or None if conversion failed
+        """
+        try:
+            if self.homography_matrix is not None:
+                # Use homography transformation
+                pixel_point = np.array([[[pixel_x, pixel_y]]], dtype=np.float32)
+                arm_point = cv2.perspectiveTransform(pixel_point, self.homography_matrix)
+                arm_x = float(arm_point[0][0][0])
+                arm_y = float(arm_point[0][0][1])
+                return arm_x, arm_y
+            else:
+                # Fallback: simple scaling (needs calibration!)
+                # Assume camera is 640x480, workspace is roughly 300x200mm
+                # This is a rough estimate and should be replaced with proper calibration
+                scale_x = 300.0 / 640.0  # mm per pixel
+                scale_y = 200.0 / 480.0  # mm per pixel
+                arm_x = pixel_x * scale_x - 150  # Center at 0
+                arm_y = pixel_y * scale_y + 50   # Offset from base
+                self.logger.debug(f"Using fallback scaling: ({pixel_x}, {pixel_y}) -> ({arm_x:.1f}, {arm_y:.1f})")
+                return arm_x, arm_y
+                
+        except Exception as e:
+            self.logger.error(f"Coordinate conversion failed: {e}")
+            return None
+    
+    def is_position_reachable(self, arm_x, arm_y, arm_z):
+        """Check if position is within arm workspace bounds
+        
+        Args:
+            arm_x: X coordinate in mm
+            arm_y: Y coordinate in mm
+            arm_z: Z coordinate (depth) in mm
+        
+        Returns:
+            bool: True if position is reachable
+        """
+        bounds = self.workspace_bounds
+        in_bounds = (
+            bounds['x_min'] <= arm_x <= bounds['x_max'] and
+            bounds['y_min'] <= arm_y <= bounds['y_max'] and
+            bounds['z_min'] <= arm_z <= bounds['z_max']
+        )
+        
+        if not in_bounds:
+            self.logger.warning(
+                f"Position ({arm_x:.1f}, {arm_y:.1f}, {arm_z:.1f}) out of bounds: "
+                f"X[{bounds['x_min']}, {bounds['x_max']}], "
+                f"Y[{bounds['y_min']}, {bounds['y_max']}], "
+                f"Z[{bounds['z_min']}, {bounds['z_max']}]"
+            )
+        
+        return in_bounds
+    
+    def calculate_tomato_depth(self, target, tof_distance):
+        """Calculate accurate depth for tomato picking
+        
+        IMPORTANT: ToF sensor is on the claw, so it moves with the arm!
+        When arm is positioned above tomato, ToF reads distance from claw to tomato.
+        
+        Args:
+            target: Detection dict with 'bbox' and 'center'
+            tof_distance: Distance from ToF sensor (on claw) to tomato surface (mm)
+                          This is read when arm is at approach position above tomato
+        
+        Returns:
+            float: Calculated depth in mm (distance from claw to tomato center)
+        """
+        try:
+            # Since ToF is on the claw and moves with the arm:
+            # - When arm approaches tomato, ToF reads distance to tomato surface
+            # - We need to account for tomato radius to get to center
+            # - Or use ToF distance directly if we want to pick from surface
+            
+            # Get bounding box to estimate tomato size
+            bbox = target.get('bbox', [0, 0, 50, 50])  # [x, y, w, h]
+            tomato_width = max(bbox[2], bbox[3])  # Use larger dimension
+            
+            # Estimate tomato radius from pixel size
+            # Typical tomato: 40-60mm diameter (20-30mm radius)
+            if tomato_width > 0:
+                # Rough estimate: 50mm tomato = ~100 pixels at reference distance
+                pixel_to_mm_ratio = 50.0 / 100.0
+                estimated_tomato_diameter = tomato_width * pixel_to_mm_ratio
+                estimated_tomato_radius = estimated_tomato_diameter / 2.0
+                # Clamp to reasonable range
+                estimated_tomato_radius = max(15.0, min(35.0, estimated_tomato_radius))
+            else:
+                # Default tomato radius
+                estimated_tomato_radius = 25.0  # 25mm radius = 50mm diameter
+            
+            # Depth calculation for ToF on claw:
+            # Option 1: Use ToF distance directly (pick from surface)
+            # Option 2: Subtract tomato radius (pick from center) - more accurate
+            if tof_distance is not None and tof_distance > 0:
+                # ToF reads distance to tomato surface
+                # Subtract radius to get to center (more accurate picking)
+                depth = tof_distance - estimated_tomato_radius
+                # But ensure we don't go negative (ToF might already be close)
+                depth = max(10.0, depth)  # Minimum 10mm clearance
+            else:
+                # Fallback: use default depth
+                depth = 50.0  # Default 50mm above surface
+            
+            # Clamp to reasonable range
+            depth = max(10.0, min(150.0, depth))
+            
+            self.logger.debug(f"ToF on claw: distance={tof_distance}mm, tomato_radius={estimated_tomato_radius:.1f}mm, depth={depth:.1f}mm")
+            
+            return depth
+            
+        except Exception as e:
+            self.logger.warning(f"Depth calculation error: {e}, using default")
+            return 50.0  # Safe default
 
     def update_calibration(self, points):
         """Update calibration data for coordinate mapping
@@ -1168,13 +1525,14 @@ class HardwareController:
                 return False
             
             # Save calibration
-            calibration_file = 'calibration.npz'
-            np.savez(calibration_file, 
+            self.homography_matrix = homography_matrix
+            calibration_file = self.project_root / 'calibration.npz'
+            np.savez(str(calibration_file), 
                      homography=homography_matrix,
                      pixel_coords=pixel_coords,
                      world_coords=world_coords)
             
-            self.logger.info(f"Calibration saved with {len(points)} points")
+            self.logger.info(f"✅ Calibration saved with {len(points)} points")
             return True
             
         except Exception as e:

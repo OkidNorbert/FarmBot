@@ -1485,6 +1485,13 @@ def handle_servo_command(data):
                 
                 hw_servo = servo_map[servo_name]
                 if hw_servo in servo_index_map:
+                    # Check if servo is available
+                    if HARDWARE_AVAILABLE and hw_controller:
+                        if hasattr(hw_controller, 'servo_available'):
+                            if not hw_controller.servo_available.get(hw_servo, True):
+                                emit('status', {'message': f'{servo_name} is not available (manually fixed)'})
+                                return  # Skip unavailable servos
+                    
                     # Only send SPEED command if speed changed (optimization to reduce lag)
                     # Speed is sent separately and cached to avoid redundant commands
                     # Convert 0-100% to degrees per second: Manual mode max 120, Auto mode 45
@@ -1622,6 +1629,39 @@ def handle_servo_command(data):
             except Exception as e:
                 print(f"Error saving pose: {e}")
                 emit('error', {'message': f'Failed to save pose: {str(e)}'})
+        
+        elif cmd == 'save_recording':
+            # Save recorded arm movement sequence
+            movements = data.get('movements', [])
+            duration = data.get('duration', 0)
+            name = data.get('name', f'Recording_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+            try:
+                import json
+                recordings_dir = Path('saved_recordings')
+                recordings_dir.mkdir(exist_ok=True)
+                
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                recording_file = recordings_dir / f'{name}.json'
+                
+                recording_data = {
+                    'timestamp': timestamp,
+                    'datetime': datetime.now().isoformat(),
+                    'name': name,
+                    'duration_ms': duration,
+                    'movement_count': len(movements),
+                    'movements': movements
+                }
+                
+                with open(recording_file, 'w') as f:
+                    json.dump(recording_data, f, indent=2)
+                
+                emit('status', {
+                    'message': f'Recording saved: {recording_file.name} ({len(movements)} movements, {duration/1000:.1f}s)',
+                    'recording_file': str(recording_file)
+                })
+            except Exception as e:
+                print(f"Error saving recording: {e}")
+                emit('error', {'message': f'Failed to save recording: {str(e)}'})
         
         elif cmd == 'reset':
             # Reset to home position (90° all joints, claw closed)

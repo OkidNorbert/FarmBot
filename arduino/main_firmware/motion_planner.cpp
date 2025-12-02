@@ -9,17 +9,17 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
     _liftHeightDeg = 20;     // Default 20° lift
     
     // Default bin poses (will be calibrated)
-    // Right bin (ready/ripe tomatoes) - a few cm to the right
-    _binRipe.base = 150;      // Right side (150° = ~60° right of center)
-    _binRipe.shoulder = 60;
+    // Right bin (ready/ripe tomatoes) - use -1 for fixed base/shoulder
+    _binRipe.base = -1;      // Use current base angle (fixed)
+    _binRipe.shoulder = -1;  // Use current shoulder angle (fixed)
     _binRipe.forearm = 110;
     _binRipe.elbow = 90;
     _binRipe.pitch = 80;
     _binRipe.claw = 90;
     
-    // Left bin (other categories) - a few cm to the left
-    _binUnripe.base = 30;      // Left side (30° = ~60° left of center)
-    _binUnripe.shoulder = 60;
+    // Left bin (other categories) - use -1 for fixed base/shoulder
+    _binUnripe.base = -1;      // Use current base angle (fixed)
+    _binUnripe.shoulder = -1;  // Use current shoulder angle (fixed)
     _binUnripe.forearm = 110;
     _binUnripe.elbow = 90;
     _binUnripe.pitch = 80;
@@ -74,9 +74,9 @@ void MotionPlanner::update() {
             
         case PICK_MOVE_TO_APPROACH: {
             // Calculate approach pose (offset from target)
-            int target_base = pixelToBaseAngle(_targetPixelX);
-            int approach_base = target_base;
-            int approach_shoulder = 60; // Lower shoulder for approach
+            // Use -1 for base/shoulder if they're fixed (will use current angle)
+            int approach_base = -1;      // Use current base angle (fixed)
+            int approach_shoulder = -1;  // Use current shoulder angle (fixed)
             int approach_forearm = 100;
             int approach_elbow = 90;
             int approach_pitch = 100; // Pitch down for approach
@@ -143,11 +143,14 @@ void MotionPlanner::update() {
         }
         
         case PICK_LIFT: {
-            // Lift by raising shoulder
-            int current_shoulder = _servoMgr->getAngle(1);
-            int lift_shoulder = constrain(current_shoulder + _liftHeightDeg, 15, 165);
+            // Lift by adjusting forearm (since shoulder may be fixed)
+            // This works with both fixed and movable shoulder configurations
+            int current_forearm = _servoMgr->getAngle(2);
+            // Lift by moving forearm up (decreasing angle brings arm up)
+            // Use config limits: LIMIT_FOREARM_MIN (10) and LIMIT_FOREARM_MAX (170)
+            int lift_forearm = constrain(current_forearm - _liftHeightDeg, 10, 170);
             
-            _servoMgr->setTarget(1, lift_shoulder);
+            _servoMgr->setTarget(2, lift_forearm);
             
             if (waitForMotionComplete()) {
                 _currentState = PICK_MOVE_TO_BIN;
@@ -245,7 +248,16 @@ void MotionPlanner::calculateTargetPose() {
 }
 
 bool MotionPlanner::moveToPose(int base, int shoulder, int forearm, int elbow, int pitch, int claw) {
-    return _servoMgr->setTargets(base, shoulder, forearm, elbow, pitch, claw);
+    // Handle -1 values (keep current angle) before calling setTargets
+    // This allows fixed base/shoulder to remain unchanged
+    int base_angle = (base == -1) ? _servoMgr->getAngle(0) : base;
+    int shoulder_angle = (shoulder == -1) ? _servoMgr->getAngle(1) : shoulder;
+    int forearm_angle = (forearm == -1) ? _servoMgr->getAngle(2) : forearm;
+    int elbow_angle = (elbow == -1) ? _servoMgr->getAngle(3) : elbow;
+    int pitch_angle = (pitch == -1) ? _servoMgr->getAngle(4) : pitch;
+    int claw_angle = (claw == -1) ? _servoMgr->getAngle(5) : claw;
+    
+    return _servoMgr->setTargets(base_angle, shoulder_angle, forearm_angle, elbow_angle, pitch_angle, claw_angle);
 }
 
 bool MotionPlanner::waitForMotionComplete(unsigned long timeout_ms) {

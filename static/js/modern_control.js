@@ -468,6 +468,9 @@ function sendServoCommand(servo, angle, speed) {
         speed: speed ? parseInt(speed) : currentSpeed
     };
     
+    // Track movement if recording
+    trackServoChange(servo, parseInt(angle));
+    
     console.log('📤 Sending servo command:', command);
     if (socket && socket.connected) {
         socket.emit('servo_command', command);
@@ -487,12 +490,12 @@ function setupEventListeners() {
         
         if (btnConnect) btnConnect.addEventListener('click', connectArduino);
         if (btnDisconnect) btnDisconnect.addEventListener('click', disconnectArduino);
-        if (btnStart) btnStart.addEventListener('click', startAutoMode);
+        if (btnStart) btnStart.addEventListener('click', startRecordingMovements);
         if (btnSave) btnSave.addEventListener('click', savePose);
         if (btnReset) btnReset.addEventListener('click', resetArm);
         
         const modeToggle = document.getElementById('modeToggle');
-        if (modeToggle) modeToggle.addEventListener('change', toggleMode);
+        if (modeToggle) modeToggle.addEventListener('change', toggleAutomaticMode);
     } catch (error) {
         console.error('Error setting up event listeners:', error);
     }
@@ -558,14 +561,69 @@ function disconnectArduino() {
     updateConnectionStatus(false);
 }
 
-// Start automatic mode
-function startAutoMode() {
+// Record arm movements (Start/Stop recording)
+let isRecording = false;
+let recordedMovements = [];
+let recordingStartTime = null;
+
+function startRecordingMovements() {
     if (!socket || !socket.connected) {
         showNotification('Socket.IO not connected. Please wait...', 'warning');
         return;
     }
-    socket.emit('servo_command', { cmd: 'start' });
-    showNotification('Starting automatic mode...', 'success');
+    
+    if (isRecording) {
+        // Stop recording
+        isRecording = false;
+        const btnStart = document.getElementById('btnStart');
+        if (btnStart) {
+            btnStart.innerHTML = '<i class="fas fa-play"></i> Start Recording';
+            btnStart.classList.remove('btn-danger');
+            btnStart.classList.add('btn-primary');
+        }
+        
+        // Save recorded movements
+        if (recordedMovements.length > 0) {
+            socket.emit('servo_command', {
+                cmd: 'save_recording',
+                movements: recordedMovements,
+                duration: Date.now() - recordingStartTime,
+                name: `Recording_${new Date().toISOString().replace(/[:.]/g, '-')}`
+            });
+            showNotification(`Recording stopped. Saved ${recordedMovements.length} movements.`, 'success');
+        } else {
+            showNotification('Recording stopped (no movements recorded).', 'info');
+        }
+        
+        recordedMovements = [];
+        recordingStartTime = null;
+    } else {
+        // Start recording
+        isRecording = true;
+        recordedMovements = [];
+        recordingStartTime = Date.now();
+        
+        const btnStart = document.getElementById('btnStart');
+        if (btnStart) {
+            btnStart.innerHTML = '<i class="fas fa-stop"></i> Stop Recording';
+            btnStart.classList.remove('btn-primary');
+            btnStart.classList.add('btn-danger');
+        }
+        
+        showNotification('Recording arm movements... Move the arm to record.', 'info');
+    }
+}
+
+// Track servo changes during recording
+function trackServoChange(servo, angle) {
+    if (isRecording && recordingStartTime) {
+        const timestamp = Date.now() - recordingStartTime;
+        recordedMovements.push({
+            timestamp: timestamp,
+            servo: servo,
+            angle: angle
+        });
+    }
 }
 
 // Save current pose
@@ -617,7 +675,49 @@ function resetArm() {
     }
 }
 
-// Toggle mode
+// Toggle automatic mode (for tomato detection and picking)
+function toggleAutomaticMode(event) {
+    const isAuto = event.target.checked;
+    
+    if (!socket || !socket.connected) {
+        showNotification('Socket.IO not connected. Please wait...', 'warning');
+        event.target.checked = !isAuto; // Revert toggle
+        return;
+    }
+    
+    // Send automatic mode command to backend
+    fetch('/api/auto/start', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    }).then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (isAuto) {
+                showNotification('Automatic mode started: Detecting and picking ready tomatoes', 'success');
+            } else {
+                // Stop automatic mode
+                fetch('/api/auto/stop', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                }).then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showNotification('Automatic mode stopped', 'info');
+                    }
+                });
+            }
+        } else {
+            showNotification('Failed to toggle automatic mode: ' + (data.error || 'Unknown error'), 'danger');
+            event.target.checked = !isAuto; // Revert toggle
+        }
+    }).catch(error => {
+        console.error('Error toggling automatic mode:', error);
+        showNotification('Error toggling automatic mode: ' + error.message, 'danger');
+        event.target.checked = !isAuto; // Revert toggle
+    });
+}
+
+// Legacy toggle mode (kept for compatibility)
 function toggleMode(event) {
     if (!socket || !socket.connected) {
         showNotification('Socket.IO not connected. Please wait...', 'warning');

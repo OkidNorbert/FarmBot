@@ -100,8 +100,8 @@ void CommClientBLE::update() {
         
         // Check if still connected
         if (central.connected()) {
-            // Check if command received
-            processReceivedCommand();
+        // Check if command received
+        processReceivedCommand();
         } else {
             // Connection lost
             if (_connected) {
