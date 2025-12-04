@@ -6,14 +6,6 @@
   "detection_history": [],
   "session_history": [
     {
-      "start_time": "2025-12-01T12:17:33.048132",
-      "session_id": "session_1764580653"
-    },
-    {
-      "start_time": "2025-12-01T12:18:16.596426",
-      "session_id": "session_1764580696"
-    },
-    {
       "start_time": "2025-12-01T12:24:33.164567",
       "session_id": "session_1764581073"
     },
@@ -204,6 +196,14 @@
     {
       "start_time": "2025-12-04T11:07:06.991025",
       "session_id": "session_1764835626"
+    },
+    {
+      "start_time": "2025-12-04T12:03:07.928189",
+      "session_id": "session_1764838987"
+    },
+    {
+      "start_time": "2025-12-04T12:11:10.227407",
+      "session_id": "session_1764839470"
     }
   ]
 }

@@ -2633,8 +2633,25 @@ def submit_feedback():
         # Use continuous learning system
         script_dir = os.path.dirname(os.path.abspath(__file__))
         script_path = os.path.join(script_dir, 'scripts', 'continuous_learning.py')
+        # Fallback to root if scripts subdirectory doesn't exist
+        if not os.path.exists(script_path):
+            script_path = os.path.join(script_dir, 'continuous_learning.py')
+        
+        # Use the virtual environment Python if available
+        python_cmd = sys.executable
+        venv_paths = [
+            os.path.join(os.getcwd(), 'tomato_sorter_env', 'bin', 'python'),
+            os.path.join(os.getcwd(), 'farmbot_env', 'bin', 'python'),
+            os.path.join(script_dir, 'tomato_sorter_env', 'bin', 'python'),
+            os.path.join(script_dir, 'farmbot_env', 'bin', 'python')
+        ]
+        for venv_path in venv_paths:
+            if os.path.exists(venv_path):
+                python_cmd = venv_path
+                break
+        
         cmd = [
-            sys.executable, script_path,
+            python_cmd, script_path,
             '--action', 'feedback',
             '--image', data['image_path'],
             '--predicted', data['predicted_class'],
@@ -4082,6 +4099,10 @@ def test_model(model_name):
                     
                     if len(detections) > 0:
                         print(f"[TEST] YOLO detected {len(detections)} tomatoes")
+                        # Debug: Print all detections
+                        for idx, det in enumerate(detections):
+                            print(f"[TEST] Detection {idx+1}: class='{det['class']}', confidence={det['confidence']:.3f}, class_id={det.get('class_id', 'N/A')}")
+                        
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         learning_dir = os.path.join('learning_data', 'new_images', 'test_uploads')
                         os.makedirs(learning_dir, exist_ok=True)
@@ -4090,6 +4111,9 @@ def test_model(model_name):
                             x, y, w, h = det['bbox']
                             predicted_class = det['class']
                             confidence = det['confidence']
+                            
+                            # Debug: Verify class mapping
+                            print(f"[TEST] Processing detection {i+1}: predicted_class='{predicted_class}', confidence={confidence:.3f}")
                             
                             # Add padding for crop
                             padding = 15

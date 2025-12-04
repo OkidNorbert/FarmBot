@@ -1,0 +1,15 @@
+[Unit]
+Description=AI Tomato Sorter
+After=network.target
+
+[Service]
+Type=simple
+User=student
+WorkingDirectory=/home/student/Downloads/emebeded
+ExecStart=/home/student/Downloads/emebeded/farmbot_env/bin/python web_interface.py
+Restart=always
+RestartSec=10
+Environment=PATH=/home/student/Downloads/emebeded/farmbot_env/bin
+
+[Install]
+WantedBy=multi-user.target

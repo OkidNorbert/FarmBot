@@ -601,7 +601,23 @@ def submit_feedback():
     if not all(key in data for key in ['image_path', 'predicted_class', 'correct_class', 'confidence']):
         return jsonify({'error': 'Missing required fields'}), 400
     try:
-        cmd = [sys.executable, 'continuous_learning.py', '--action', 'feedback',
+        # Use the virtual environment Python if available
+        python_cmd = sys.executable
+        venv_paths = [
+            os.path.join(os.getcwd(), 'tomato_sorter_env', 'bin', 'python'),
+            os.path.join(os.getcwd(), 'farmbot_env', 'bin', 'python')
+        ]
+        for venv_path in venv_paths:
+            if os.path.exists(venv_path):
+                python_cmd = venv_path
+                break
+        
+        # Find continuous_learning.py script
+        script_path = os.path.join(os.getcwd(), 'scripts', 'continuous_learning.py')
+        if not os.path.exists(script_path):
+            script_path = os.path.join(os.getcwd(), 'continuous_learning.py')
+        
+        cmd = [python_cmd, script_path, '--action', 'feedback',
                '--image', data['image_path'], '--predicted', data['predicted_class'],
                '--correct', data['correct_class'], '--confidence', str(data['confidence'])]
         result = subprocess.run(cmd, capture_output=True, text=True)

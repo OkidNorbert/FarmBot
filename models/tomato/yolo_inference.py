@@ -232,15 +232,26 @@ class YOLOTomatoDetector:
                         
                         # Map class ID to class name
                         # YOLO classes should match: 0=not_ready, 1=ready, 2=spoilt
-                        class_name = class_names.get(class_id, f"class_{class_id}")
-                        
-                        # Normalize class names to match expected format
-                        if class_name.lower() in ['unripe', 'not_ready', 'notready']:
+                        # Use class ID directly for most reliable mapping
+                        if class_id == 0:
                             class_name = 'not_ready'
-                        elif class_name.lower() in ['ripe', 'ready']:
+                        elif class_id == 1:
                             class_name = 'ready'
-                        elif class_name.lower() in ['spoilt', 'spoiled', 'damaged', 'old']:
+                        elif class_id == 2:
                             class_name = 'spoilt'
+                        else:
+                            # Fallback: get name from model and normalize
+                            class_name = class_names.get(class_id, f"class_{class_id}")
+                            # Normalize class names to match expected format
+                            if class_name.lower() in ['unripe', 'not_ready', 'notready']:
+                                class_name = 'not_ready'
+                            elif class_name.lower() in ['ripe', 'ready']:
+                                class_name = 'ready'
+                            elif class_name.lower() in ['spoilt', 'spoiled', 'damaged', 'old']:
+                                class_name = 'spoilt'
+                        
+                        # Debug logging for troubleshooting
+                        print(f"[YOLO DEBUG] Detection: Class ID={class_id}, Class Name='{class_name}', Confidence={confidence:.3f}, BBox=[{x},{y},{w},{h}]")
                         
                         # Calculate center
                         center_x = x + w // 2
