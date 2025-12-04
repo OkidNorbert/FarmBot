@@ -3993,45 +3993,10 @@ def test_model(model_name):
             os.remove(temp_path)
             return jsonify({'error': 'Could not read image file'}), 400
         
-        # Try to use hardware controller's classifier if available, otherwise load model directly
-        classifier = None
-        if HARDWARE_AVAILABLE and hw_controller and hasattr(hw_controller, 'classifier') and hw_controller.classifier:
-            classifier = hw_controller.classifier
-            print(f"[TEST] Using hardware controller's classifier")
-        
-        # If no classifier available, try to load model directly
-        if not classifier:
-            try:
-                from models.tomato.tomato_inference import TomatoClassifier
-                # Try to find model - first check model_name folder, then default tomato folder
-                model_path = None
-                model_folder = os.path.join(MODELS_FOLDER, model_name)
-                if os.path.exists(model_folder):
-                    # Check for best_model.pth in model folder
-                    potential_path = os.path.join(model_folder, 'best_model.pth')
-                    if os.path.exists(potential_path):
-                        model_path = potential_path
-                # Fallback to default tomato model
-                if not model_path:
-                    default_path = os.path.join(MODELS_FOLDER, 'tomato', 'best_model.pth')
-                    if os.path.exists(default_path):
-                        model_path = default_path
-                
-                if model_path and os.path.exists(model_path):
-                    print(f"[TEST] Loading classifier from: {model_path}")
-                    classifier = TomatoClassifier(model_path=model_path)
-                    print(f"[TEST] Classifier loaded successfully")
-                else:
-                    print(f"[TEST] Model file not found. Checked: {model_folder}/best_model.pth and {MODELS_FOLDER}/tomato/best_model.pth")
-            except Exception as e:
-                print(f"[TEST] Could not load classifier: {e}")
-                import traceback
-                traceback.print_exc()
-        
         results = []
         saved_crops = []
         
-        # Try YOLO detection first (if available)
+        # Try YOLO detection first (if available) - YOLO does both detection AND classification
         yolo_detector = get_yolo_detector()
         if yolo_detector and yolo_detector.is_available():
             try:
@@ -4118,8 +4083,42 @@ def test_model(model_name):
                 import traceback
                 traceback.print_exc()
         
-        # Fallback to ResNet classifier with color-based detection
+        # Fallback to ResNet classifier with color-based detection (only if YOLO not available)
         # Use color-based detection to find tomatoes, then classify each one individually
+        classifier = None
+        if HARDWARE_AVAILABLE and hw_controller and hasattr(hw_controller, 'classifier') and hw_controller.classifier:
+            classifier = hw_controller.classifier
+            print(f"[TEST] Using hardware controller's classifier")
+        
+        # If no classifier available, try to load model directly
+        if not classifier:
+            try:
+                from models.tomato.tomato_inference import TomatoClassifier
+                # Try to find model - first check model_name folder, then default tomato folder
+                model_path = None
+                model_folder = os.path.join(MODELS_FOLDER, model_name)
+                if os.path.exists(model_folder):
+                    # Check for best_model.pth in model folder
+                    potential_path = os.path.join(model_folder, 'best_model.pth')
+                    if os.path.exists(potential_path):
+                        model_path = potential_path
+                # Fallback to default tomato model
+                if not model_path:
+                    default_path = os.path.join(MODELS_FOLDER, 'tomato', 'best_model.pth')
+                    if os.path.exists(default_path):
+                        model_path = default_path
+                
+                if model_path and os.path.exists(model_path):
+                    print(f"[TEST] Loading classifier from: {model_path}")
+                    classifier = TomatoClassifier(model_path=model_path)
+                    print(f"[TEST] Classifier loaded successfully")
+                else:
+                    print(f"[TEST] Model file not found. Checked: {model_folder}/best_model.pth and {MODELS_FOLDER}/tomato/best_model.pth")
+            except Exception as e:
+                print(f"[TEST] Could not load classifier: {e}")
+                import traceback
+                traceback.print_exc()
+        
         if classifier:
             try:
                 print(f"[TEST] Classifier available, starting detection...")
