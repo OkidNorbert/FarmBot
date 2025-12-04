@@ -1638,6 +1638,13 @@ class HardwareController:
         # Determine arm orientation
         is_facing_front = self.is_arm_facing_front()
         
+        # Check if any AI model is loaded (YOLO or ResNet classifier)
+        model_loaded = False
+        if self.yolo_detector and hasattr(self.yolo_detector, 'is_available') and self.yolo_detector.is_available():
+            model_loaded = True
+        elif self.classifier is not None:
+            model_loaded = True
+        
         status = {
             'arduino_connected': arduino_conn,
             'camera_connected': self.camera_connected,
@@ -1645,7 +1652,7 @@ class HardwareController:
             'available_cameras': len(self.available_cameras) if hasattr(self, 'available_cameras') else 0,
             'auto_mode': self.auto_mode,
             'connection_type': connection_type,
-            'classifier_loaded': self.classifier is not None,
+            'classifier_loaded': model_loaded,
             'arm_orientation': 'front' if is_facing_front else 'back',
             'servo_angles': self.current_servo_angles.copy()
         }
