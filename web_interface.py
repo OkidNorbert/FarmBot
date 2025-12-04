@@ -387,22 +387,62 @@ def get_datasets():
                 # Count images in dataset
                 image_count = 0
                 class_folders = set()
+                is_yolo_format = False
+                yolo_classes = []
+                
+                # Check if this is a YOLO format dataset
+                data_yaml_path = os.path.join(item_path, 'data.yaml')
+                if os.path.exists(data_yaml_path):
+                    try:
+                        with open(data_yaml_path, 'r') as f:
+                            yolo_data = yaml.safe_load(f)
+                            if yolo_data and 'names' in yolo_data:
+                                is_yolo_format = True
+                                # Extract class names from YOLO data.yaml
+                                if isinstance(yolo_data['names'], dict):
+                                    yolo_classes = list(yolo_data['names'].values())
+                                elif isinstance(yolo_data['names'], list):
+                                    yolo_classes = yolo_data['names']
+                    except Exception as e:
+                        print(f"Error reading YOLO data.yaml for {item}: {e}")
+                
+                # Count images and find class folders (for classification format)
                 for root, dirs, files in os.walk(item_path):
                     for file in files:
                         if file.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff')):
                             image_count += 1
-                    # Look for class folders in train/val/test subdirectories
+                    # Look for class folders in train/val/test subdirectories (classification format)
                     if root != item_path and os.path.basename(os.path.dirname(root)) in ['train', 'val', 'test']:
                         class_name = os.path.basename(root)
-                        if class_name not in ['train', 'val', 'test']:
+                        if class_name not in ['train', 'val', 'test', 'images', 'labels']:
                             class_folders.add(class_name)
+                
+                # Use YOLO classes if YOLO format, otherwise use class folders
+                if is_yolo_format and yolo_classes:
+                    classes = yolo_classes
+                else:
+                    classes = list(class_folders)
+                
+                # Check for trained model (YOLO or classification)
+                has_model = os.path.exists(os.path.join(MODELS_FOLDER, item))
+                # Also check for YOLO model in runs directory
+                if not has_model:
+                    yolo_model_paths = [
+                        f'runs/detect/{item}/weights/best.pt',
+                        f'runs/detect/tomato_detector/weights/best.pt'  # Common YOLO training output
+                    ]
+                    for model_path in yolo_model_paths:
+                        if os.path.exists(model_path):
+                            has_model = True
+                            break
                 
                 datasets.append({
                     'name': item,
                     'path': item_path,
                     'image_count': image_count,
-                    'classes': list(class_folders),
-                    'has_model': os.path.exists(os.path.join(MODELS_FOLDER, item))
+                    'classes': classes,
+                    'has_model': has_model,
+                    'is_yolo': is_yolo_format
                 })
     return datasets
 
