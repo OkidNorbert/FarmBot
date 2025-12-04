@@ -20,6 +20,10 @@ temp/
 *.pth
 *.pt
 
+# Exception: Keep trained YOLO models for backup
+!runs/detect/tomato_detector/weights/best.pt
+!models/tomato/best_model.pth
+
 # OS Generated
 .DS_Store
 Thumbs.db
