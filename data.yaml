@@ -1,5 +1,5 @@
 # data.yaml for Ultralytics YOLOv8
-path: /home/okidi6/Documents/GitHub/emebeded/ieee_tomato_dataset  # absolute path to dataset root
+path: /home/student/Downloads/emebeded/datasets/tomato_yolo  # absolute path to dataset root
 train: images/train  # relative to 'path'
 val: images/val      # relative to 'path'  
 test: images/test    # relative to 'path'
@@ -12,9 +12,3 @@ names:
   0: not_ready
   1: ready
   2: spoilt
-
-# dataset statistics
-train_images: 6500
-val_images: 724
-test_images: 0
-total_images: 7224

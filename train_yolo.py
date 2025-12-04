@@ -11,6 +11,19 @@ import yaml
 from pathlib import Path
 import argparse
 
+# Check for optional dependencies
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+
 def check_ultralytics():
     """Check if ultralytics is installed"""
     try:
@@ -160,9 +173,9 @@ def train_yolo(data_yaml, epochs=100, imgsz=640, batch=16, model_size='n', outpu
         return None
     
     import json
-    import matplotlib.pyplot as plt
+    if MATPLOTLIB_AVAILABLE:
+        import matplotlib.pyplot as plt
     import numpy as np
-    from pathlib import Path
     
     print(f"🚀 Starting YOLOv8 training...")
     print(f"   Model: yolov8{model_size}.pt")
@@ -370,7 +383,7 @@ def main():
     
     # Train model
     train_yolo(data_yaml, epochs=args.epochs, imgsz=args.imgsz, batch=args.batch, 
-               model_size=args.model, output_dir=args.output_dir)
+               model_size=args.model, output_dir=None)
 
 if __name__ == '__main__':
     main()
