@@ -447,8 +447,10 @@ def get_datasets():
     return datasets
 
 def get_models():
-    """Get list of trained models"""
+    """Get list of trained models (both ResNet .pth and YOLO .pt models)"""
     models = []
+    
+    # Check for ResNet models in MODELS_FOLDER
     if os.path.exists(MODELS_FOLDER):
         for item in os.listdir(MODELS_FOLDER):
             item_path = os.path.join(MODELS_FOLDER, item)
@@ -473,8 +475,52 @@ def get_models():
                         'path': item_path,
                         'model_files': model_files,
                         'metadata': metadata,
+                        'model_type': 'resnet',
                         'inference_script': f"{item}_inference.py" if f"{item}_inference.py" in os.listdir(item_path) else None
                     })
+    
+    # Check for YOLO models in runs/detect directory
+    runs_base = 'runs/detect'
+    if os.path.exists(runs_base):
+        for run_dir in os.listdir(runs_base):
+            run_path = os.path.join(runs_base, run_dir)
+            if os.path.isdir(run_path):
+                weights_dir = os.path.join(run_path, 'weights')
+                if os.path.exists(weights_dir):
+                    # Check for best.pt or last.pt
+                    model_files = []
+                    if os.path.exists(os.path.join(weights_dir, 'best.pt')):
+                        model_files.append('best.pt')
+                    if os.path.exists(os.path.join(weights_dir, 'last.pt')):
+                        model_files.append('last.pt')
+                    
+                    if model_files:
+                        # Try to load metadata if available
+                        metadata = None
+                        metadata_path = os.path.join(run_path, 'training_metrics.json')
+                        if os.path.exists(metadata_path):
+                            try:
+                                with open(metadata_path, 'r') as f:
+                                    metadata = json.load(f)
+                            except:
+                                pass
+                        
+                        # Get training date from directory modification time
+                        import datetime
+                        mod_time = os.path.getmtime(run_path)
+                        training_date = datetime.datetime.fromtimestamp(mod_time).isoformat()
+                        
+                        models.append({
+                            'name': f'yolo_{run_dir}',
+                            'display_name': f'YOLO - {run_dir}',
+                            'path': weights_dir,
+                            'model_files': model_files,
+                            'metadata': metadata,
+                            'model_type': 'yolo',
+                            'training_date': training_date,
+                            'run_directory': run_dir
+                        })
+    
     return models
 
 # ==========================================
@@ -4528,7 +4574,19 @@ def test_model(model_name):
 
 @app.route('/download_model/<model_name>')
 def download_model(model_name):
-    """Download a trained model"""
+    """Download a trained model (ResNet .pth or YOLO .pt)"""
+    # Check if it's a YOLO model (starts with yolo_)
+    if model_name.startswith('yolo_'):
+        # Extract run directory name
+        run_dir = model_name.replace('yolo_', '')
+        weights_path = os.path.join('runs', 'detect', run_dir, 'weights', 'best.pt')
+        if os.path.exists(weights_path):
+            return send_file(weights_path, as_attachment=True, 
+                            download_name=f'{run_dir}_yolo_model.pt')
+        else:
+            return jsonify({'error': 'YOLO model file not found'}), 404
+    
+    # ResNet model in MODELS_FOLDER
     model_path = os.path.join(MODELS_FOLDER, model_name)
     best_model_path = os.path.join(model_path, 'best_model.pth')
     

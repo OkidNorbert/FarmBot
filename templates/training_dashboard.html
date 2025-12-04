@@ -180,16 +180,38 @@
                         <div class="card h-100">
                             <div class="card-body">
                                 <h6 class="card-title">
-                                    <i class="fas fa-robot"></i> {{ model.name }}
+                                    <i class="fas fa-robot"></i> {{ model.display_name if model.display_name else model.name }}
+                                    {% if model.model_type == 'yolo' %}
+                                        <span class="badge badge-info">YOLO</span>
+                                    {% else %}
+                                        <span class="badge badge-secondary">ResNet</span>
+                                    {% endif %}
                                 </h6>
                                 <p class="card-text">
                                     <small class="text-muted">
                                         {% if model.metadata %}
-                                            <i class="fas fa-chart-line"></i> {{ "%.1f"|format(model.metadata.best_val_accuracy) }}% accuracy<br>
-                                            <i class="fas fa-tags"></i> {{ model.metadata.class_names|length }} classes<br>
-                                            <i class="fas fa-calendar"></i> {{ model.metadata.training_date[:10] }}
+                                            {% if model.model_type == 'yolo' %}
+                                                <i class="fas fa-bullseye"></i> YOLO Detection Model<br>
+                                                {% if model.metadata.mAP50 %}
+                                                    <i class="fas fa-chart-line"></i> mAP50: {{ "%.2f"|format(model.metadata.mAP50 * 100) }}%<br>
+                                                {% endif %}
+                                                {% if model.training_date %}
+                                                    <i class="fas fa-calendar"></i> {{ model.training_date[:10] }}<br>
+                                                {% endif %}
+                                                <i class="fas fa-file"></i> {{ model.model_files|join(', ') }}
+                                            {% else %}
+                                                <i class="fas fa-chart-line"></i> {{ "%.1f"|format(model.metadata.best_val_accuracy) }}% accuracy<br>
+                                                <i class="fas fa-tags"></i> {{ model.metadata.class_names|length }} classes<br>
+                                                <i class="fas fa-calendar"></i> {{ model.metadata.training_date[:10] }}
+                                            {% endif %}
                                         {% else %}
-                                            <i class="fas fa-info-circle"></i> Model available
+                                            <i class="fas fa-info-circle"></i> Model available<br>
+                                            {% if model.model_type == 'yolo' %}
+                                                <i class="fas fa-bullseye"></i> YOLO Detection Model<br>
+                                                {% if model.training_date %}
+                                                    <i class="fas fa-calendar"></i> {{ model.training_date[:10] }}
+                                                {% endif %}
+                                            {% endif %}
                                         {% endif %}
                                     </small>
                                 </p>
