@@ -74,6 +74,7 @@ packages=(
     "libpng-dev" "libavcodec-dev" "libavformat-dev" "libswscale-dev"
     "libgtk2.0-dev" "v4l-utils" "v4l2loopback-dkms" "ffmpeg" "libsm6"
     "libxext6" "libxrender-dev" "libglib2.0-0"
+    "bluez" "libbluetooth-dev"  # Bluetooth support for BLE (bleak)
 )
 
 for package in "${packages[@]}"; do
@@ -100,6 +101,13 @@ fi
 # Step 3: Create or preserve virtual environment
 print_info "Setting up Python virtual environment..."
 VENV_NAME="farmbot_env"
+
+# Note about old environment (if it exists)
+if [ -d "tomato_sorter_env" ]; then
+    print_info "Note: Found old 'tomato_sorter_env' directory (will not be used)"
+    print_info "   The system now uses 'farmbot_env' instead"
+    print_info "   You can safely delete 'tomato_sorter_env' if you no longer need it"
+fi
 
 # SAFETY CHECK: Never delete existing environment
 if [ -d "$VENV_NAME" ]; then
@@ -181,7 +189,21 @@ core_packages=(
 )
 
 for package in "${core_packages[@]}"; do
-    if ! python -c "import ${package//-/_}" 2>/dev/null; then
+    # Handle special import names
+    import_name="${package//-/_}"
+    if [ "$package" == "opencv-python" ]; then
+        import_name="cv2"
+    elif [ "$package" == "python-dateutil" ]; then
+        import_name="dateutil"
+    elif [ "$package" == "pyyaml" ]; then
+        import_name="yaml"
+    elif [ "$package" == "pyserial" ]; then
+        import_name="serial"
+    elif [ "$package" == "python-dotenv" ]; then
+        import_name="dotenv"
+    fi
+    
+    if ! python -c "import $import_name" 2>/dev/null; then
         print_info "Installing $package..."
         pip install --cache-dir ~/.pip-cache "$package"
     else
@@ -189,17 +211,67 @@ for package in "${core_packages[@]}"; do
     fi
 done
 
+# Step 8b: Install critical project-specific dependencies
+print_info "Installing project-specific dependencies..."
+
+# Install ultralytics (YOLO) - REQUIRED for YOLO detection
+if ! python -c "from ultralytics import YOLO" 2>/dev/null; then
+    print_info "Installing ultralytics (YOLO support)..."
+    pip install --cache-dir ~/.pip-cache "ultralytics" || print_warning "Failed to install ultralytics (YOLO will not be available)"
+else
+    print_info "ultralytics already installed"
+fi
+
+# Install Flask-SocketIO and eventlet - REQUIRED for WebSocket support
+if ! python -c "import flask_socketio" 2>/dev/null; then
+    print_info "Installing flask-socketio and eventlet (WebSocket support)..."
+    pip install --cache-dir ~/.pip-cache "flask-socketio>=5.3.0" "eventlet>=0.33.0" || print_warning "Failed to install flask-socketio (WebSocket will not be available)"
+else
+    print_info "flask-socketio already installed"
+fi
+
+# Install python-socketio client - for client-side socketio
+if ! python -c "import socketio" 2>/dev/null; then
+    print_info "Installing python-socketio (client support)..."
+    pip install --cache-dir ~/.pip-cache "python-socketio[client]>=5.10.0" || print_warning "Failed to install python-socketio client"
+else
+    print_info "python-socketio already installed"
+fi
+
+# Install bleak - REQUIRED for Bluetooth Low Energy (BLE) support
+if ! python -c "from bleak import BleakClient" 2>/dev/null; then
+    print_info "Installing bleak (Bluetooth Low Energy support)..."
+    pip install --cache-dir ~/.pip-cache "bleak>=2.0.0" || print_warning "Failed to install bleak (BLE will not be available)"
+else
+    print_info "bleak already installed"
+fi
+
 # Install optional development packages
 print_info "Installing optional development packages..."
 optional_packages=("jupyter" "ipython" "gunicorn" "waitress" "imutils" "scipy")
 for package in "${optional_packages[@]}"; do
-    if ! python -c "import ${package//-/_}" 2>/dev/null; then
+    import_name="${package//-/_}"
+    if [ "$package" == "python-dateutil" ]; then
+        import_name="dateutil"
+    fi
+    
+    if ! python -c "import $import_name" 2>/dev/null; then
         print_info "Installing optional package: $package..."
         pip install --cache-dir ~/.pip-cache "$package" || print_warning "Failed to install $package (optional)"
     fi
 done
 
 print_status "Core dependencies installed"
+
+# Step 8c: Install from requirements.txt as backup (ensures all dependencies are covered)
+print_info "Installing from requirements.txt (if available)..."
+if [ -f "requirements.txt" ]; then
+    print_info "Found requirements.txt, installing additional dependencies..."
+    pip install --cache-dir ~/.pip-cache -r requirements.txt || print_warning "Some packages from requirements.txt failed to install"
+    print_status "Requirements.txt dependencies installed"
+else
+    print_info "requirements.txt not found, skipping"
+fi
 
 # Step 9: Create directory structure (only if not exists)
 print_info "Creating project directory structure..."
@@ -306,12 +378,75 @@ print_info "Testing installation..."
 python -c "
 import sys
 sys.path.append('.')
+missing = []
 try:
-    import torch, cv2, flask, yaml, numpy, pandas
+    import torch
+    print('✅ PyTorch')
+except ImportError:
+    missing.append('torch')
+    print('❌ PyTorch')
+
+try:
+    import cv2
+    print('✅ OpenCV')
+except ImportError:
+    missing.append('opencv-python')
+    print('❌ OpenCV')
+
+try:
+    import flask
+    print('✅ Flask')
+except ImportError:
+    missing.append('flask')
+    print('❌ Flask')
+
+try:
+    import yaml
+    print('✅ PyYAML')
+except ImportError:
+    missing.append('pyyaml')
+    print('❌ PyYAML')
+
+try:
+    import numpy
+    print('✅ NumPy')
+except ImportError:
+    missing.append('numpy')
+    print('❌ NumPy')
+
+try:
+    import pandas
+    print('✅ Pandas')
+except ImportError:
+    missing.append('pandas')
+    print('❌ Pandas')
+
+try:
+    from ultralytics import YOLO
+    print('✅ Ultralytics (YOLO)')
+except ImportError:
+    missing.append('ultralytics')
+    print('⚠️  Ultralytics (YOLO) - optional but recommended')
+
+try:
+    import flask_socketio
+    print('✅ Flask-SocketIO')
+except ImportError:
+    missing.append('flask-socketio')
+    print('⚠️  Flask-SocketIO - optional but recommended for WebSocket')
+
+try:
+    from bleak import BleakClient
+    print('✅ Bleak (BLE)')
+except ImportError:
+    missing.append('bleak')
+    print('⚠️  Bleak (BLE) - optional but required for Bluetooth Arduino')
+
+if missing:
+    print(f'⚠️  Missing packages: {', '.join(missing)}')
+    print('   Some features may not work. Run setup.sh again to install missing packages.')
+else:
     print('✅ All core packages imported successfully')
-except Exception as e:
-    print(f'❌ Import failed: {e}')
-    sys.exit(1)
 "
 
 # Test web interface import
@@ -397,8 +532,32 @@ fi
 
 # Check Python packages
 python -c "
-import torch, cv2, flask, yaml, numpy, pandas
-print('✅ All core packages available')
+import sys
+try:
+    import torch, cv2, flask, yaml, numpy, pandas
+    print('✅ All core packages available')
+    
+    # Check optional packages
+    try:
+        from ultralytics import YOLO
+        print('✅ YOLO (ultralytics) available')
+    except ImportError:
+        print('⚠️  YOLO (ultralytics) not available - YOLO detection will not work')
+    
+    try:
+        import flask_socketio
+        print('✅ Flask-SocketIO available')
+    except ImportError:
+        print('⚠️  Flask-SocketIO not available - WebSocket features will not work')
+    
+    try:
+        from bleak import BleakClient
+        print('✅ Bleak (BLE) available')
+    except ImportError:
+        print('⚠️  Bleak (BLE) not available - Bluetooth Arduino connection will not work')
+except Exception as e:
+    print(f'❌ Package check failed: {e}')
+    sys.exit(1)
 "
 
 print_status "Final verification completed"

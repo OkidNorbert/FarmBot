@@ -5,9 +5,11 @@ Handles YOLOv8 model loading and inference with graceful fallback
 """
 
 import os
+import sys
 import cv2
 import numpy as np
 from pathlib import Path
+import signal
 
 # Try to import ultralytics
 try:
@@ -32,6 +34,7 @@ class YOLOTomatoDetector:
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
         self.available = False
+        self._model_loaded = False
         
         if not YOLO_AVAILABLE:
             print("⚠️  Ultralytics not installed. Install with: pip install ultralytics")
@@ -40,15 +43,98 @@ class YOLOTomatoDetector:
         
         if model_path and os.path.exists(model_path):
             try:
-                self.model = YOLO(model_path)
-                self.available = True
-                print(f"✅ YOLO model loaded: {model_path}")
+                # Use lazy loading - don't load model until first use
+                # This prevents segfaults during import/initialization
+                self.model_path = model_path
+                self._model_loaded = False
+                self.available = True  # Mark as available, will load on first use
+                print(f"✅ YOLO model path set: {model_path} (will load on first use)")
             except Exception as e:
-                print(f"❌ Failed to load YOLO model: {e}")
+                print(f"❌ Failed to set YOLO model path: {e}")
                 self.available = False
         else:
             print(f"⚠️  YOLO model not found at: {model_path}")
             print("   Train a YOLO model first or provide correct path.")
+    
+    def _ensure_model_loaded(self):
+        """Lazy load the YOLO model on first use to prevent segfaults during import"""
+        if not self.available:
+            return False
+        if hasattr(self, '_model_loaded') and self._model_loaded and self.model is not None:
+            return True
+        if not hasattr(self, 'model_path') or not self.model_path:
+            return False
+        
+        # Check if model file exists and is readable
+        if not os.path.exists(self.model_path):
+            print(f"❌ YOLO model file not found: {self.model_path}")
+            self.available = False
+            return False
+        
+        try:
+            print(f"🔄 Loading YOLO model: {self.model_path}")
+            
+            # Force CPU mode via environment variables to prevent GPU segfaults
+            # os is already imported at the top of the file
+            original_cuda_visible = os.environ.get('CUDA_VISIBLE_DEVICES', None)
+            try:
+                # Hide GPU from PyTorch to force CPU mode
+                os.environ['CUDA_VISIBLE_DEVICES'] = ''
+                
+                # Try to load model with explicit device specification
+                # This prevents GPU-related segfaults during model loading
+                try:
+                    # Load model - it will use CPU since GPU is hidden
+                    self.model = YOLO(self.model_path)
+                    
+                    # Force model to CPU after loading to prevent GPU issues
+                    if hasattr(self.model, 'model') and hasattr(self.model.model, 'to'):
+                        try:
+                            import torch
+                            self.model.model.to('cpu')
+                        except:
+                            pass  # If to() doesn't work, continue anyway
+                    
+                    # Set device for predictions
+                    if hasattr(self.model, 'device'):
+                        try:
+                            self.model.device = 'cpu'
+                        except:
+                            pass
+                    
+                except Exception as load_error:
+                    print(f"❌ Error during YOLO model loading: {load_error}")
+                    import traceback
+                    traceback.print_exc()
+                    self.available = False
+                    self._model_loaded = False
+                    return False
+                    
+            finally:
+                # Restore original CUDA_VISIBLE_DEVICES
+                if original_cuda_visible is not None:
+                    os.environ['CUDA_VISIBLE_DEVICES'] = original_cuda_visible
+                elif 'CUDA_VISIBLE_DEVICES' in os.environ:
+                    del os.environ['CUDA_VISIBLE_DEVICES']
+            
+            # Verify model loaded successfully
+            if self.model is None:
+                print("❌ YOLO model is None after loading")
+                self.available = False
+                self._model_loaded = False
+                return False
+            
+            self._model_loaded = True
+            print(f"✅ YOLO model loaded successfully")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Failed to load YOLO model: {e}")
+            import traceback
+            traceback.print_exc()
+            self.available = False
+            self._model_loaded = False
+            return False
     
     def detect(self, frame, conf=None):
         """
@@ -67,19 +153,40 @@ class YOLOTomatoDetector:
                 'center': [cx, cy]  # Center coordinates
             }
         """
-        if not self.available or self.model is None:
+        if not self.available:
+            return []
+        
+        # Lazy load model on first use
+        if not self._ensure_model_loaded():
             return []
         
         if conf is None:
             conf = self.confidence_threshold
         
+        # Validate frame before inference
+        if frame is None or frame.size == 0:
+            print("⚠️  Invalid frame provided to YOLO detector")
+            return []
+        
+        # Ensure frame is numpy array and in correct format
+        if not isinstance(frame, np.ndarray):
+            print("⚠️  Frame is not a numpy array")
+            return []
+        
+        # Check frame dimensions
+        if len(frame.shape) != 3 or frame.shape[2] != 3:
+            print(f"⚠️  Invalid frame shape: {frame.shape}")
+            return []
+        
         try:
-            # Run YOLO inference
+            # Run YOLO inference with device specification to avoid GPU issues
+            # Use CPU explicitly to prevent segfaults from GPU memory issues
             results = self.model.predict(
                 source=frame,
                 conf=conf,
                 verbose=False,
-                imgsz=640  # Standard YOLO input size
+                imgsz=640,  # Standard YOLO input size
+                device='cpu'  # Force CPU to avoid GPU-related segfaults
             )
             
             detections = []
@@ -93,19 +200,35 @@ class YOLOTomatoDetector:
                     class_names = result.names
                     
                     for box in result.boxes:
-                        # Get bounding box coordinates (xyxy format)
-                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                        
-                        # Convert to (x, y, w, h) format
-                        x = x1
-                        y = y1
-                        w = x2 - x1
-                        h = y2 - y1
-                        
-                        # Get class and confidence
-                        class_id = int(box.cls[0].cpu().numpy())
-                        confidence = float(box.conf[0].cpu().numpy())
+                        try:
+                            # Get bounding box coordinates (xyxy format)
+                            # Use .tolist() instead of .cpu().numpy() to avoid segfaults
+                            xyxy = box.xyxy[0].tolist() if hasattr(box.xyxy[0], 'tolist') else box.xyxy[0].cpu().numpy()
+                            x1, y1, x2, y2 = int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])
+                            
+                            # Convert to (x, y, w, h) format
+                            x = x1
+                            y = y1
+                            w = x2 - x1
+                            h = y2 - y1
+                            
+                            # Get class and confidence - use safer extraction
+                            cls_data = box.cls[0]
+                            conf_data = box.conf[0]
+                            
+                            # Try tolist first, fallback to cpu().numpy()
+                            if hasattr(cls_data, 'tolist'):
+                                class_id = int(cls_data.tolist())
+                            else:
+                                class_id = int(cls_data.cpu().numpy())
+                            
+                            if hasattr(conf_data, 'tolist'):
+                                confidence = float(conf_data.tolist())
+                            else:
+                                confidence = float(conf_data.cpu().numpy())
+                        except Exception as box_error:
+                            print(f"⚠️  Error processing box: {box_error}")
+                            continue  # Skip this box and continue with next
                         
                         # Map class ID to class name
                         # YOLO classes should match: 0=not_ready, 1=ready, 2=spoilt
@@ -133,10 +256,24 @@ class YOLOTomatoDetector:
             
             return detections
             
-        except Exception as e:
-            print(f"YOLO detection error: {e}")
+        except RuntimeError as e:
+            # Handle PyTorch/GPU memory errors
+            error_msg = str(e)
+            print(f"❌ YOLO RuntimeError: {error_msg}")
+            if "out of memory" in error_msg.lower() or "cuda" in error_msg.lower():
+                print("   GPU memory issue - try using CPU or reducing image size")
             import traceback
             traceback.print_exc()
+            return []
+        except Exception as e:
+            # Catch all other exceptions including segfaults
+            error_type = type(e).__name__
+            print(f"❌ YOLO detection error ({error_type}): {e}")
+            import traceback
+            traceback.print_exc()
+            # Mark model as unavailable to prevent further crashes
+            self.available = False
+            self._model_loaded = False
             return []
     
     def detect_with_boxes(self, frame, conf=None):

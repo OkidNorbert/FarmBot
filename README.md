@@ -45,11 +45,10 @@ curl -fsSL https://raw.githubusercontent.com/your-repo/ai-tomato-sorter/main/set
 chmod +x setup.sh
 ./setup.sh
 ```
-source tomato_sorter_env/bin/activate && pip install --no-deps torch torchvision
 ### **Start the System:**
 ```bash
 # Activate environment and start
-source tomato_sorter_env/bin/activate
+source farmbot_env/bin/activate
 ./start.sh
 
 # OR direct start
@@ -93,8 +92,8 @@ python web_interface.py
 ### **Option 2: Manual Installation**
 ```bash
 # 1. Create virtual environment
-python3 -m venv tomato_sorter_env
-source tomato_sorter_env/bin/activate
+python3 -m venv farmbot_env
+source farmbot_env/bin/activate
 
 # 2. Install dependencies
 pip install -r requirements.txt
@@ -208,7 +207,7 @@ WEB_PORT=5001
 ./start.sh
 
 # OR manual start
-source tomato_sorter_env/bin/activate
+source farmbot_env/bin/activate
 python web_interface.py
 ```
 

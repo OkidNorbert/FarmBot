@@ -833,7 +833,7 @@ class HardwareController:
         """Load saved camera preference from file"""
         try:
             import json
-            camera_pref_file = Path(self.project_root) / 'camera_preference.json'
+            camera_pref_file = Path(self.project_root) / 'config' / 'camera_preference.json'
             if camera_pref_file.exists():
                 with open(camera_pref_file, 'r') as f:
                     pref = json.load(f)
@@ -1397,7 +1397,7 @@ class HardwareController:
                     return True
             
             # Try calibration_data.json (from web interface)
-            calib_json = self.project_root / 'calibration_data.json'
+            calib_json = self.project_root / 'config' / 'calibration_data.json'
             if calib_json.exists():
                 import json
                 with open(calib_json, 'r') as f:

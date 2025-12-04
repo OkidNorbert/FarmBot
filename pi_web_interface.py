@@ -547,7 +547,7 @@ def start_training(dataset_name):
         
         try:
             python_cmd = 'python'
-            venv_path = os.path.join(os.getcwd(), 'tomato_sorter_env/bin/python')
+            venv_path = os.path.join(os.getcwd(), 'farmbot_env/bin/python')
             if os.path.exists(venv_path):
                 python_cmd = venv_path
             

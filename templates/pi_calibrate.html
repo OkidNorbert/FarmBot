@@ -538,11 +538,11 @@
                 updatePointsList();
                 document.getElementById('clear-btn').disabled = true;
                 document.getElementById('calibrate-btn').disabled = true;
-                document.getElementById('test-btn').disabled = true;
+            document.getElementById('test-btn').disabled = true;
                 document.getElementById('point-input-form').style.display = 'none';
-                testMode = false;
-                document.getElementById('test-section').style.display = 'none';
-            }
+            testMode = false;
+            document.getElementById('test-section').style.display = 'none';
+        }
         }
 
         async function runCalibration() {
@@ -699,8 +699,8 @@
                                 // Calculate display coordinates from pixel coordinates
                                 // Validate pixel property exists and is a valid array
                                 if (p.pixel && Array.isArray(p.pixel) && p.pixel.length >= 2) {
-                                    p.displayX = p.pixel[0] * scaleX;
-                                    p.displayY = p.pixel[1] * scaleY;
+                                p.displayX = p.pixel[0] * scaleX;
+                                p.displayY = p.pixel[1] * scaleY;
                                 } else {
                                     console.warn(`Point ${i} missing valid pixel coordinates, skipping display calculation`);
                                 }

@@ -482,20 +482,39 @@ function resetTestModal() {
         // Use classification endpoint (handles both single and multi-tomato)
         const endpoint = `/test_model/${currentModel}`;
         
+        // Create AbortController for timeout (60 seconds)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        
         fetch(endpoint, {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: controller.signal
         })
-        .then(response => response.json())
+        .then(response => {
+            // Check if response is OK before parsing JSON
+            if (!response.ok) {
+                // Try to get error message from response
+                return response.json().then(errData => {
+                    throw new Error(errData.error || `Server error: ${response.status} ${response.statusText}`);
+                }).catch(() => {
+                    // If JSON parsing fails, throw with status
+                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                });
+            }
+            return response.json();
+        })
         .then(data => {
-        document.getElementById('testLoading').style.display = 'none';
-        document.getElementById('testButton').disabled = false;
+            clearTimeout(timeoutId);
+            document.getElementById('testLoading').style.display = 'none';
+            document.getElementById('testButton').disabled = false;
         
             if (data.success) {
                 let resultHtml = '';
                 
                 // Check if multiple tomatoes were detected
-                if (data.multi_tomato && data.results && data.results.length > 1) {
+                // Only show multi-tomato message for YOLO (reliable), not for ResNet (unreliable)
+                if (data.multi_tomato && data.results && data.results.length > 1 && data.detection_method === 'YOLO') {
                     resultHtml = `<div class="alert alert-success">
                         <h6><i class="fas fa-check-circle"></i> Multiple Tomatoes Detected (${data.tomato_count})</h6>
                         <p class="mb-2"><small>Each tomato was cropped and classified individually. All crops have been saved for continuous learning.</small></p>
@@ -519,21 +538,42 @@ function resetTestModal() {
                         </div>`;
                     });
                 } else if (data.results && data.results.length > 0) {
-                    // Single result (either single tomato or fallback to full image)
-                    const result = data.results[0];
-                    const confidencePercent = (result.confidence * 100).toFixed(1);
-                    let confidenceClass = 'success';
-                    if (confidencePercent < 50) confidenceClass = 'danger';
-                    else if (confidencePercent < 75) confidenceClass = 'warning';
-                    
-                    resultHtml = `<div class="alert alert-info">
-                        <h6><i class="fas fa-check-circle"></i> Prediction Result:</h6>
-                        <p class="mb-1">
-                            <strong>Class:</strong> <span class="badge bg-${confidenceClass}">${result.prediction}</span><br>
-                            <strong>Confidence:</strong> <span class="badge bg-${confidenceClass}">${confidencePercent}%</span>
-                        </p>
-                        ${result.learning_image_path ? '<small class="text-muted">Saved for continuous learning</small>' : ''}
-                    </div>`;
+                    // Handle results - for ResNet, show all results but without multi-tomato message
+                    // For single tomato or ResNet multi-tomato, show results directly
+                    if (data.results.length === 1) {
+                        // Single result (either single tomato or fallback to full image)
+                        const result = data.results[0];
+                        const confidencePercent = (result.confidence * 100).toFixed(1);
+                        let confidenceClass = 'success';
+                        if (confidencePercent < 50) confidenceClass = 'danger';
+                        else if (confidencePercent < 75) confidenceClass = 'warning';
+                        
+                        resultHtml = `<div class="alert alert-info">
+                            <h6><i class="fas fa-check-circle"></i> Prediction Result:</h6>
+                            <p class="mb-1">
+                                <strong>Class:</strong> <span class="badge bg-${confidenceClass}">${result.prediction}</span><br>
+                                <strong>Confidence:</strong> <span class="badge bg-${confidenceClass}">${confidencePercent}%</span>
+                            </p>
+                            ${result.learning_image_path ? '<small class="text-muted">Saved for continuous learning</small>' : ''}
+                        </div>`;
+                    } else {
+                        // Multiple results from ResNet - show without multi-tomato message (unreliable)
+                        // Just show the first result as primary
+                        const result = data.results[0];
+                        const confidencePercent = (result.confidence * 100).toFixed(1);
+                        let confidenceClass = 'success';
+                        if (confidencePercent < 50) confidenceClass = 'danger';
+                        else if (confidencePercent < 75) confidenceClass = 'warning';
+                        
+                        resultHtml = `<div class="alert alert-info">
+                            <h6><i class="fas fa-check-circle"></i> Prediction Result:</h6>
+                            <p class="mb-1">
+                                <strong>Class:</strong> <span class="badge bg-${confidenceClass}">${result.prediction}</span><br>
+                                <strong>Confidence:</strong> <span class="badge bg-${confidenceClass}">${confidencePercent}%</span>
+                            </p>
+                            <small class="text-muted">Note: Multiple detections found, showing primary result</small>
+                        </div>`;
+                    }
                 } else {
                     resultHtml = `<div class="alert alert-warning">
                         <h6><i class="fas fa-exclamation-triangle"></i> No Results</h6>
@@ -551,10 +591,31 @@ function resetTestModal() {
             }
         })
         .catch(error => {
+            clearTimeout(timeoutId);
             console.error('Error:', error);
-        document.getElementById('testLoading').style.display = 'none';
-        document.getElementById('testButton').disabled = false;
-        alert('Error testing model: ' + error.message);
+            document.getElementById('testLoading').style.display = 'none';
+            document.getElementById('testButton').disabled = false;
+            
+            // Provide more helpful error messages
+            let errorMessage = 'Error testing model: ';
+            if (error.name === 'AbortError') {
+                errorMessage += 'Request timed out after 60 seconds. The image may be too large or the model processing is taking too long. Please try with a smaller image or check server logs.';
+            } else if (error.message) {
+                errorMessage += error.message;
+            } else if (error.name === 'TypeError' && error.message && error.message.includes('Failed to fetch')) {
+                errorMessage += 'Connection failed. The server may be unreachable or the connection was reset. Please check if the server is running and try again.';
+            } else if (error.message && error.message.includes('ERR_CONNECTION_RESET')) {
+                errorMessage += 'Connection was reset by the server. The request may have timed out or the server encountered an error. Please try again with a smaller image or check server logs.';
+            } else {
+                errorMessage += 'An unexpected error occurred. Please try again.';
+            }
+            
+            // Show error in the result area instead of just alert
+            document.getElementById('testResult').innerHTML = `<div class="alert alert-danger">
+                <h6><i class="fas fa-exclamation-circle"></i> Error</h6>
+                <p>${errorMessage}</p>
+            </div>`;
+            document.getElementById('testResult').style.display = 'block';
         });
     }
 
@@ -813,6 +874,21 @@ function loadTrainingCharts() {
 // Load charts on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadTrainingCharts();
+});
+
+// Suppress unhandled promise rejections from libraries (like 403 errors with httpStatus 200)
+window.addEventListener('unhandledrejection', function(event) {
+    // Prevent the error from appearing in console if it's a known issue
+    if (event.reason && typeof event.reason === 'object') {
+        // Check if it's a 403 error that we can safely ignore (common from WebSocket libraries)
+        if (event.reason.code === 403 && event.reason.httpStatus === 200) {
+            event.preventDefault(); // Suppress the error
+            console.warn('Suppressed 403 error (likely from a library):', event.reason);
+            return;
+        }
+    }
+    // For other errors, log them but don't prevent default (let them show in console)
+    console.error('Unhandled promise rejection:', event.reason);
 });
 </script>
 

@@ -32,11 +32,20 @@ import numpy as np
 # Try to import YOLO inference module
 try:
     from models.tomato.yolo_inference import YOLOTomatoDetector, load_yolo_model, YOLO_AVAILABLE
-    YOLO_DETECTOR_AVAILABLE = True
-except ImportError:
+    # YOLO_DETECTOR_AVAILABLE is True only if module imported AND YOLO_AVAILABLE is True
+    YOLO_DETECTOR_AVAILABLE = YOLO_AVAILABLE if YOLO_AVAILABLE else False
+    if YOLO_AVAILABLE:
+        print(f"✅ YOLO module imported successfully (YOLO_AVAILABLE={YOLO_AVAILABLE})")
+    else:
+        print("⚠️  YOLO module imported but ultralytics not available")
+except ImportError as e:
     YOLO_DETECTOR_AVAILABLE = False
     YOLO_AVAILABLE = False
-    print("⚠️  YOLO inference module not available")
+    print(f"⚠️  YOLO inference module not available: {e}")
+except Exception as e:
+    YOLO_DETECTOR_AVAILABLE = False
+    YOLO_AVAILABLE = False
+    print(f"⚠️  Error importing YOLO module: {e}")
 
 # Set OpenCV log level to suppress warnings
 try:
@@ -139,7 +148,7 @@ UPLOAD_FOLDER = 'datasets'
 MODELS_FOLDER = 'models'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tiff'}
 MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max file size
-LOG_FILE = 'detection_log.csv'
+LOG_FILE = 'config/detection_log.csv'
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
@@ -177,7 +186,7 @@ LAST_CAMERA_SCAN_TIME = 0
 CAMERA_CACHE_TTL = 60  # Cache for 60 seconds
 
 # Statistics storage file
-STATS_FILE = 'monitoring_stats.json'
+STATS_FILE = 'config/monitoring_stats.json'
 
 # Initialize stats on module load
 _initialized_stats = False
@@ -1992,12 +2001,12 @@ def pi_dashboard():
 @app.route('/control')
 def control():
     """Robotic arm control interface with 3D visualization"""
-    return render_template('arm_control.html')
+    return render_template('arm_control.html', timestamp=int(time.time()))
 
 @app.route('/arm-control')
 def arm_control():
     """Robotic arm control interface with 3D visualization (backward compatibility)"""
-    return render_template('arm_control.html')
+    return render_template('arm_control.html', timestamp=int(time.time()))
 
 # Removed /controller route - consolidated to /control and /arm-control using arm_control.html
 
@@ -2137,7 +2146,7 @@ def api_calibration_save():
                     print("WARNING: Hardware controller save failed, using fallback")
         
         # Always save to JSON file (fallback or additional)
-        calibration_file = 'calibration_data.json'
+        calibration_file = 'config/calibration_data.json'
         calibration_data = {
             'points': data.get('points', []),
             'calibration': data.get('calibration', {}),
@@ -2186,7 +2195,7 @@ def api_calibration_load():
     """Load calibration data from file"""
     try:
         # Try to load from JSON file first
-        calibration_file = 'calibration_data.json'
+        calibration_file = 'config/calibration_data.json'
         if os.path.exists(calibration_file):
             with open(calibration_file, 'r') as f:
                 data = json.load(f)
@@ -2251,7 +2260,7 @@ def api_calibration_test():
         pixel = np.array(data['pixel'], dtype=np.float32)
         
         # Load calibration
-        calibration_file = 'calibration_data.json'
+        calibration_file = 'config/calibration_data.json'
         if not os.path.exists(calibration_file):
             if os.path.exists('calibration.npz'):
                 calib_data = np.load('calibration.npz')
@@ -2445,7 +2454,7 @@ def start_training(dataset_name):
         try:
             # Use the virtual environment Python
             python_cmd = 'python'
-            venv_path = os.path.join(os.getcwd(), 'tomato_sorter_env/bin/python')
+            venv_path = os.path.join(os.getcwd(), 'farmbot_env/bin/python')
             if os.path.exists(venv_path):
                 python_cmd = venv_path
             
@@ -2473,7 +2482,7 @@ def start_training(dataset_name):
                     
                     # Run conversion
                     convert_cmd = [
-                        python_cmd, 'train_yolo.py',
+                        python_cmd, 'scripts/training/train_yolo.py',
                         '--dataset', dataset_path,
                         '--output', yolo_output,
                         '--convert-only'
@@ -2504,7 +2513,7 @@ def start_training(dataset_name):
                 os.makedirs(training_output_dir, exist_ok=True)
                 
                 cmd = [
-                    python_cmd, 'train_yolo.py',
+                    python_cmd, 'scripts/training/train_yolo.py',
                     '--dataset', dataset_path,
                     '--output', yolo_output,
                     '--epochs', str(epochs),
@@ -2516,7 +2525,7 @@ def start_training(dataset_name):
             else:
                 # ResNet training (original)
                 cmd = [
-                    python_cmd, 'auto_train.py',
+                    python_cmd, 'scripts/training/auto_train.py',
                     '--dataset_path', os.path.join(UPLOAD_FOLDER, dataset_name),
                     '--crop_name', dataset_name,
                     '--epochs', str(epochs),
@@ -2622,8 +2631,10 @@ def submit_feedback():
     
     try:
         # Use continuous learning system
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(script_dir, 'scripts', 'continuous_learning.py')
         cmd = [
-            sys.executable, 'continuous_learning.py',
+            sys.executable, script_path,
             '--action', 'feedback',
             '--image', data['image_path'],
             '--predicted', data['predicted_class'],
@@ -2653,7 +2664,9 @@ def submit_feedback():
 def get_learning_stats():
     """Get continuous learning statistics"""
     try:
-        cmd = [sys.executable, 'continuous_learning.py', '--action', 'stats']
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(script_dir, 'scripts', 'continuous_learning.py')
+        cmd = [sys.executable, script_path, '--action', 'stats']
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode == 0:
@@ -2694,7 +2707,7 @@ def prepare_multi_tomato_dataset():
         
         # Get the script path
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        script_path = os.path.join(script_dir, 'prepare_multi_tomato_dataset.py')
+        script_path = os.path.join(script_dir, 'scripts', 'dataset', 'prepare_multi_tomato_dataset.py')
         
         # Build command
         cmd = [sys.executable, script_path, '--source', source_dir, '--output', output_dir]
@@ -2772,7 +2785,7 @@ def retrain_model():
         import os
         # Get the script path relative to web_interface.py location
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        script_path = os.path.join(script_dir, 'continuous_learning.py')
+        script_path = os.path.join(script_dir, 'scripts', 'continuous_learning.py')
         
         cmd = [sys.executable, script_path, '--action', 'retrain']
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=script_dir)
@@ -2963,13 +2976,13 @@ def start_continuous_training():
             
             # Use the virtual environment Python
             python_cmd = 'python'
-            venv_path = os.path.join(os.getcwd(), 'tomato_sorter_env/bin/python')
+            venv_path = os.path.join(os.getcwd(), 'farmbot_env/bin/python')
             if os.path.exists(venv_path):
                 python_cmd = venv_path
             
             # Run training
             cmd = [
-                python_cmd, 'train_tomato_classifier.py',
+                python_cmd, 'scripts/training/train_tomato_classifier.py',
                 '--dataset', temp_dataset_dir,
                 '--epochs', str(epochs),
                 '--batch_size', str(batch_size),
@@ -3120,7 +3133,9 @@ def get_training_curves():
 def get_recent_learning_images():
     """Get list of recent test images for continuous learning"""
     try:
-        cmd = [sys.executable, 'continuous_learning.py', '--action', 'recent_images', '--limit', '20']
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(script_dir, 'scripts', 'continuous_learning.py')
+        cmd = [sys.executable, script_path, '--action', 'recent_images', '--limit', '20']
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode == 0:
@@ -3166,7 +3181,9 @@ def delete_learning_image():
             return jsonify({'success': False, 'error': 'Invalid path'}), 403
         
         # Use continuous learning system to delete
-        cmd = [sys.executable, 'continuous_learning.py', '--action', 'delete_image', '--image', image_path]
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(script_dir, 'scripts', 'continuous_learning.py')
+        cmd = [sys.executable, script_path, '--action', 'delete_image', '--image', image_path]
         result = subprocess.run(cmd, capture_output=True, text=True)
         
         if result.returncode == 0:
@@ -3570,37 +3587,89 @@ def detect_tomatoes_in_frame(frame):
 # Global YOLO detector instance (lazy loaded)
 _yolo_detector = None
 
+def find_latest_yolo_model():
+    """Find the latest YOLO model in runs directory"""
+    import glob
+    # Check for latest run directory
+    runs_base = 'runs/detect'
+    if os.path.exists(runs_base):
+        # Find all run directories
+        run_dirs = [d for d in os.listdir(runs_base) if os.path.isdir(os.path.join(runs_base, d))]
+        if run_dirs:
+            # Sort by modification time (newest first)
+            run_dirs.sort(key=lambda x: os.path.getmtime(os.path.join(runs_base, x)), reverse=True)
+            # Check each run directory for best.pt
+            for run_dir in run_dirs:
+                weights_path = os.path.join(runs_base, run_dir, 'weights', 'best.pt')
+                if os.path.exists(weights_path):
+                    return weights_path
+    return None
+
 def get_yolo_detector():
     """Get or create YOLO detector instance"""
     global _yolo_detector
     if _yolo_detector is None and YOLO_DETECTOR_AVAILABLE:
+        print("🔍 Searching for YOLO model...")
         # Try to find YOLO model
         possible_paths = [
             'models/tomato/best.pt',
             'models/tomato/yolov8_tomato.pt',
+        ]
+        
+        # Add latest run directory model first (most likely to be the newest)
+        latest_model = find_latest_yolo_model()
+        if latest_model:
+            possible_paths.insert(0, latest_model)
+            print(f"   Found latest run: {latest_model}")
+        
+        # Also check common run directories
+        possible_paths.extend([
             'runs/detect/train/weights/best.pt',
             'runs/detect/tomato_detector/weights/best.pt'
-        ]
+        ])
         
         model_path = None
         for path in possible_paths:
             if os.path.exists(path):
                 model_path = path
+                print(f"   Found model at: {path}")
                 break
         
         if model_path:
-            _yolo_detector = load_yolo_model(model_path, confidence_threshold=0.5)
-            if _yolo_detector and _yolo_detector.is_available():
-                print(f"✅ YOLO detector initialized with model: {model_path}")
-            else:
+            print(f"🔄 Preparing YOLO model path: {model_path}")
+            try:
+                # Don't actually load the model here - just create the detector
+                # The model will be loaded lazily on first use to prevent segfaults
+                _yolo_detector = load_yolo_model(model_path, confidence_threshold=0.5)
+                if _yolo_detector and _yolo_detector.available:
+                    print(f"✅ YOLO detector created (model will load on first use): {model_path}")
+                else:
+                    print(f"❌ YOLO detector not available")
+                    _yolo_detector = None
+            except Exception as e:
+                print(f"❌ Error creating YOLO detector: {e}")
+                import traceback
+                traceback.print_exc()
                 _yolo_detector = None
         else:
             print("⚠️  YOLO model not found. Using color-based detection as fallback.")
             print("   Train a YOLO model or place it in one of these locations:")
             for path in possible_paths:
                 print(f"     - {path}")
+    elif not YOLO_DETECTOR_AVAILABLE:
+        print("⚠️  YOLO not available (ultralytics not installed)")
     
     return _yolo_detector
+
+def initialize_yolo_detector():
+    """Initialize YOLO detector at startup"""
+    print("🚀 Initializing YOLO detector at startup...")
+    detector = get_yolo_detector()
+    if detector and detector.is_available():
+        print("✅ YOLO detector ready")
+    else:
+        print("⚠️  YOLO detector not available - will use ResNet + color detection")
+    return detector
 
 def detect_tomatoes_with_boxes(frame):
     """Detect tomatoes in the frame and return detection status, count, and bounding boxes
@@ -3973,603 +4042,262 @@ def count_tomatoes_in_frame(frame):
 @app.route('/test_model/<model_name>', methods=['POST'])
 def test_model(model_name):
     """Test a trained model with an uploaded image - handles both single and multi-tomato images"""
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image provided'}), 400
-    
-    file = request.files['image']
-    if file and file.filename and allowed_file(file.filename):
-        # Save temporary image with original extension
-        temp_dir = 'temp'
-        os.makedirs(temp_dir, exist_ok=True)
+    temp_path = None
+    try:
+        if 'image' not in request.files:
+            return jsonify({'error': 'No image provided'}), 400
         
-        # Get original file extension
-        original_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'jpg'
-        temp_path = os.path.join(temp_dir, f'test_image.{original_ext}')
-        file.save(temp_path)
-        
-        # Load image for processing
-        frame = cv2.imread(temp_path)
-        if frame is None:
-            os.remove(temp_path)
-            return jsonify({'error': 'Could not read image file'}), 400
-        
-        results = []
-        saved_crops = []
-        
-        # Try YOLO detection first (if available) - YOLO does both detection AND classification
-        yolo_detector = get_yolo_detector()
-        if yolo_detector and yolo_detector.is_available():
-            try:
-                print(f"[TEST] Using YOLO for detection and classification...")
-                detections = yolo_detector.detect(frame, conf=0.5)
-                
-                if len(detections) > 0:
-                    print(f"[TEST] YOLO detected {len(detections)} tomatoes")
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    learning_dir = os.path.join('learning_data', 'new_images', 'test_uploads')
-                    os.makedirs(learning_dir, exist_ok=True)
-                    
-                    for i, det in enumerate(detections):
-                        x, y, w, h = det['bbox']
-                        predicted_class = det['class']
-                        confidence = det['confidence']
-                        
-                        # Add padding for crop
-                        padding = 15
-                        x_padded = max(0, x - padding)
-                        y_padded = max(0, y - padding)
-                        w_padded = min(frame.shape[1] - x_padded, w + 2 * padding)
-                        h_padded = min(frame.shape[0] - y_padded, h + 2 * padding)
-                        
-                        # Crop the tomato
-                        crop = frame[y_padded:y_padded+h_padded, x_padded:x_padded+w_padded]
-                        
-                        if crop.size > 0:
-                            # Save cropped tomato
-                            crop_filename = f'test_{timestamp}_tomato_{i+1}.{original_ext}'
-                            crop_path = os.path.join(learning_dir, crop_filename)
-                            cv2.imwrite(crop_path, crop)
-                            saved_crops.append(crop_path)
-                            
-                            # Save metadata
-                            try:
-                                cmd = [
-                                    sys.executable, 'continuous_learning.py',
-                                    '--action', 'save_metadata',
-                                    '--image', crop_path,
-                                    '--predicted', predicted_class,
-                                    '--confidence', str(confidence)
-                                ]
-                                subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                            except Exception as e:
-                                print(f"Error saving metadata: {e}")
-                            
-                            results.append({
-                                'tomato_number': i + 1,
-                                'prediction': predicted_class,
-                                'confidence': float(confidence),
-                                'bbox': [x_padded, y_padded, w_padded, h_padded],
-                                'crop_path': crop_path
-                            })
-                    
-                    # Return YOLO results
-                    if len(results) > 0:
-                        response_data = {
-                            'success': True,
-                            'tomato_count': len(results),
-                            'multiple_tomatoes': len(results) > 1,
-                            'results': results,
-                            'saved_crops': saved_crops,
-                            'detection_method': 'YOLO',
-                            'continuous_learning': True
-                        }
-                        
-                        if len(results) > 1:
-                            response_data['message'] = f"Multiple Tomatoes Detected ({len(results)})"
-                            response_data['note'] = "Each tomato was detected and classified individually by YOLO. All crops have been saved for continuous learning."
-                            response_data['multi_tomato'] = True
-                        else:
-                            result = results[0]
-                            response_data['prediction'] = result['prediction']
-                            response_data['confidence'] = result['confidence']
-                            response_data['message'] = f"Tomato detected and classified as: {result['prediction']}"
-                            response_data['multi_tomato'] = False
-                        
-                        os.remove(temp_path)
-                        return jsonify(response_data)
-                
-            except Exception as e:
-                print(f"[TEST] YOLO detection error: {e}, falling back to ResNet + color detection")
-                import traceback
-                traceback.print_exc()
-        
-        # Fallback to ResNet classifier with color-based detection (only if YOLO not available)
-        # Use color-based detection to find tomatoes, then classify each one individually
-        classifier = None
-        if HARDWARE_AVAILABLE and hw_controller and hasattr(hw_controller, 'classifier') and hw_controller.classifier:
-            classifier = hw_controller.classifier
-            print(f"[TEST] Using hardware controller's classifier")
-        
-        # If no classifier available, try to load model directly
-        if not classifier:
-            try:
-                from models.tomato.tomato_inference import TomatoClassifier
-                # Try to find model - first check model_name folder, then default tomato folder
-                model_path = None
-                model_folder = os.path.join(MODELS_FOLDER, model_name)
-                if os.path.exists(model_folder):
-                    # Check for best_model.pth in model folder
-                    potential_path = os.path.join(model_folder, 'best_model.pth')
-                    if os.path.exists(potential_path):
-                        model_path = potential_path
-                # Fallback to default tomato model
-                if not model_path:
-                    default_path = os.path.join(MODELS_FOLDER, 'tomato', 'best_model.pth')
-                    if os.path.exists(default_path):
-                        model_path = default_path
-                
-                if model_path and os.path.exists(model_path):
-                    print(f"[TEST] Loading classifier from: {model_path}")
-                    classifier = TomatoClassifier(model_path=model_path)
-                    print(f"[TEST] Classifier loaded successfully")
-                else:
-                    print(f"[TEST] Model file not found. Checked: {model_folder}/best_model.pth and {MODELS_FOLDER}/tomato/best_model.pth")
-            except Exception as e:
-                print(f"[TEST] Could not load classifier: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        if classifier:
-            try:
-                print(f"[TEST] Classifier available, starting detection...")
-                # First, detect tomato bounding boxes using color-based detection
-                tomato_detected, tomato_count, tomato_boxes = detect_tomatoes_with_boxes(frame)
-                
-                print(f"[TEST] Detected {tomato_count} tomatoes with bounding boxes: {tomato_boxes}")
-                
-                if tomato_count == 0:
-                    print(f"[TEST] No tomatoes detected via color detection, will try whole image classification")
-                
-                # If we only got 1 detection, check if it's a normal single tomato or needs splitting
-                if tomato_count == 1 and len(tomato_boxes) == 1:
-                    x, y, w, h = tomato_boxes[0]
-                    # Check if it's suspiciously large (likely multiple tomatoes merged)
-                    # Only attempt splitting if it's clearly too large for a single tomato
-                    is_large_detection = w > 300 or h > 300 or (w * h) > 100000
-                    
-                    if not is_large_detection:
-                        # Normal-sized single tomato - don't split, just classify as-is
-                        print(f"[TEST] Single tomato detected ({w}x{h}), treating as single tomato (no splitting)")
-                    elif is_large_detection:
-                        print(f"[TEST] Large single detection ({w}x{h}), attempting aggressive splitting...")
-                        try:
-                            # Re-detect with more aggressive settings
-                            # Use the original mask but with different processing
-                            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-                            # More specific red detection - but keep saturation reasonable
-                            lower_red1 = np.array([0, 50, 50])  # Lower saturation to catch all tomatoes
-                            upper_red1 = np.array([15, 255, 255])
-                            lower_red2 = np.array([165, 50, 50])
-                            upper_red2 = np.array([180, 255, 255])
-                            mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
-                            mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
-                            red_mask_aggressive = mask1 + mask2
-                            
-                            # Add green and orange masks too
-                            lower_green = np.array([35, 50, 50])
-                            upper_green = np.array([85, 255, 255])
-                            green_mask_aggressive = cv2.inRange(hsv, lower_green, upper_green)
-                            
-                            lower_orange = np.array([10, 50, 50])
-                            upper_orange = np.array([25, 255, 255])
-                            orange_mask_aggressive = cv2.inRange(hsv, lower_orange, upper_orange)
-                            
-                            combined_mask_aggressive = red_mask_aggressive + green_mask_aggressive + orange_mask_aggressive
-                            
-                            # Apply minimal opening to remove noise but keep tomatoes separate
-                            kernel_tiny = np.ones((3,3), np.uint8)
-                            combined_mask_aggressive = cv2.morphologyEx(combined_mask_aggressive, cv2.MORPH_OPEN, kernel_tiny)
-                            
-                            # Find ALL contours (including small ones that might be individual tomatoes)
-                            contours_aggressive, _ = cv2.findContours(combined_mask_aggressive, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                            
-                            print(f"[TEST] Aggressive detection found {len(contours_aggressive)} contours")
-                            
-                            # Extract individual tomato boxes with better filtering
-                            new_boxes = []
-                            for i, contour in enumerate(contours_aggressive):
-                                area = cv2.contourArea(contour)
-                                cx, cy, cw, ch = cv2.boundingRect(contour)
-                                
-                                # Check if this contour is within the large detection area
-                                if not (x <= cx <= x+w and y <= cy <= y+h):
-                                    continue  # Skip contours outside the large detection
-                                
-                                print(f"[TEST] Contour {i}: area={area}, size={cw}x{ch} at ({cx},{cy})")
-                                
-                                # More conservative area threshold - typical tomato is 10000-40000 pixels
-                                if area > 3000:  # Increased from 500 to filter out noise
-                                    # Check if it's a reasonable tomato size
-                                    if 50 < cw < 350 and 50 < ch < 350:  # More reasonable size range
-                                        aspect_ratio = cw / ch
-                                        if 0.5 < aspect_ratio < 2.0:  # More reasonable aspect ratio
-                                            # Check if this box overlaps significantly with existing boxes
-                                            overlaps = False
-                                            for existing_box in new_boxes:
-                                                ex, ey, ew, eh = existing_box
-                                                # Calculate overlap
-                                                overlap_x = max(0, min(cx + cw, ex + ew) - max(cx, ex))
-                                                overlap_y = max(0, min(cy + ch, ey + eh) - max(cy, ey))
-                                                overlap_area = overlap_x * overlap_y
-                                                box_area = cw * ch
-                                                if overlap_area > box_area * 0.5:  # More than 50% overlap
-                                                    overlaps = True
-                                                    break
-                                            
-                                            if not overlaps:
-                                                new_boxes.append((cx, cy, cw, ch))
-                                                print(f"[TEST] ✓ Added tomato: {cw}x{ch} at ({cx},{cy}), area={area}")
-                            
-                            if len(new_boxes) > 0:  # Changed from > 1 to > 0 to accept even single detections
-                                print(f"[TEST] Aggressive detection found {len(new_boxes)} tomatoes")
-                                tomato_boxes = new_boxes
-                                tomato_count = len(new_boxes)
-                            else:
-                                print(f"[TEST] Aggressive detection found 0 valid tomatoes, trying alternative method...")
-                                
-                                # Try watershed segmentation to separate individual tomatoes
-                                print(f"[TEST] Attempting watershed segmentation to separate tomatoes...")
-                                roi_mask = np.zeros(combined_mask_aggressive.shape, dtype=np.uint8)
-                                roi_mask[y:y+h, x:x+w] = combined_mask_aggressive[y:y+h, x:x+w]
-                                
-                                watershed_success = False
-                                # Use distance transform to find tomato centers
-                                dist_transform = cv2.distanceTransform(roi_mask, cv2.DIST_L2, 5)
-                                
-                                # Find local maxima (potential tomato centers)
-                                # Use a more aggressive threshold to find more centers
-                                max_dist = dist_transform.max()
-                                if max_dist > 20:
-                                    # Find peaks using a lower threshold
-                                    peaks_mask = (dist_transform > max_dist * 0.4).astype(np.uint8) * 255
-                                    
-                                    # Find connected components in peaks (each should be a tomato center)
-                                    num_peaks, peak_labels = cv2.connectedComponents(peaks_mask)
-                                    print(f"[TEST] Watershed found {num_peaks-1} potential tomato centers")
-                                    
-                                    if num_peaks > 1:  # More than just background
-                                        watershed_boxes = []
-                                        for peak_id in range(1, num_peaks):
-                                            # Get the region around this peak
-                                            peak_mask = (peak_labels == peak_id).astype(np.uint8) * 255
-                                            
-                                            # Find contours in this peak region
-                                            peak_contours, _ = cv2.findContours(peak_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                                            for peak_contour in peak_contours:
-                                                peak_area = cv2.contourArea(peak_contour)
-                                                if peak_area > 100:  # Valid peak region
-                                                    # Expand around the peak to get tomato bounding box
-                                                    px, py, pw, ph = cv2.boundingRect(peak_contour)
-                                                    # Expand by typical tomato radius
-                                                    expand = 75
-                                                    px = max(x, px - expand)
-                                                    py = max(y, py - expand)
-                                                    pw = min(w - (px - x), pw + 2*expand)
-                                                    ph = min(h - (py - y), ph + 2*expand)
-                                                    
-                                                    if pw > 50 and ph > 50 and pw < 300 and ph < 300:
-                                                        watershed_boxes.append((px, py, pw, ph))
-                                                        print(f"[TEST] Watershed tomato: {pw}x{ph} at ({px},{py})")
-                                        
-                                        if len(watershed_boxes) > 0:
-                                            print(f"[TEST] Watershed segmentation found {len(watershed_boxes)} tomatoes")
-                                            tomato_boxes = watershed_boxes
-                                            tomato_count = len(watershed_boxes)
-                                            watershed_success = True
-                                
-                                # Only do grid splitting if watershed didn't work
-                                if not watershed_success:
-                                    # Alternative: Use the large detection but split it into a grid
-                                    # Much more conservative estimation: count actual tomato regions in mask
-                                    roi_mask_cropped = combined_mask_aggressive[y:y+h, x:x+w]
-                                    
-                                    # Count connected components in the mask to estimate tomato count
-                                    num_components, component_labels = cv2.connectedComponents(roi_mask_cropped)
-                                    estimated_from_components = max(1, min(6, num_components - 1))  # Subtract 1 for background
-                                    print(f"[TEST] Mask has {num_components-1} connected components")
-                                    
-                                    # Also use area-based estimation as fallback
-                                    avg_tomato_size = 150
-                                    spacing_factor = 2.0  # Even more conservative
-                                    estimated_from_area = max(2, min(6, int((w * h) / (avg_tomato_size * avg_tomato_size * spacing_factor * 1.5))))
-                                    
-                                    # Use the minimum of the two estimates
-                                    estimated_tomatoes = min(estimated_from_components, estimated_from_area)
-                                    print(f"[TEST] Attempting grid-based split into ~{estimated_tomatoes} tomatoes (from {estimated_from_components} components, {estimated_from_area} area-based)")
-                                    
-                                    # Use a more reasonable grid - aim for roughly square cells
-                                    # Calculate optimal grid dimensions
-                                    aspect_ratio = w / h
-                                    if aspect_ratio > 1:
-                                        # Wider than tall
-                                        cols = int(np.ceil(np.sqrt(estimated_tomatoes * aspect_ratio)))
-                                        rows = int(np.ceil(estimated_tomatoes / cols))
-                                    else:
-                                        # Taller than wide
-                                        rows = int(np.ceil(np.sqrt(estimated_tomatoes / aspect_ratio)))
-                                        cols = int(np.ceil(estimated_tomatoes / rows))
-                                    
-                                    # Ensure we don't create too many cells - very conservative limits
-                                    cols = min(cols, 3)  # Max 3 columns (reduced from 4)
-                                    rows = min(rows, 3)  # Max 3 rows (reduced from 4)
-                                    
-                                    cell_w = w // cols
-                                    cell_h = h // rows
-                                    
-                                    grid_boxes = []
-                                    for row in range(rows):
-                                        for col in range(cols):
-                                            gx = x + col * cell_w
-                                            gy = y + row * cell_h
-                                            gw = cell_w
-                                            gh = cell_h
-                                            
-                                            # Ensure within bounds
-                                            gx = max(0, min(gx, frame.shape[1] - gw))
-                                            gy = max(0, min(gy, frame.shape[0] - gh))
-                                            gw = min(gw, frame.shape[1] - gx)
-                                            gh = min(gh, frame.shape[0] - gy)
-                                            
-                                            # Only add if size is reasonable
-                                            if gw > 60 and gh > 60:  # Minimum size for a tomato
-                                                # Validate that this cell actually contains tomato pixels
-                                                # Extract the cell region from the mask
-                                                cell_mask = roi_mask_cropped[row*cell_h:min((row+1)*cell_h, h), 
-                                                                             col*cell_w:min((col+1)*cell_w, w)]
-                                                
-                                                if cell_mask.size > 0:
-                                                    # Calculate tomato pixel density in this cell
-                                                    tomato_pixels = np.sum(cell_mask > 0)
-                                                    cell_area = cell_mask.size
-                                                    tomato_density = tomato_pixels / cell_area if cell_area > 0 else 0
-                                                    
-                                                    # Only add if at least 15% of the cell contains tomato pixels
-                                                    # This filters out empty or mostly-empty grid cells
-                                                    if tomato_density > 0.15:
-                                                        grid_boxes.append((gx, gy, gw, gh))
-                                                        print(f"[TEST] Grid cell ({row},{col}): {gw}x{gh} at ({gx},{gy}), density={tomato_density:.2f}")
-                                                    
-                                    if len(grid_boxes) > 0:
-                                        print(f"[TEST] Grid split created {len(grid_boxes)} valid boxes from {rows}x{cols} grid (filtered by tomato density)")
-                                        tomato_boxes = grid_boxes
-                                        tomato_count = len(grid_boxes)
-                                    else:
-                                        print(f"[TEST] Grid split found no valid cells with sufficient tomato content")
-                        except Exception as e:
-                            print(f"[TEST] Error in aggressive splitting: {e}")
-                            import traceback
-                            traceback.print_exc()
-                
-                if tomato_count > 0 and tomato_boxes and len(tomato_boxes) > 0:
-                    # Classify each detected tomato individually using the classifier
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    learning_dir = os.path.join('learning_data', 'new_images', 'test_uploads')
-                    os.makedirs(learning_dir, exist_ok=True)
-                    
-                    for i, (x, y, w, h) in enumerate(tomato_boxes):
-                        # Add padding
-                        padding = 15
-                        x_padded = max(0, x - padding)
-                        y_padded = max(0, y - padding)
-                        w_padded = min(frame.shape[1] - x_padded, w + 2 * padding)
-                        h_padded = min(frame.shape[0] - y_padded, h + 2 * padding)
-                        
-                        # Crop the tomato
-                        crop = frame[y_padded:y_padded+h_padded, x_padded:x_padded+w_padded]
-                        
-                        if crop.size == 0:
-                            print(f"[TEST] Skipping empty crop {i+1}")
-                            continue
-                        
-                        # Classify the individual tomato crop
-                        try:
-                            # Convert BGR to RGB for classification
-                            crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                            
-                            # Perform multiple classifications with slight variations for stability
-                            # This helps reduce noise from detection variations
-                            classification_results = []
-                            confidence_threshold = 0.5  # Increased from 0.3 for more stable results
-                            predicted_class = None
-                            confidence = None
-                            classification_result = None
-                            
-                            # First classification
-                            result1 = classifier.classify_crop(crop_rgb, confidence_threshold=confidence_threshold)
-                            if result1:
-                                classification_results.append(result1)
-                            
-                            # Second classification with slight crop variation (if first succeeded)
-                            if result1:
-                                # Try with slightly different crop (add small random padding variation)
-                                h, w = crop_rgb.shape[:2]
-                                if h > 20 and w > 20:
-                                    # Crop a slightly different region
-                                    offset_x = max(0, min(5, w // 20))
-                                    offset_y = max(0, min(5, h // 20))
-                                    crop_variant = crop_rgb[offset_y:h-offset_y, offset_x:w-offset_x]
-                                    if crop_variant.size > 0:
-                                        result2 = classifier.classify_crop(crop_variant, confidence_threshold=confidence_threshold)
-                                        if result2:
-                                            classification_results.append(result2)
-                            
-                            # Average the results if we have multiple classifications
-                            if classification_results:
-                                # Count votes for each class
-                                class_votes = {}
-                                total_confidence = 0
-                                
-                                for result in classification_results:
-                                    cls = result['class']
-                                    conf = result['confidence']
-                                    if cls not in class_votes:
-                                        class_votes[cls] = {'count': 0, 'confidence_sum': 0}
-                                    class_votes[cls]['count'] += 1
-                                    class_votes[cls]['confidence_sum'] += conf
-                                    total_confidence += conf
-                                
-                                # Get the class with most votes, or highest average confidence if tie
-                                best_class = None
-                                best_score = -1
-                                
-                                for cls, data in class_votes.items():
-                                    # Score = vote count * average confidence
-                                    avg_conf = data['confidence_sum'] / data['count']
-                                    score = data['count'] * avg_conf
-                                    if score > best_score:
-                                        best_score = score
-                                        best_class = cls
-                                
-                                # Use the best class and average confidence
-                                predicted_class = best_class
-                                avg_confidence = class_votes[best_class]['confidence_sum'] / class_votes[best_class]['count']
-                                confidence = avg_confidence
-                                
-                                print(f"[TEST] Tomato {i+1}: {predicted_class} ({confidence:.2f}) [from {len(classification_results)} classifications]")
-                            else:
-                                # Try with lower threshold if no results
-                                classification_result = classifier.classify_crop(crop_rgb, confidence_threshold=0.3)
-                                if classification_result:
-                                    predicted_class = classification_result['class']
-                                    confidence = classification_result['confidence']
-                                    print(f"[TEST] Tomato {i+1}: {predicted_class} ({confidence:.2f}) [low confidence]")
-                                else:
-                                    print(f"[TEST] Tomato {i+1}: Classification below threshold")
-                                    continue
-                            
-                            # Ensure we have valid classification before proceeding
-                            if predicted_class is None or confidence is None:
-                                print(f"[TEST] Tomato {i+1}: No valid classification obtained")
-                                continue
-                            
-                            # Save cropped tomato
-                            crop_filename = f'test_{timestamp}_tomato_{i+1}.{original_ext}'
-                            crop_path = os.path.join(learning_dir, crop_filename)
-                            cv2.imwrite(crop_path, crop)
-                            saved_crops.append(crop_path)
-                            
-                            # Save metadata for this crop
-                            try:
-                                cmd = [
-                                    sys.executable, 'continuous_learning.py',
-                                    '--action', 'save_metadata',
-                                    '--image', crop_path,
-                                    '--predicted', predicted_class,
-                                    '--confidence', str(confidence)
-                                ]
-                                subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                            except Exception as e:
-                                print(f"Error saving metadata: {e}")
-                            
-                            # Ensure prediction is a valid string
-                            if not predicted_class or not isinstance(predicted_class, str):
-                                predicted_class = 'Unknown'
-                            
-                            results.append({
-                                'tomato_number': i + 1,
-                                'prediction': predicted_class,
-                                'confidence': float(confidence) if confidence is not None else 0.0,
-                                'bbox': [x_padded, y_padded, w_padded, h_padded],
-                                'crop_path': crop_path
-                            })
-                        except Exception as e:
-                            print(f"[TEST] Error classifying crop {i+1}: {e}")
-                            import traceback
-                            traceback.print_exc()
-                            continue
-                else:
-                    print(f"[TEST] No tomatoes detected or empty boxes. Count: {tomato_count}, Boxes: {tomato_boxes}")
-            except Exception as e:
-                print(f"[TEST] Error in multi-tomato detection/classification: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # If no tomatoes detected, try to classify the whole image as fallback
-        if len(results) == 0 and classifier:
-            print(f"[TEST] No individual tomatoes detected, trying whole image classification...")
-            try:
-                # Convert frame to RGB
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                # Classify the whole frame with lower threshold
-                classification_result = classifier.classify_crop(frame_rgb, confidence_threshold=0.1)
-                
-                if classification_result:
-                    print(f"[TEST] Whole image classification: {classification_result['class']} ({classification_result['confidence']:.2f})")
-                    # Save image for continuous learning
-                    learning_image_path = os.path.join('learning_data', 'new_images', 'test_uploads', f'test_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{original_ext}')
-                    os.makedirs(os.path.dirname(learning_image_path), exist_ok=True)
-                    cv2.imwrite(learning_image_path, frame)
-                    
-                    # Ensure prediction is a valid string
-                    predicted_class = classification_result.get('class', 'Unknown')
-                    if not predicted_class or not isinstance(predicted_class, str):
-                        predicted_class = 'Unknown'
-                    
-                    results.append({
-                        'prediction': predicted_class,
-                        'confidence': float(classification_result.get('confidence', 0.0)) if classification_result.get('confidence') is not None else 0.0,
-                        'learning_image_path': learning_image_path,
-                        'note': 'Whole image classified (no individual tomatoes detected)',
-                        'detection_method': 'ResNet (fallback)'
-                    })
-                else:
-                    print(f"[TEST] Whole image classification below threshold")
-            except Exception as e:
-                print(f"[TEST] Error in whole image classification: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # Clean up temp file
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        
-        if len(results) > 0:
-            # For single tomato, also include direct prediction/confidence for backward compatibility
-            response_data = {
-                'success': True,
-                'tomato_count': len(results),
-                'results': results,
-                'multi_tomato': len(results) > 1,
-                'continuous_learning': True,
-                'detection_method': 'ResNet + Color Detection'
-            }
+        file = request.files['image']
+        if file and file.filename and allowed_file(file.filename):
+            # Save temporary image with original extension
+            temp_dir = 'temp'
+            os.makedirs(temp_dir, exist_ok=True)
             
-            # Add direct prediction/confidence for single tomato (for frontend compatibility)
-            if len(results) == 1:
-                response_data['prediction'] = results[0].get('prediction', 'Unknown') or 'Unknown'
-                response_data['confidence'] = results[0].get('confidence', 0.0) or 0.0
-            elif len(results) > 1:
-                # For multiple tomatoes, use the first one as primary result
-                response_data['prediction'] = results[0].get('prediction', 'Unknown') or 'Unknown'
-                response_data['confidence'] = results[0].get('confidence', 0.0) or 0.0
+            # Get original file extension
+            original_ext = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'jpg'
+            temp_path = os.path.join(temp_dir, f'test_image.{original_ext}')
+            file.save(temp_path)
             
-            return jsonify(response_data)
-        else:
-            # No results at all - classifier might not be working or image has no tomatoes
-            error_msg = 'Could not process image or no tomatoes detected.'
+            # Load image for processing
+            frame = cv2.imread(temp_path)
+            if frame is None:
+                os.remove(temp_path)
+                return jsonify({'error': 'Could not read image file'}), 400
+            
+            results = []
+            saved_crops = []
+            
+            # Try YOLO detection first (if available) - YOLO does both detection AND classification
+            yolo_detector = get_yolo_detector()
+            if yolo_detector and yolo_detector.is_available():
+                try:
+                    print(f"[TEST] Using YOLO for detection and classification...")
+                    # Validate frame before passing to YOLO
+                    if frame is None or frame.size == 0:
+                        print("[TEST] Invalid frame, skipping YOLO detection")
+                        raise ValueError("Invalid frame")
+                    
+                    # Run YOLO detection with error handling
+                    detections = yolo_detector.detect(frame, conf=0.5)
+                    
+                    if len(detections) > 0:
+                        print(f"[TEST] YOLO detected {len(detections)} tomatoes")
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        learning_dir = os.path.join('learning_data', 'new_images', 'test_uploads')
+                        os.makedirs(learning_dir, exist_ok=True)
+                        
+                        for i, det in enumerate(detections):
+                            x, y, w, h = det['bbox']
+                            predicted_class = det['class']
+                            confidence = det['confidence']
+                            
+                            # Add padding for crop
+                            padding = 15
+                            x_padded = max(0, x - padding)
+                            y_padded = max(0, y - padding)
+                            w_padded = min(frame.shape[1] - x_padded, w + 2 * padding)
+                            h_padded = min(frame.shape[0] - y_padded, h + 2 * padding)
+                            
+                            # Crop the tomato
+                            crop = frame[y_padded:y_padded+h_padded, x_padded:x_padded+w_padded]
+                            
+                            if crop.size > 0:
+                                # Save cropped tomato
+                                crop_filename = f'test_{timestamp}_tomato_{i+1}.{original_ext}'
+                                crop_path = os.path.join(learning_dir, crop_filename)
+                                cv2.imwrite(crop_path, crop)
+                                saved_crops.append(crop_path)
+                                
+                                # Save metadata
+                                try:
+                                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                                    script_path = os.path.join(script_dir, 'scripts', 'continuous_learning.py')
+                                    cmd = [
+                                        sys.executable, script_path,
+                                        '--action', 'save_metadata',
+                                        '--image', crop_path,
+                                        '--predicted', predicted_class,
+                                        '--confidence', str(confidence)
+                                    ]
+                                    subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                                except Exception as e:
+                                    print(f"Error saving metadata: {e}")
+                                
+                                results.append({
+                                    'tomato_number': i + 1,
+                                    'prediction': predicted_class,
+                                    'confidence': float(confidence),
+                                    'bbox': [x_padded, y_padded, w_padded, h_padded],
+                                    'crop_path': crop_path
+                                })
+                        
+                        # Return YOLO results
+                        if len(results) > 0:
+                            response_data = {
+                                'success': True,
+                                'tomato_count': len(results),
+                                'multiple_tomatoes': len(results) > 1,
+                                'results': results,
+                                'saved_crops': saved_crops,
+                                'detection_method': 'YOLO',
+                                'continuous_learning': True
+                            }
+                            
+                            if len(results) > 1:
+                                response_data['message'] = f"Multiple Tomatoes Detected ({len(results)})"
+                                response_data['note'] = "Each tomato was detected and classified individually by YOLO. All crops have been saved for continuous learning."
+                                response_data['multi_tomato'] = True
+                            else:
+                                result = results[0]
+                                response_data['prediction'] = result['prediction']
+                                response_data['confidence'] = result['confidence']
+                                response_data['message'] = f"Tomato detected and classified as: {result['prediction']}"
+                                response_data['multi_tomato'] = False
+                            
+                            os.remove(temp_path)
+                            return jsonify(response_data)
+                
+                except Exception as e:
+                    error_type = type(e).__name__
+                    print(f"[TEST] YOLO detection error ({error_type}): {e}, falling back to ResNet + color detection")
+                    import traceback
+                    traceback.print_exc()
+                    # Disable YOLO to prevent repeated crashes
+                    if yolo_detector:
+                        yolo_detector.available = False
+                        yolo_detector._model_loaded = False
+                        print("[TEST] YOLO disabled due to error - will use ResNet fallback")
+            
+            # Fallback to ResNet classifier - whole image classification only (no multi-tomato detection)
+            # ResNet works best with one tomato per image
+            classifier = None
+            if HARDWARE_AVAILABLE and hw_controller and hasattr(hw_controller, 'classifier') and hw_controller.classifier:
+                classifier = hw_controller.classifier
+                print(f"[TEST] Using hardware controller's classifier")
+            
+            # If no classifier available, try to load model directly
             if not classifier:
-                error_msg += ' Classifier not available - model may not be loaded.'
-            else:
-                error_msg += ' Make sure tomatoes are clearly visible in the frame.'
+                try:
+                    from models.tomato.tomato_inference import TomatoClassifier
+                    # Try to find model - first check model_name folder, then default tomato folder
+                    model_path = None
+                    model_folder = os.path.join(MODELS_FOLDER, model_name)
+                    if os.path.exists(model_folder):
+                        # Check for best_model.pth in model folder
+                        potential_path = os.path.join(model_folder, 'best_model.pth')
+                        if os.path.exists(potential_path):
+                            model_path = potential_path
+                    # Fallback to default tomato model
+                    if not model_path:
+                        default_path = os.path.join(MODELS_FOLDER, 'tomato', 'best_model.pth')
+                        if os.path.exists(default_path):
+                            model_path = default_path
+                    
+                    if model_path and os.path.exists(model_path):
+                        print(f"[TEST] Loading classifier from: {model_path}")
+                        classifier = TomatoClassifier(model_path=model_path)
+                        print(f"[TEST] Classifier loaded successfully")
+                    else:
+                        print(f"[TEST] Model file not found. Checked: {model_folder}/best_model.pth and {MODELS_FOLDER}/tomato/best_model.pth")
+                except Exception as e:
+                    print(f"[TEST] Could not load classifier: {e}")
+                    import traceback
+                    traceback.print_exc()
             
-            return jsonify({
-                'success': False,
-                'error': error_msg,
-                'prediction': 'Unknown',
-                'confidence': 0.0
-            }), 400
-    else:
-        return jsonify({'error': 'Invalid image file'}), 400
+            # ResNet: Classify whole image only (no detection, no cropping, no multi-tomato)
+            if classifier:
+                try:
+                    print(f"[TEST] Classifier available, classifying whole image...")
+                    # Convert frame to RGB
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    # Classify the whole frame
+                    classification_result = classifier.classify_crop(frame_rgb, confidence_threshold=0.3)
+                    
+                    if classification_result:
+                        print(f"[TEST] Whole image classification: {classification_result['class']} ({classification_result['confidence']:.2f})")
+                        # Save image for continuous learning
+                        learning_image_path = os.path.join('learning_data', 'new_images', 'test_uploads', f'test_{datetime.now().strftime("%Y%m%d_%H%M%S")}.{original_ext}')
+                        os.makedirs(os.path.dirname(learning_image_path), exist_ok=True)
+                        cv2.imwrite(learning_image_path, frame)
+                        
+                        # Ensure prediction is a valid string
+                        predicted_class = classification_result.get('class', 'Unknown')
+                        if not predicted_class or not isinstance(predicted_class, str):
+                            predicted_class = 'Unknown'
+                        
+                        results.append({
+                            'prediction': predicted_class,
+                            'confidence': float(classification_result.get('confidence', 0.0)) if classification_result.get('confidence') is not None else 0.0,
+                            'learning_image_path': learning_image_path,
+                            'note': 'Whole image classified',
+                            'detection_method': 'ResNet'
+                        })
+                    else:
+                        print(f"[TEST] Whole image classification below threshold")
+                except Exception as e:
+                    print(f"[TEST] Error in whole image classification: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            
+            if len(results) > 0:
+                # ResNet always returns single result (whole image classification)
+                response_data = {
+                    'success': True,
+                    'tomato_count': 1,  # Always 1 for ResNet (whole image)
+                    'results': results,
+                    'multi_tomato': False,  # ResNet never does multi-tomato
+                    'continuous_learning': True,
+                    'detection_method': 'ResNet'
+                }
+                
+                # Add direct prediction/confidence for frontend compatibility
+                response_data['prediction'] = results[0].get('prediction', 'Unknown') or 'Unknown'
+                response_data['confidence'] = results[0].get('confidence', 0.0) or 0.0
+                
+                return jsonify(response_data)
+            else:
+                # No results at all - classifier might not be working or image has no tomatoes
+                error_msg = 'Could not process image or no tomatoes detected.'
+                if not classifier:
+                    error_msg += ' Classifier not available - model may not be loaded.'
+                else:
+                    error_msg += ' Make sure tomatoes are clearly visible in the frame.'
+                
+                return jsonify({
+                    'success': False,
+                    'error': error_msg,
+                    'prediction': 'Unknown',
+                    'confidence': 0.0
+                }), 400
+        else:
+            return jsonify({'error': 'Invalid image file'}), 400
+    except Exception as e:
+        # Clean up temp file if it exists
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+        
+        # Log the error for debugging
+        error_type = type(e).__name__
+        error_msg = str(e)
+        print(f"[TEST] Unhandled error in test_model ({error_type}): {error_msg}")
+        import traceback
+        traceback.print_exc()
+        
+        # Return a proper error response instead of letting the connection reset
+        return jsonify({
+            'success': False,
+            'error': f'Server error during model testing: {error_msg}',
+            'error_type': error_type,
+            'prediction': 'Unknown',
+            'confidence': 0.0
+        }), 500
 
 @app.route('/download_model/<model_name>')
 def download_model(model_name):
@@ -4656,6 +4384,26 @@ def init_camera_cache():
     except Exception as e:
         print(f"⚠️  Could not initialize camera cache: {e}")
 
+# Initialize YOLO detector at startup (deferred - lazy loading to prevent segfaults)
+# Don't actually load the model until first use
+print(f"🔍 YOLO_DETECTOR_AVAILABLE check: {YOLO_DETECTOR_AVAILABLE}")
+if YOLO_DETECTOR_AVAILABLE:
+    try:
+        print("🚀 YOLO available - will load model on first use (lazy loading)")
+        # Just check if we can find a model, don't load it yet
+        latest_model = find_latest_yolo_model()
+        if latest_model:
+            print(f"   Found YOLO model: {latest_model} (will load when needed)")
+        else:
+            print("   No YOLO model found - will use color detection fallback")
+    except Exception as e:
+        print(f"⚠️  Could not check for YOLO model: {e}")
+        import traceback
+        traceback.print_exc()
+else:
+    print("⚠️  YOLO_DETECTOR_AVAILABLE is False - skipping initialization")
+    print(f"   YOLO_AVAILABLE: {YOLO_AVAILABLE if 'YOLO_AVAILABLE' in globals() else 'Not defined'}")
+
 if __name__ == '__main__':
     # Create necessary directories
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -4679,6 +4427,14 @@ if __name__ == '__main__':
     print("📊 Monitoring stats:", STATS_FILE)
     print("📝 Detection log:", LOG_FILE)
     print("🔧 Hardware controller:", "Available" if HARDWARE_AVAILABLE else "Not available")
+    if YOLO_DETECTOR_AVAILABLE:
+        yolo_detector = get_yolo_detector()
+        if yolo_detector and yolo_detector.is_available():
+            print("🤖 YOLO Model:", "✅ Loaded")
+        else:
+            print("🤖 YOLO Model:", "⚠️  Available but not loaded (no model found)")
+    else:
+        print("🤖 YOLO Model:", "❌ Not available (ultralytics not installed)")
     print("🌐 Web interface: http://0.0.0.0:5000")
     print("📱 Access from any device on the network")
     print("=" * 60)
