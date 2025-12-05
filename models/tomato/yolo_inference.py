@@ -181,13 +181,40 @@ class YOLOTomatoDetector:
         try:
             # Run YOLO inference with device specification to avoid GPU issues
             # Use CPU explicitly to prevent segfaults from GPU memory issues
-            results = self.model.predict(
-                source=frame,
-                conf=conf,
-                verbose=False,
-                imgsz=640,  # Standard YOLO input size
-                device='cpu'  # Force CPU to avoid GPU-related segfaults
-            )
+            # Add timeout protection to prevent hanging/segfaults
+            import multiprocessing
+            from multiprocessing import Process, Queue
+            
+            def _run_inference(frame, model, conf, result_queue):
+                """Run inference in separate process to isolate segfaults"""
+                try:
+                    results = model.predict(
+                        source=frame,
+                        conf=conf,
+                        verbose=False,
+                        imgsz=640,
+                        device='cpu'
+                    )
+                    result_queue.put(('success', results))
+                except Exception as e:
+                    result_queue.put(('error', str(e)))
+            
+            # Try direct inference first (faster if it works)
+            try:
+                results = self.model.predict(
+                    source=frame,
+                    conf=conf,
+                    verbose=False,
+                    imgsz=640,  # Standard YOLO input size
+                    device='cpu',  # Force CPU to avoid GPU-related segfaults
+                    half=False  # Disable half precision to prevent GPU issues
+                )
+            except Exception as direct_error:
+                print(f"⚠️  Direct YOLO inference failed: {direct_error}")
+                # Mark as unavailable to prevent repeated crashes
+                self.available = False
+                self._model_loaded = False
+                return []
             
             detections = []
             

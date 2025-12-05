@@ -131,7 +131,7 @@ if SOCKETIO_AVAILABLE:
     socketio = SocketIO(
         app, 
         cors_allowed_origins="*", 
-        async_mode='eventlet',
+        async_mode='threading',  # Changed from 'eventlet' - threading is compatible with PyTorch
         ping_timeout=60,  # Increase ping timeout to 60 seconds
         ping_interval=25,  # Send ping every 25 seconds
         logger=False,  # Disable verbose logging
@@ -3603,6 +3603,7 @@ def detect_tomatoes_in_frame(frame):
 
 # Global YOLO detector instance (lazy loaded)
 _yolo_detector = None
+_yolo_lock = threading.Lock()  # Thread lock to prevent race conditions
 
 def find_latest_yolo_model():
     """Find the latest YOLO model in runs directory"""
@@ -3623,9 +3624,18 @@ def find_latest_yolo_model():
     return None
 
 def get_yolo_detector():
-    """Get or create YOLO detector instance"""
+    """Get or create YOLO detector instance (lazy loading with thread safety)"""
     global _yolo_detector
-    if _yolo_detector is None and YOLO_DETECTOR_AVAILABLE:
+    
+    # Use lock to prevent race conditions during initialization
+    with _yolo_lock:
+        if _yolo_detector is not None:
+            return _yolo_detector
+        
+        if not YOLO_DETECTOR_AVAILABLE:
+            print("⚠️  YOLO not available (ultralytics not installed)")
+            return None
+        
         print("🔍 Searching for YOLO model...")
         # Try to find YOLO model
         possible_paths = [
@@ -3673,10 +3683,8 @@ def get_yolo_detector():
             print("   Train a YOLO model or place it in one of these locations:")
             for path in possible_paths:
                 print(f"     - {path}")
-    elif not YOLO_DETECTOR_AVAILABLE:
-        print("⚠️  YOLO not available (ultralytics not installed)")
-    
-    return _yolo_detector
+        
+        return _yolo_detector
 
 def initialize_yolo_detector():
     """Initialize YOLO detector at startup"""
@@ -4085,6 +4093,7 @@ def test_model(model_name):
             saved_crops = []
             
             # Try YOLO detection first (if available) - YOLO does both detection AND classification
+            # Now safe to use after fixing SocketIO threading mode
             yolo_detector = get_yolo_detector()
             if yolo_detector and yolo_detector.is_available():
                 try:
@@ -4481,7 +4490,7 @@ if __name__ == '__main__':
     threading.Thread(target=init_camera_cache, daemon=True).start()
     
     if SOCKETIO_AVAILABLE:
-        socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+        socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
     else:
         # Fallback to regular Flask if SocketIO not available
         app.run(host='0.0.0.0', port=5000, debug=False)
