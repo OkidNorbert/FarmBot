@@ -1,0 +1,8 @@
+names:
+  0: not_ready
+  1: ready
+  2: spoilt
+nc: 3
+path: /home/student/Downloads/emebeded/datasets/tomato_yolo
+train: images/train
+val: images/val
