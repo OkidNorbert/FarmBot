@@ -25,6 +25,7 @@ temp/
 !runs/detect/tomato_detector/weights/best.pt
 !models/tomato/best_model.pth
 !datasets/tomato_yolo/
+!datasets/tomato_2class/
 
 # OS Generated
 .DS_Store
