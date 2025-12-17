@@ -313,13 +313,24 @@ function captureImage() {
     const ctx = canvas.getContext('2d');
     const img = document.getElementById('camera-feed');
     
-    canvas.width = img.naturalWidth || img.width;
-    canvas.height = img.naturalHeight || img.height;
+    // Check if image is loaded
+    if (!img.naturalWidth || !img.naturalHeight) {
+        updateStatus('Capture failed: Camera feed not ready', 'warning');
+        return;
+    }
+    
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
     
     ctx.drawImage(img, 0, 0);
     
     // Convert to blob and send to server
     canvas.toBlob(function(blob) {
+        if (!blob) {
+            updateStatus('Capture failed: Could not create image data', 'danger');
+            return;
+        }
+
         const formData = new FormData();
         formData.append('image', blob, 'captured_image.jpg');
         
@@ -353,12 +364,23 @@ function captureAndClassify() {
     const ctx = canvas.getContext('2d');
     const img = document.getElementById('camera-feed');
     
-    canvas.width = img.naturalWidth || img.width;
-    canvas.height = img.naturalHeight || img.height;
+    // Check if image is loaded
+    if (!img.naturalWidth || !img.naturalHeight) {
+        updateStatus('Classification failed: Camera feed not ready', 'warning');
+        return;
+    }
+    
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
     
     ctx.drawImage(img, 0, 0);
     
     canvas.toBlob(function(blob) {
+        if (!blob) {
+            updateStatus('Classification failed: Could not create image data', 'danger');
+            return;
+        }
+
         const formData = new FormData();
         formData.append('image', blob, 'live_classification.jpg');
         

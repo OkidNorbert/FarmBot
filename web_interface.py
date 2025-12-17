@@ -1867,7 +1867,7 @@ def controller_telemetry_thread():
                 # Get ToF distance if available
                 distance = None
                 try:
-                    distance = hw_controller.get_distance_sensor()
+                    distance = getattr(hw_controller, 'last_distance_reading', None)
                 except:
                     pass
                 
@@ -3539,7 +3539,7 @@ def detect_tomatoes_in_frame(frame):
     yolo_detector = get_yolo_detector()
     if yolo_detector and yolo_detector.is_available():
         try:
-            detected, count, boxes = yolo_detector.detect_with_boxes(frame)
+            detected, count, boxes = yolo_detector.detect_with_boxes(frame); boxes = [b for b in boxes if (b[2]*b[3]) < (frame.shape[0]*frame.shape[1]*0.6)]; count = len(boxes); detected = count > 0
             return detected
         except Exception as e:
             print(f"[DETECT] YOLO detection error: {e}, falling back to color detection")
@@ -3710,7 +3710,7 @@ def detect_tomatoes_with_boxes(frame):
     yolo_detector = get_yolo_detector()
     if yolo_detector and yolo_detector.is_available():
         try:
-            detected, count, boxes = yolo_detector.detect_with_boxes(frame)
+            detected, count, boxes = yolo_detector.detect_with_boxes(frame); boxes = [b for b in boxes if (b[2]*b[3]) < (frame.shape[0]*frame.shape[1]*0.6)]; count = len(boxes); detected = count > 0
             if detected and count > 0:
                 print(f"[DETECT] YOLO detected {count} tomatoes")
                 return detected, count, boxes
@@ -4007,7 +4007,7 @@ def count_tomatoes_in_frame(frame):
     yolo_detector = get_yolo_detector()
     if yolo_detector and yolo_detector.is_available():
         try:
-            detected, count, boxes = yolo_detector.detect_with_boxes(frame)
+            detected, count, boxes = yolo_detector.detect_with_boxes(frame); boxes = [b for b in boxes if (b[2]*b[3]) < (frame.shape[0]*frame.shape[1]*0.6)]; count = len(boxes); detected = count > 0
             return count
         except Exception as e:
             print(f"[DETECT] YOLO detection error: {e}, falling back to color detection")

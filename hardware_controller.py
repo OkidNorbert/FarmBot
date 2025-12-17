@@ -286,7 +286,7 @@ class HardwareController:
         # Calibration and coordinate mapping
         self.homography_matrix = None
         self.workspace_bounds = {
-            'x_min': -150, 'x_max': 150,  # mm
+            'x_min': -40, 'x_max': 40,  # mm
             'y_min': 50, 'y_max': 250,    # mm
             'z_min': 5, 'z_max': 150      # mm (lowered to 5mm to allow surface-level tomatoes)
         }
@@ -386,6 +386,10 @@ class HardwareController:
                 except Exception as e:
                     self.logger.error(f"Auto Loop Error: {e}")
             
+            # Poll distance
+            if self.arduino_connected and (time.time() - getattr(self, 'last_dist_poll', 0) > 0.5):
+                self.get_distance_sensor()
+                self.last_dist_poll = time.time()
             time.sleep(0.1) # Prevent CPU hogging
 
     def is_arm_facing_front(self):
@@ -661,7 +665,7 @@ class HardwareController:
                         return None
                     try:
                         distance_mm = int(distance_str)
-                        return distance_mm
+                        self.last_distance_reading = distance_mm; return distance_mm
                     except ValueError:
                         self.logger.error(f"Invalid distance reading: {distance_str}")
                         return None
@@ -1654,7 +1658,7 @@ class HardwareController:
             'connection_type': connection_type,
             'classifier_loaded': model_loaded,
             'arm_orientation': 'front' if is_facing_front else 'back',
-            'servo_angles': self.current_servo_angles.copy()
+            'servo_angles': self.current_servo_angles.copy(), 'tof_distance': getattr(self, 'last_distance_reading', None)
         }
         
         if self.ble_client:
