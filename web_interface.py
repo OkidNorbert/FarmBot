@@ -1888,12 +1888,20 @@ def controller_telemetry_thread():
                 # Get hardware status
                 hw_status = hw_controller.get_status()
                 
-                # Get ToF distance if available
+                # Get ToF distance: actively request sensor reading when possible
                 distance = None
                 try:
-                    distance = getattr(hw_controller, 'last_distance_reading', None)
-                except:
-                    pass
+                    # Prefer calling the controller's getter so simulation fallback works
+                    if hasattr(hw_controller, 'get_distance_sensor'):
+                        distance = hw_controller.get_distance_sensor()
+                    else:
+                        distance = getattr(hw_controller, 'last_distance_reading', None)
+                except Exception:
+                    # Fall back to any cached value
+                    try:
+                        distance = getattr(hw_controller, 'last_distance_reading', None)
+                    except:
+                        distance = None
                 
                 # Determine status
                 status = 'idle'
