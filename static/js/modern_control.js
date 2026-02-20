@@ -597,6 +597,14 @@ function startRecordingMovements() {
         
         recordedMovements = [];
         recordingStartTime = null;
+        // Notify backend that recording stopped so any temporary servo overrides are reverted
+        try {
+            if (socket && socket.connected) {
+                socket.emit('servo_command', { cmd: 'record_stop' });
+            }
+        } catch (e) {
+            console.warn('Failed to notify backend about recording stop:', e);
+        }
     } else {
         // Start recording
         isRecording = true;
@@ -611,6 +619,14 @@ function startRecordingMovements() {
         }
         
         showNotification('Recording arm movements... Move the arm to record.', 'info');
+        // Notify backend that recording started so servos can be enabled if needed
+        try {
+            if (socket && socket.connected) {
+                socket.emit('servo_command', { cmd: 'record_start' });
+            }
+        } catch (e) {
+            console.warn('Failed to notify backend about recording start:', e);
+        }
     }
 }
 

@@ -1512,6 +1512,27 @@ def handle_servo_command(data):
             return
         
         cmd = data.get('cmd', '').lower()
+        # Handle recording mode toggles coming from frontend
+        if cmd == 'record_start':
+            if HARDWARE_AVAILABLE and hw_controller:
+                # Remember which servos were originally unavailable and enable them temporarily
+                hw_controller._recording_overrides = {}
+                if hasattr(hw_controller, 'servo_available'):
+                    for s, avail in list(hw_controller.servo_available.items()):
+                        if not avail:
+                            hw_controller._recording_overrides[s] = avail
+                            hw_controller.servo_available[s] = True
+                emit('status', {'message': 'Recording started - servos enabled'})
+            return
+
+        if cmd == 'record_stop':
+            if HARDWARE_AVAILABLE and hw_controller and hasattr(hw_controller, '_recording_overrides'):
+                # Revert overrides
+                for s, orig in hw_controller._recording_overrides.items():
+                    hw_controller.servo_available[s] = orig
+                hw_controller._recording_overrides = {}
+                emit('status', {'message': 'Recording stopped - servos restored'})
+            return
         
         if cmd == 'connect':
             # Try to re-initialize hardware controller if it's missing

@@ -6,10 +6,6 @@
   "detection_history": [],
   "session_history": [
     {
-      "start_time": "2025-12-04T09:43:39.626576",
-      "session_id": "session_1764830619"
-    },
-    {
       "start_time": "2025-12-04T09:45:26.937599",
       "session_id": "session_1764830726"
     },
@@ -204,6 +200,10 @@
     {
       "start_time": "2026-02-20T15:59:03.938517",
       "session_id": "session_1771592343"
+    },
+    {
+      "start_time": "2026-02-20T16:08:53.951043",
+      "session_id": "session_1771592933"
     }
   ]
 }
