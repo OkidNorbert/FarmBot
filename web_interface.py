@@ -802,7 +802,7 @@ def api_manual_move():
         'forearm': data.get('forearm', 90),
         'elbow': data.get('elbow', 90),
         'pitch': data.get('pitch', 90),
-        'claw': data.get('claw', 90)
+        'claw': data.get('claw', 0)
     }
     
     socketio.emit('command', command, namespace='/arduino')
