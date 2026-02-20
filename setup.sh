@@ -8,12 +8,10 @@
 # Don't exit on error - we'll handle errors gracefully
 set +e
 
-echo "🌐 AI Tomato Sorter - Improved Setup"
+echo "🌐 AI FARMBOT BY OKIDI NORBERT"
 echo "===================================="
 echo ""
-echo "⚠️  SAFETY: This script preserves your existing virtual environment"
-echo "   It will NOT delete or recreate farmbot_env if it already exists"
-echo ""
+
 
 # Colors for output
 RED='\033[0;31m'

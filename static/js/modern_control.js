@@ -486,12 +486,14 @@ function setupEventListeners() {
         const btnDisconnect = document.getElementById('btnDisconnect');
         const btnStart = document.getElementById('btnStart');
         const btnSave = document.getElementById('btnSave');
+        const btnCapturePose = document.getElementById('btnCapturePose');
         const btnReset = document.getElementById('btnReset');
         
         if (btnConnect) btnConnect.addEventListener('click', connectArduino);
         if (btnDisconnect) btnDisconnect.addEventListener('click', disconnectArduino);
         if (btnStart) btnStart.addEventListener('click', startRecordingMovements);
         if (btnSave) btnSave.addEventListener('click', savePose);
+        if (btnCapturePose) btnCapturePose.addEventListener('click', capturePose);
         if (btnReset) btnReset.addEventListener('click', resetArm);
         
         const modeToggle = document.getElementById('modeToggle');
@@ -665,6 +667,46 @@ function savePose() {
     showNotification('Pose saved successfully!', 'success');
 }
 
+// Capture pose from latest telemetry (prefer backend-reported angles)
+function capturePose() {
+    if (!socket || !socket.connected) {
+        showNotification('Socket.IO not connected. Please wait...', 'warning');
+        return;
+    }
+
+    // Prefer telemetry-provided servo angles if available
+    const telemetryAngles = window.latestServoAngles || null;
+    const pose = {};
+
+    if (telemetryAngles && Object.keys(telemetryAngles).length > 0) {
+        // Copy known keys (ensure consistent servo keys)
+        ['base','shoulder','forearm','elbow','pitch','claw'].forEach(k => {
+            if (telemetryAngles[k] !== undefined && telemetryAngles[k] !== null) {
+                pose[k] = parseInt(telemetryAngles[k]);
+            }
+        });
+    }
+
+    // Fill missing values from sliders
+    document.querySelectorAll('.servo-slider').forEach(slider => {
+        const servo = slider.dataset.servo;
+        if (servo !== 'speed' && pose[servo] === undefined) {
+            pose[servo] = parseInt(slider.value);
+        }
+    });
+
+    // Optional prompt for a friendly name
+    const name = prompt('Enter a name for the captured pose (optional):', `Pose_${new Date().getTime()}`) || `Pose_${new Date().getTime()}`;
+
+    socket.emit('servo_command', {
+        cmd: 'save',
+        pose: pose,
+        name: name
+    });
+
+    showNotification('Pose capture requested — saved on server.', 'success');
+}
+
 // Reset arm to home position
 function resetArm() {
     if (!socket || !socket.connected) {
@@ -778,6 +820,7 @@ function updateConnectionStatus(connected, message = null) {
         if (btnDisconnect) btnDisconnect.disabled = false;
         if (btnStart) btnStart.disabled = false;
         if (btnSave) btnSave.disabled = false;
+        if (btnCapturePose) btnCapturePose.disabled = false;
         if (btnReset) btnReset.disabled = false;
     } else {
         statusBadge.className = 'connection-badge disconnected';
@@ -795,6 +838,7 @@ function updateConnectionStatus(connected, message = null) {
         if (btnDisconnect) btnDisconnect.disabled = true;
         if (btnStart) btnStart.disabled = true;
         if (btnSave) btnSave.disabled = true;
+        if (btnCapturePose) btnCapturePose.disabled = true;
         if (btnReset) btnReset.disabled = true;
     }
 }
@@ -802,6 +846,17 @@ function updateConnectionStatus(connected, message = null) {
 // Update telemetry
 function updateTelemetry(data) {
     console.log('📊 Telemetry update received:', data);
+    // Store latest servo angles for capture usage
+    try {
+        if (data && data.servo_angles) {
+            window.latestServoAngles = data.servo_angles;
+        } else {
+            // Keep previous telemetry if new packet doesn't include servo_angles
+            window.latestServoAngles = window.latestServoAngles || {};
+        }
+    } catch (e) {
+        window.latestServoAngles = window.latestServoAngles || {};
+    }
     
     // Update distance (ToF)
     const distanceElement = document.getElementById('distanceValue');
