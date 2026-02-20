@@ -430,13 +430,13 @@ function sendServoCommand(servo, angle, speed) {
         return;
     }
     
-    // Map frontend servo names to backend expected names
-    // Backend expects: base, forearm, arm, wrist_yaw, wrist_pitch, claw
+    // Map frontend servo names to Arduino expected names
+    // Arduino expects: base, shoulder, forearm, elbow, pitch, claw
     // Frontend uses: base, forearm, shoulder, elbow, pitch, claw
     const servoMap = {
-        'shoulder': 'arm',  // Frontend 'shoulder' -> backend 'arm'
-        'elbow': 'wrist_yaw',  // Frontend 'elbow' -> backend 'wrist_yaw'
-        'pitch': 'wrist_pitch',  // Frontend 'pitch' -> backend 'wrist_pitch'
+        'shoulder': 'shoulder',  // Frontend 'shoulder' -> Arduino 'shoulder'
+        'elbow': 'elbow',  // Frontend 'elbow' -> Arduino 'elbow'
+        'pitch': 'pitch',  // Frontend 'pitch' -> Arduino 'pitch'
         // Others map directly
         'base': 'base',
         'forearm': 'forearm',

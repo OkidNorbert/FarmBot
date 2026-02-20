@@ -251,7 +251,7 @@ class HardwareController:
         # Set to False for servos that are not available (manually fixed)
         self.servo_available = {
             'base': False,      # Base servo not available - manually fixed
-            'shoulder': False,  # Shoulder servo not available - manually adjusted
+            'shoulder': True,  # Shoulder servo now available (was manually adjusted)
             'forearm': True,   # Forearm servo available
             'elbow': True,     # Elbow servo available
             'pitch': True,     # Pitch servo available
@@ -261,15 +261,16 @@ class HardwareController:
         # Fixed positions for unavailable servos (manually set)
         # These should match your manual adjustments
         self.fixed_servo_angles = {
-            'base': 90,        # Manually fixed base position
-            'shoulder': 135,   # Manually adjusted shoulder (gives forearm clearance to reach floor)
+            'base': 90        # Manually fixed base position
+            # Shoulder moved back to servo control; previous manual value preserved as comment
+            # 'shoulder': 135
         }
         
         # Track current servo angles (for front/back detection)
         # Servo indices: 0=base, 1=shoulder/arm, 2=forearm, 3=elbow/wrist_yaw, 4=pitch, 5=claw
         self.current_servo_angles = {
             'base': self.fixed_servo_angles['base'],
-            'shoulder': self.fixed_servo_angles['shoulder'],
+            'shoulder': 90,
             'forearm': 90,
             'elbow': 90,  # Also called 'wrist_yaw' in backend
             'pitch': 90,  # Also called 'wrist_pitch' in backend

@@ -1584,9 +1584,12 @@ def handle_servo_command(data):
             servo_map = {
                 'base': 'base',
                 'forearm': 'forearm',
-                'arm': 'shoulder',  # Arm is shoulder in hardware
-                'wrist_yaw': 'elbow',  # Wrist yaw is elbow
-                'wrist_pitch': 'pitch',
+                'shoulder': 'shoulder',  # Direct mapping to shoulder servo
+                'elbow': 'elbow',  # Direct mapping to elbow servo
+                'pitch': 'pitch',  # Direct mapping to pitch servo
+                'arm': 'shoulder',  # Legacy: Arm is shoulder in hardware
+                'wrist_yaw': 'elbow',  # Legacy: Wrist yaw is elbow
+                'wrist_pitch': 'pitch',  # Legacy: Wrist pitch is pitch
                 'claw': 'claw'
             }
             
