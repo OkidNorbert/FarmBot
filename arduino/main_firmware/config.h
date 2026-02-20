@@ -50,7 +50,7 @@
 #define LIMIT_FOREARM_MIN   10
 #define LIMIT_FOREARM_MAX   170
 
-// Shoulder (MG99x)
+// Shoulder (SG90) - Updated to match servo type
 #define LIMIT_SHOULDER_MIN  15
 #define LIMIT_SHOULDER_MAX  165
 
