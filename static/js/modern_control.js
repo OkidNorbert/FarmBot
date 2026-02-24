@@ -17,9 +17,9 @@ function initializeSocketIO() {
             }
             return false;
         }
-        
+
         console.log('Initializing Socket.IO connection...');
-        
+
         // Initialize socket connection
         socket = io({
             transports: ['websocket', 'polling'],
@@ -30,14 +30,14 @@ function initializeSocketIO() {
             forceNew: false,
             autoConnect: true
         });
-        
+
         setupSocketHandlers();
-        
+
         // Set initial connection status
         if (typeof updateConnectionStatus === 'function') {
             updateConnectionStatus(false, 'Connecting...');
         }
-        
+
         return true;
     } catch (error) {
         console.error('Failed to initialize SocketIO:', error);
@@ -54,42 +54,42 @@ function initializeSocketIO() {
 // Setup Socket.IO event handlers
 function setupSocketHandlers() {
     if (!socket) return;
-    
+
     socket.on('connect', () => {
         console.log('✅ Socket.IO connected');
         isConnected = true;
         updateConnectionStatus(true, 'Socket.IO Connected');
     });
-    
+
     socket.on('disconnect', (reason) => {
         console.log('❌ Socket.IO disconnected:', reason);
         isConnected = false;
         updateConnectionStatus(false);
     });
-    
+
     socket.on('connect_error', (error) => {
         console.error('Socket.IO connection error:', error);
         isConnected = false;
         updateConnectionStatus(false);
         showNotification('Connection error. Retrying...', 'warning');
     });
-    
+
     socket.on('reconnect', (attemptNumber) => {
         console.log('✅ Socket.IO reconnected after', attemptNumber, 'attempts');
         isConnected = true;
         updateConnectionStatus(true);
         showNotification('Reconnected to server', 'success');
     });
-    
+
     socket.on('reconnect_error', (error) => {
         console.error('Socket.IO reconnection error:', error);
     });
-    
+
     socket.on('reconnect_failed', () => {
         console.error('Socket.IO reconnection failed');
         showNotification('Failed to reconnect. Please refresh the page.', 'danger');
     });
-    
+
     socket.on('status', (data) => {
         console.log('Status update:', data);
         if (data.connected !== undefined) {
@@ -99,12 +99,12 @@ function setupSocketHandlers() {
             showNotification(data.message, data.connected ? 'success' : 'info');
         }
     });
-    
+
     socket.on('telemetry', (data) => {
         console.log('📡 Received telemetry event:', data);
         updateTelemetry(data);
     });
-    
+
     socket.on('error', (data) => {
         console.error('Socket error:', data);
         if (data.message) {
@@ -143,12 +143,12 @@ document.addEventListener('DOMContentLoaded', function () {
                         console.log('Waiting for SocketIO connection...');
                     }
                 }, 100);
-                
+
                 // Stop checking after 10 seconds
                 setTimeout(() => clearInterval(checkConnection), 10000);
             }
         }, 100);
-        
+
         if (typeof initializeSliders === 'function') {
             initializeSliders();
         }
@@ -158,7 +158,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (typeof initializeCamera === 'function') {
             initializeCamera();
         }
-        
+
         // Initialize arm orientation display after sliders are initialized
         setTimeout(() => {
             if (typeof updateArmOrientation === 'function') {
@@ -189,60 +189,60 @@ function initializeSliders() {
             slider.dataset.lastValue = value;
             slider.dataset.lastTime = Date.now();
 
-        // Add highlight listeners
-        slider.addEventListener('mousedown', () => highlightServo(servo));
-        slider.addEventListener('touchstart', () => highlightServo(servo));
-        slider.addEventListener('mouseup', () => unhighlightServo(servo));
-        slider.addEventListener('touchend', () => unhighlightServo(servo));
-        slider.addEventListener('mouseleave', () => unhighlightServo(servo));
+            // Add highlight listeners
+            slider.addEventListener('mousedown', () => highlightServo(servo));
+            slider.addEventListener('touchstart', () => highlightServo(servo));
+            slider.addEventListener('mouseup', () => unhighlightServo(servo));
+            slider.addEventListener('touchend', () => unhighlightServo(servo));
+            slider.addEventListener('mouseleave', () => unhighlightServo(servo));
 
-        slider.addEventListener('input', function () {
-            const value = parseInt(this.value);
-            updateSliderDisplay(servo, value);
-            
-            // Update arm orientation when shoulder or forearm changes
-            if (servo === 'shoulder' || servo === 'forearm') {
-                updateArmOrientation();
-            }
+            slider.addEventListener('input', function () {
+                const value = parseInt(this.value);
+                updateSliderDisplay(servo, value);
 
-            if (servo === 'speed') {
-                currentSpeed = value;
-                // Send speed command immediately
-                sendServoCommand(servo, value);
-                return;
-            }
-
-            // Calculate dynamic speed based on slider movement
-            const now = Date.now();
-            const lastTime = parseInt(this.dataset.lastTime || now);
-            const lastValue = parseInt(this.dataset.lastValue || value);
-            const deltaTime = now - lastTime;
-
-            let dynamicSpeed = currentSpeed; // Default to global speed
-
-            // If moved quickly (within 200ms), calculate speed
-            if (deltaTime > 0 && deltaTime < 200) {
-                const deltaValue = Math.abs(value - lastValue);
-                const rawSpeed = (deltaValue / deltaTime) * 200;
-                dynamicSpeed = Math.min(Math.max(parseInt(rawSpeed), 10), 120);
-            }
-
-            // Update tracking variables
-            this.dataset.lastValue = value;
-            this.dataset.lastTime = now;
-
-            // Debounce servo commands
-            clearTimeout(this.debounceTimer);
-            this.debounceTimer = setTimeout(() => {
-                // Only send command if connected
-                if (socket.connected && isConnected) {
-                    sendServoCommand(servo, value, dynamicSpeed);
-                } else {
-                    console.warn(`Cannot send command for ${servo}: not connected`);
+                // Update arm orientation when shoulder or forearm changes
+                if (servo === 'shoulder' || servo === 'forearm') {
+                    updateArmOrientation();
                 }
-            }, 50);
+
+                if (servo === 'speed') {
+                    currentSpeed = value;
+                    // Send speed command immediately
+                    sendServoCommand(servo, value);
+                    return;
+                }
+
+                // Calculate dynamic speed based on slider movement
+                const now = Date.now();
+                const lastTime = parseInt(this.dataset.lastTime || now);
+                const lastValue = parseInt(this.dataset.lastValue || value);
+                const deltaTime = now - lastTime;
+
+                let dynamicSpeed = currentSpeed; // Default to global speed
+
+                // If moved quickly (within 200ms), calculate speed
+                if (deltaTime > 0 && deltaTime < 200) {
+                    const deltaValue = Math.abs(value - lastValue);
+                    const rawSpeed = (deltaValue / deltaTime) * 200;
+                    dynamicSpeed = Math.min(Math.max(parseInt(rawSpeed), 10), 120);
+                }
+
+                // Update tracking variables
+                this.dataset.lastValue = value;
+                this.dataset.lastTime = now;
+
+                // Debounce servo commands
+                clearTimeout(this.debounceTimer);
+                this.debounceTimer = setTimeout(() => {
+                    // Only send command if connected
+                    if (socket.connected && isConnected) {
+                        sendServoCommand(servo, value, dynamicSpeed);
+                    } else {
+                        console.warn(`Cannot send command for ${servo}: not connected`);
+                    }
+                }, 50);
+            });
         });
-    });
     } catch (error) {
         console.error('Error initializing sliders:', error);
     }
@@ -266,21 +266,21 @@ function unhighlightServo(servo) {
 function determineArmOrientation() {
     const shoulderSlider = document.getElementById('shoulderSlider');
     const forearmSlider = document.getElementById('forearmSlider');
-    
+
     if (!shoulderSlider || !forearmSlider) {
         return null;
     }
-    
+
     const shoulderAngle = parseInt(shoulderSlider.value);
     const forearmAngle = parseInt(forearmSlider.value);
-    
+
     // Front: shoulder and forearm are 90-180 degrees
     // Back: shoulder and forearm are 90-0 degrees
     const isShoulderFront = shoulderAngle >= 90 && shoulderAngle <= 180;
     const isForearmFront = forearmAngle >= 90 && forearmAngle <= 180;
     const isShoulderBack = shoulderAngle >= 0 && shoulderAngle <= 90;
     const isForearmBack = forearmAngle >= 0 && forearmAngle <= 90;
-    
+
     // Determine orientation based on both servos
     if (isShoulderFront && isForearmFront) {
         return 'front';
@@ -291,7 +291,7 @@ function determineArmOrientation() {
         const shoulderFrontness = (shoulderAngle - 90) / 90; // 0 to 1 for front
         const forearmFrontness = (forearmAngle - 90) / 90; // 0 to 1 for front
         const avgFrontness = (shoulderFrontness + forearmFrontness) / 2;
-        
+
         return avgFrontness > 0 ? 'front' : 'back';
     }
 }
@@ -300,11 +300,11 @@ function determineArmOrientation() {
 function updateArmOrientation() {
     const orientation = determineArmOrientation();
     const orientationElement = document.getElementById('armOrientation');
-    
+
     if (orientationElement && orientation) {
         orientationElement.textContent = orientation === 'front' ? 'Front' : 'Back';
-        orientationElement.className = orientation === 'front' 
-            ? 'badge bg-success' 
+        orientationElement.className = orientation === 'front'
+            ? 'badge bg-success'
             : 'badge bg-info';
     }
 }
@@ -318,7 +318,7 @@ function updateSliderDisplay(servo, value) {
         } else {
             valueElement.textContent = `${value}°`;
             updateArmVisualization(servo, value);
-            
+
             // Update arm orientation when shoulder or forearm changes
             if (servo === 'shoulder' || servo === 'forearm') {
                 updateArmOrientation();
@@ -359,27 +359,27 @@ function updateArmVisualization(servo, angle) {
             group.classList.add('servo-moving');
             setTimeout(() => group.classList.remove('servo-moving'), 200);
             return;
-            
+
         case 'shoulder':
             centerY = 450; // Base of shoulder (top of base)
             rotation = angle - 90; // Convert 0-180° to -90 to +90°
             break;
-            
+
         case 'forearm':
             centerY = 350; // Joint between shoulder and forearm
             rotation = angle - 90;
             break;
-            
+
         case 'elbow':
             centerY = 250; // Elbow joint
             rotation = angle - 90;
             break;
-            
+
         case 'pitch':
             centerY = 150; // Wrist pitch joint
             rotation = angle - 90;
             break;
-            
+
         case 'claw':
             // Claw opens/closes
             // angle: 0 = closed, 90 = open
@@ -393,7 +393,7 @@ function updateArmVisualization(servo, angle) {
                 const offset = openAmount * 15; // Increased for better visibility
                 leftFinger.setAttribute('transform', `translate(-${offset}, 0)`);
                 rightFinger.setAttribute('transform', `translate(${offset}, 0)`);
-                
+
                 // Also change color intensity
                 const clawCircle = group.querySelector('circle');
                 if (clawCircle) {
@@ -409,7 +409,7 @@ function updateArmVisualization(servo, angle) {
 
     // Apply rotation with smooth transition
     group.setAttribute('transform', `rotate(${rotation} ${centerX} ${centerY})`);
-    
+
     // Add visual feedback - highlight the moving part
     group.classList.add('servo-moving');
     setTimeout(() => {
@@ -429,7 +429,7 @@ function sendServoCommand(servo, angle, speed) {
         showNotification('Not connected to server. Please click Connect.', 'warning');
         return;
     }
-    
+
     // Map frontend servo names to Arduino expected names
     // Arduino expects: base, shoulder, forearm, elbow, pitch, claw
     // Frontend uses: base, forearm, shoulder, elbow, pitch, claw
@@ -443,9 +443,9 @@ function sendServoCommand(servo, angle, speed) {
         'claw': 'claw',
         'speed': 'speed'  // Speed is handled separately
     };
-    
+
     const backendServo = servoMap[servo] || servo;
-    
+
     // Don't send speed as a servo command
     if (servo === 'speed') {
         const command = {
@@ -460,17 +460,17 @@ function sendServoCommand(servo, angle, speed) {
         }
         return;
     }
-    
+
     const command = {
         cmd: 'move',
         servo: backendServo,
         angle: parseInt(angle),
         speed: speed ? parseInt(speed) : currentSpeed
     };
-    
+
     // Track movement if recording
     trackServoChange(servo, parseInt(angle));
-    
+
     console.log('📤 Sending servo command:', command);
     if (socket && socket.connected) {
         socket.emit('servo_command', command);
@@ -488,14 +488,14 @@ function setupEventListeners() {
         const btnSave = document.getElementById('btnSave');
         const btnCapturePose = document.getElementById('btnCapturePose');
         const btnReset = document.getElementById('btnReset');
-        
+
         if (btnConnect) btnConnect.addEventListener('click', connectArduino);
         if (btnDisconnect) btnDisconnect.addEventListener('click', disconnectArduino);
         if (btnStart) btnStart.addEventListener('click', startRecordingMovements);
         if (btnSave) btnSave.addEventListener('click', savePose);
         if (btnCapturePose) btnCapturePose.addEventListener('click', capturePose);
         if (btnReset) btnReset.addEventListener('click', resetArm);
-        
+
         const modeToggle = document.getElementById('modeToggle');
         if (modeToggle) modeToggle.addEventListener('change', toggleAutomaticMode);
     } catch (error) {
@@ -523,7 +523,7 @@ function connectArduino() {
         }
         return;
     }
-    
+
     // Check if socket is connected
     if (!socket.connected) {
         showNotification('Socket.IO not connected. Attempting to connect...', 'warning');
@@ -547,7 +547,7 @@ function connectArduino() {
         socket.once('connect', retryConnect);
         return;
     }
-    
+
     // Socket is connected, proceed with connect command
     socket.emit('servo_command', { cmd: 'connect' });
     showNotification('Connecting to Arduino...', 'info');
@@ -573,7 +573,7 @@ function startRecordingMovements() {
         showNotification('Socket.IO not connected. Please wait...', 'warning');
         return;
     }
-    
+
     if (isRecording) {
         // Stop recording
         isRecording = false;
@@ -583,7 +583,7 @@ function startRecordingMovements() {
             btnStart.classList.remove('btn-danger');
             btnStart.classList.add('btn-primary');
         }
-        
+
         // Save recorded movements
         if (recordedMovements.length > 0) {
             socket.emit('servo_command', {
@@ -596,7 +596,7 @@ function startRecordingMovements() {
         } else {
             showNotification('Recording stopped (no movements recorded).', 'info');
         }
-        
+
         recordedMovements = [];
         recordingStartTime = null;
         // Notify backend that recording stopped so any temporary servo overrides are reverted
@@ -612,14 +612,14 @@ function startRecordingMovements() {
         isRecording = true;
         recordedMovements = [];
         recordingStartTime = Date.now();
-        
+
         const btnStart = document.getElementById('btnStart');
         if (btnStart) {
             btnStart.innerHTML = '<i class="fas fa-stop"></i> Stop Recording';
             btnStart.classList.remove('btn-primary');
             btnStart.classList.add('btn-danger');
         }
-        
+
         showNotification('Recording arm movements... Move the arm to record.', 'info');
         // Notify backend that recording started so servos can be enabled if needed
         try {
@@ -650,7 +650,7 @@ function savePose() {
         showNotification('Socket.IO not connected. Please wait...', 'warning');
         return;
     }
-    
+
     const pose = {};
     document.querySelectorAll('.servo-slider').forEach(slider => {
         const servo = slider.dataset.servo;
@@ -680,7 +680,7 @@ function capturePose() {
 
     if (telemetryAngles && Object.keys(telemetryAngles).length > 0) {
         // Copy known keys (ensure consistent servo keys)
-        ['base','shoulder','forearm','elbow','pitch','claw'].forEach(k => {
+        ['base', 'shoulder', 'forearm', 'elbow', 'pitch', 'claw'].forEach(k => {
             if (telemetryAngles[k] !== undefined && telemetryAngles[k] !== null) {
                 pose[k] = parseInt(telemetryAngles[k]);
             }
@@ -713,7 +713,7 @@ function resetArm() {
         showNotification('Socket.IO not connected. Please wait...', 'warning');
         return;
     }
-    
+
     if (confirm('Reset all servos to home position?')) {
         socket.emit('servo_command', { cmd: 'reset' });
 
@@ -736,43 +736,43 @@ function resetArm() {
 // Toggle automatic mode (for tomato detection and picking)
 function toggleAutomaticMode(event) {
     const isAuto = event.target.checked;
-    
+
     if (!socket || !socket.connected) {
         showNotification('Socket.IO not connected. Please wait...', 'warning');
         event.target.checked = !isAuto; // Revert toggle
         return;
     }
-    
+
     // Send automatic mode command to backend
     fetch('/api/auto/start', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'}
+        headers: { 'Content-Type': 'application/json' }
     }).then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            if (isAuto) {
-                showNotification('Automatic mode started: Detecting and picking ready tomatoes', 'success');
+        .then(data => {
+            if (data.success) {
+                if (isAuto) {
+                    showNotification('Automatic mode started: Detecting and picking ready tomatoes', 'success');
+                } else {
+                    // Stop automatic mode
+                    fetch('/api/auto/stop', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    }).then(response => response.json())
+                        .then(data => {
+                            if (data.success) {
+                                showNotification('Automatic mode stopped', 'info');
+                            }
+                        });
+                }
             } else {
-                // Stop automatic mode
-                fetch('/api/auto/stop', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'}
-                }).then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        showNotification('Automatic mode stopped', 'info');
-                    }
-                });
+                showNotification('Failed to toggle automatic mode: ' + (data.error || 'Unknown error'), 'danger');
+                event.target.checked = !isAuto; // Revert toggle
             }
-        } else {
-            showNotification('Failed to toggle automatic mode: ' + (data.error || 'Unknown error'), 'danger');
+        }).catch(error => {
+            console.error('Error toggling automatic mode:', error);
+            showNotification('Error toggling automatic mode: ' + error.message, 'danger');
             event.target.checked = !isAuto; // Revert toggle
-        }
-    }).catch(error => {
-        console.error('Error toggling automatic mode:', error);
-        showNotification('Error toggling automatic mode: ' + error.message, 'danger');
-        event.target.checked = !isAuto; // Revert toggle
-    });
+        });
 }
 
 // Legacy toggle mode (kept for compatibility)
@@ -783,7 +783,7 @@ function toggleMode(event) {
         event.target.checked = !event.target.checked;
         return;
     }
-    
+
     const isAuto = event.target.checked;
     socket.emit('servo_command', {
         cmd: 'set_mode',
@@ -800,7 +800,7 @@ function updateConnectionStatus(connected, message = null) {
         console.warn('Connection status badge not found');
         return;
     }
-    
+
     const statusDot = statusBadge.querySelector('.status-dot');
     const statusText = statusBadge.querySelector('span:last-child');
 
@@ -815,7 +815,7 @@ function updateConnectionStatus(connected, message = null) {
         const btnStart = document.getElementById('btnStart');
         const btnSave = document.getElementById('btnSave');
         const btnReset = document.getElementById('btnReset');
-        
+
         if (btnConnect) btnConnect.disabled = true;
         if (btnDisconnect) btnDisconnect.disabled = false;
         if (btnStart) btnStart.disabled = false;
@@ -833,7 +833,7 @@ function updateConnectionStatus(connected, message = null) {
         const btnStart = document.getElementById('btnStart');
         const btnSave = document.getElementById('btnSave');
         const btnReset = document.getElementById('btnReset');
-        
+
         if (btnConnect) btnConnect.disabled = false;
         if (btnDisconnect) btnDisconnect.disabled = true;
         if (btnStart) btnStart.disabled = true;
@@ -857,7 +857,7 @@ function updateTelemetry(data) {
     } catch (e) {
         window.latestServoAngles = window.latestServoAngles || {};
     }
-    
+
     // Update distance (ToF)
     const distanceElement = document.getElementById('distanceValue');
     if (distanceElement) {
@@ -874,7 +874,17 @@ function updateTelemetry(data) {
     if (data.status) {
         const statusElement = document.getElementById('statusValue');
         if (statusElement) {
-            statusElement.textContent = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+            const status = data.status.toLowerCase();
+            statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+
+            // Add visual styling based on status
+            if (status === 'running') {
+                statusElement.innerHTML = `<span class="badge bg-success pulse-animation">Running</span>`;
+            } else if (status === 'idle') {
+                statusElement.innerHTML = `<span class="badge bg-secondary">Idle</span>`;
+            } else if (status === 'disconnected') {
+                statusElement.innerHTML = `<span class="badge bg-danger">Disconnected</span>`;
+            }
         } else {
             console.warn('statusValue element not found');
         }
@@ -892,7 +902,7 @@ function updateTelemetry(data) {
             modeToggle.checked = (data.mode === 'auto');
         }
     }
-    
+
     // Update arm orientation from backend
     if (data.arm_orientation) {
         const orientationElement = document.getElementById('armOrientation');

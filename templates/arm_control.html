@@ -7,22 +7,28 @@
     <title>FarmBOT - Arm Control</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="{{ url_for('static', filename='css/modern_control.css') }}?v={{ timestamp|default('') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/modern_control.css') }}?v={{ timestamp|default('') }}"
+        rel="stylesheet">
     <style>
         /* Ensure footer stays at bottom */
-        html, body {
+        html,
+        body {
             height: 100%;
             margin: 0;
             padding: 0;
         }
+
         body {
             display: flex;
             flex-direction: column;
             min-height: 100vh;
         }
-        .container-fluid, .container {
+
+        .container-fluid,
+        .container {
             flex: 1 0 auto;
         }
+
         footer {
             flex-shrink: 0;
             margin-top: auto;
@@ -97,48 +103,57 @@
                     </div>
                     <div class="card-body">
                         <div class="arm-viz-container">
-                            <svg width="100%" height="500" viewBox="0 0 400 500" xmlns="http://www.w3.org/2000/svg" style="background: linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%);">
+                            <svg width="100%" height="500" viewBox="0 0 400 500" xmlns="http://www.w3.org/2000/svg"
+                                style="background: linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%);">
                                 <!-- Arm Assembly Group (for base rotation) -->
                                 <g id="arm-assembly" transform="rotate(0 200 450)">
                                     <!-- Base (fixed position, bottom) -->
                                     <g id="base-group">
-                                        <rect x="150" y="450" width="100" height="50" fill="#007bff" class="arm-part" rx="5" stroke="#0056b3" stroke-width="2"/>
-                                        <text x="200" y="480" text-anchor="middle" font-size="12" fill="white" font-weight="bold">Base</text>
+                                        <rect x="150" y="450" width="100" height="50" fill="#007bff" class="arm-part"
+                                            rx="5" stroke="#0056b3" stroke-width="2" />
+                                        <text x="200" y="480" text-anchor="middle" font-size="12" fill="white"
+                                            font-weight="bold">Base</text>
                                     </g>
-                                    
+
                                     <!-- Shoulder (rotates around base top) -->
                                     <g id="shoulder-group" transform="rotate(0 200 450)">
-                                        <rect x="180" y="350" width="40" height="100" fill="#6f42c1" class="arm-part" rx="5" stroke="#5a32a3" stroke-width="2"/>
-                                        <circle cx="200" cy="450" r="8" fill="#fff" stroke="#6f42c1" stroke-width="2"/>
+                                        <rect x="180" y="350" width="40" height="100" fill="#6f42c1" class="arm-part"
+                                            rx="5" stroke="#5a32a3" stroke-width="2" />
+                                        <circle cx="200" cy="450" r="8" fill="#fff" stroke="#6f42c1" stroke-width="2" />
                                     </g>
-                                    
+
                                     <!-- Forearm (rotates around shoulder top) -->
                                     <g id="forearm-group" transform="rotate(0 200 350)">
-                                        <rect x="185" y="250" width="30" height="100" fill="#17a2b8" class="arm-part" rx="5" stroke="#138496" stroke-width="2"/>
-                                        <circle cx="200" cy="350" r="6" fill="#fff" stroke="#17a2b8" stroke-width="2"/>
+                                        <rect x="185" y="250" width="30" height="100" fill="#17a2b8" class="arm-part"
+                                            rx="5" stroke="#138496" stroke-width="2" />
+                                        <circle cx="200" cy="350" r="6" fill="#fff" stroke="#17a2b8" stroke-width="2" />
                                     </g>
-                                    
+
                                     <!-- Elbow (rotates around forearm top) -->
                                     <g id="elbow-group" transform="rotate(0 200 250)">
-                                        <rect x="190" y="150" width="20" height="100" fill="#fd7e14" class="arm-part" rx="5" stroke="#e8650e" stroke-width="2"/>
-                                        <circle cx="200" cy="250" r="5" fill="#fff" stroke="#fd7e14" stroke-width="2"/>
+                                        <rect x="190" y="150" width="20" height="100" fill="#fd7e14" class="arm-part"
+                                            rx="5" stroke="#e8650e" stroke-width="2" />
+                                        <circle cx="200" cy="250" r="5" fill="#fff" stroke="#fd7e14" stroke-width="2" />
                                     </g>
-                                    
+
                                     <!-- Wrist Pitch (rotates around elbow top) -->
                                     <g id="pitch-group" transform="rotate(0 200 150)">
-                                        <rect x="195" y="100" width="10" height="50" fill="#ffc107" class="arm-part" rx="5" stroke="#e0a800" stroke-width="2"/>
-                                        <circle cx="200" cy="150" r="4" fill="#fff" stroke="#ffc107" stroke-width="2"/>
+                                        <rect x="195" y="100" width="10" height="50" fill="#ffc107" class="arm-part"
+                                            rx="5" stroke="#e0a800" stroke-width="2" />
+                                        <circle cx="200" cy="150" r="4" fill="#fff" stroke="#ffc107" stroke-width="2" />
                                     </g>
-                                    
+
                                     <!-- Claw (opens/closes at wrist) -->
                                     <g id="claw-group" transform="translate(200, 100)">
                                         <g class="claw-finger-left">
-                                            <rect x="-15" y="0" width="8" height="30" fill="#dc3545" class="arm-part" rx="3" stroke="#c82333" stroke-width="1"/>
+                                            <rect x="-15" y="0" width="8" height="30" fill="#dc3545" class="arm-part"
+                                                rx="3" stroke="#c82333" stroke-width="1" />
                                         </g>
                                         <g class="claw-finger-right">
-                                            <rect x="7" y="0" width="8" height="30" fill="#dc3545" class="arm-part" rx="3" stroke="#c82333" stroke-width="1"/>
+                                            <rect x="7" y="0" width="8" height="30" fill="#dc3545" class="arm-part"
+                                                rx="3" stroke="#c82333" stroke-width="1" />
                                         </g>
-                                        <circle cx="0" cy="0" r="5" fill="#dc3545" stroke="#fff" stroke-width="2"/>
+                                        <circle cx="0" cy="0" r="5" fill="#dc3545" stroke="#fff" stroke-width="2" />
                                     </g>
                                 </g>
                             </svg>
@@ -151,26 +166,29 @@
                     <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
                         <h5 class="mb-0"><i class="fas fa-camera"></i> Live Camera Feed</h5>
                         <div class="d-flex gap-2 align-items-center">
-                            <button id="btnStartCamera" class="btn btn-sm btn-success" onclick="startCameraFeed()" title="Start Camera">
+                            <button id="btnStartCamera" class="btn btn-sm btn-success" onclick="startCameraFeed()"
+                                title="Start Camera">
                                 <i class="fas fa-play"></i> Start
                             </button>
-                            <button id="btnStopCamera" class="btn btn-sm btn-danger" onclick="stopCameraFeed()" title="Stop Camera" style="display: none;">
+                            <button id="btnStopCamera" class="btn btn-sm btn-danger" onclick="stopCameraFeed()"
+                                title="Stop Camera" style="display: none;">
                                 <i class="fas fa-stop"></i> Stop
                             </button>
                         </div>
                     </div>
                     <div class="card-body">
                         <div class="mb-2 d-flex gap-2 align-items-center">
-                            <select id="camera-selector" class="form-select form-select-sm" onchange="switchCamera()" style="width: auto; min-width: 150px;">
+                            <select id="camera-selector" class="form-select form-select-sm" onchange="switchCamera()"
+                                style="width: auto; min-width: 150px;">
                                 <option value="">Loading cameras...</option>
                             </select>
-                            <button class="btn btn-sm btn-outline-secondary" onclick="refreshCameraList()" title="Refresh Camera List">
+                            <button class="btn btn-sm btn-outline-secondary" onclick="refreshCameraList()"
+                                title="Refresh Camera List">
                                 <i class="fas fa-sync-alt"></i>
                             </button>
                         </div>
                         <div class="camera-feed" id="cameraContainer">
-                            <img id="cameraFeed" alt="Camera Feed"
-                                style="display: none; width: 100%; height: auto;">
+                            <img id="cameraFeed" alt="Camera Feed" style="display: none; width: 100%; height: auto;">
                             <div class="camera-placeholder" id="cameraPlaceholder">
                                 <i class="fas fa-camera"></i>
                                 <p>Click "Start" to begin camera feed</p>
@@ -239,8 +257,8 @@
                                 <div class="servo-value" id="pitchValue">90°</div>
                             </div>
                             <div class="slider-wrapper">
-                                <input type="range" class="servo-slider pitch" id="pitchSlider" min="20" max="160" value="90"
-                                    data-servo="pitch">
+                                <input type="range" class="servo-slider pitch" id="pitchSlider" min="20" max="160"
+                                    value="90" data-servo="pitch">
                             </div>
                         </div>
 
@@ -254,8 +272,8 @@
                                 <div class="servo-value" id="elbowValue">90°</div>
                             </div>
                             <div class="slider-wrapper">
-                                <input type="range" class="servo-slider elbow" id="elbowSlider" min="15" max="165" value="90"
-                                    data-servo="elbow">
+                                <input type="range" class="servo-slider elbow" id="elbowSlider" min="15" max="165"
+                                    value="90" data-servo="elbow">
                             </div>
                         </div>
 
@@ -290,7 +308,8 @@
                         </div>
 
                         <!-- Base Servo (Bottom of arm - lowest) - DISABLED: Not available -->
-                        <div class="servo-control" style="opacity: 0.5; pointer-events: none;" title="Base servo not available - manually fixed">
+                        <div class="servo-control" style="opacity: 0.5; pointer-events: none;"
+                            title="Base servo not available - manually fixed">
                             <div class="servo-header">
                                 <div class="servo-name">
                                     <i class="fas fa-circle-notch" style="color: var(--primary);"></i>
@@ -299,13 +318,14 @@
                                 <div class="servo-value" id="baseValue">90° <small>(Fixed)</small></div>
                             </div>
                             <div class="slider-wrapper">
-                                <input type="range" class="servo-slider base" id="baseSlider" min="0" max="180" value="90"
-                                    data-servo="base" disabled>
+                                <input type="range" class="servo-slider base" id="baseSlider" min="0" max="180"
+                                    value="90" data-servo="base" disabled>
                             </div>
                         </div>
 
                         <!-- Speed Control -->
-                        <div class="servo-control" style="border-top: 2px solid #dee2e6; padding-top: 1rem; margin-top: 0.5rem;">
+                        <div class="servo-control"
+                            style="border-top: 2px solid #dee2e6; padding-top: 1rem; margin-top: 0.5rem;">
                             <div class="servo-header">
                                 <div class="servo-name">
                                     <i class="fas fa-tachometer-alt" style="color: var(--success);"></i>
@@ -314,36 +334,95 @@
                                 <div class="servo-value" id="speedValue">100%</div>
                             </div>
                             <div class="slider-wrapper">
-                                <input type="range" class="servo-slider speed" id="speedSlider" min="33" max="100" value="100"
-                                    data-servo="speed">
+                                <input type="range" class="servo-slider speed" id="speedSlider" min="33" max="100"
+                                    value="100" data-servo="speed">
                             </div>
                         </div>
 
-                <!-- Action Buttons -->
-                <div class="action-buttons">
-                    <button class="btn btn-success btn-action" id="btnConnect">
-                        <i class="fas fa-link"></i> Connect
-                    </button>
-                    <button class="btn btn-danger btn-action" id="btnDisconnect" disabled>
-                        <i class="fas fa-unlink"></i> Disconnect
-                    </button>
-                    <button class="btn btn-primary btn-action" id="btnStart" disabled>
-                        <i class="fas fa-play"></i> Start Recording
-                    </button>
-                    <button class="btn btn-info btn-action" id="btnSave" disabled>
-                        <i class="fas fa-save"></i> Save
-                    </button>
-                    <button class="btn btn-secondary btn-action" id="btnCapturePose" disabled title="Capture current pose from telemetry">
-                        <i class="fas fa-camera"></i> Capture Pose
-                    </button>
-                    <button class="btn btn-warning btn-action" id="btnReset" disabled>
-                        <i class="fas fa-undo"></i> Reset
-                    </button>
+                        <!-- Action Buttons -->
+                        <div class="action-buttons">
+                            <button class="btn btn-success btn-action" id="btnConnect">
+                                <i class="fas fa-link"></i> Connect
+                            </button>
+                            <button class="btn btn-danger btn-action" id="btnDisconnect" disabled>
+                                <i class="fas fa-unlink"></i> Disconnect
+                            </button>
+                            <button class="btn btn-primary btn-action" id="btnStart" disabled>
+                                <i class="fas fa-play"></i> Start Recording
+                            </button>
+                            <button class="btn btn-info btn-action" id="btnSave" disabled>
+                                <i class="fas fa-save"></i> Save
+                            </button>
+                            <button class="btn btn-secondary btn-action" id="btnCapturePose" disabled
+                                title="Capture current pose from telemetry">
+                                <i class="fas fa-camera"></i> Capture Pose
+                            </button>
+                            <button class="btn btn-warning btn-action" id="btnReset" disabled>
+                                <i class="fas fa-undo"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Movement Collection -->
+                <div class="card status-card mt-4">
+                    <div class="card-header bg-gradient-purple text-white">
+                        <h5 class="mb-0"><i class="fas fa-magic"></i> Movement Collection</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <button class="btn btn-outline-primary btn-action w-100"
+                                    onclick="playNamedMovement('victory')" title="Celebration Dance">
+                                    <i class="fas fa-trophy"></i> Victory!
+                                </button>
+                            </div>
+                            <div class="col-6">
+                                <button class="btn btn-outline-info btn-action w-100"
+                                    onclick="playNamedMovement('curiosity')" title="Look Around">
+                                    <i class="fas fa-search"></i> Curious
+                                </button>
+                            </div>
+                            <div class="col-6">
+                                <button class="btn btn-outline-success btn-action w-100"
+                                    onclick="playNamedMovement('wave')" title="Say Hello">
+                                    <i class="fas fa-hand-wave"></i> Wave
+                                </button>
+                            </div>
+                            <div class="col-6">
+                                <button class="btn btn-outline-secondary btn-action w-100"
+                                    onclick="playNamedMovement('bow')" title="Formal Respect">
+                                    <i class="fas fa-user-tie"></i> Bow
+                                </button>
+                            </div>
+                            <div class="col-12">
+                                <button class="btn btn-outline-warning btn-action w-100"
+                                    onclick="playNamedMovement('happy')" title="Wiggle Wiggle">
+                                    <i class="fas fa-grin-stars"></i> Happy Dance
+                                </button>
+                            </div>
+                            <div class="col-12 mt-2">
+                                <button class="btn btn-outline-danger btn-action w-100"
+                                    onclick="playNamedMovement('hyperactive')" title="⚡ ULTRA SPEED ⚡">
+                                    <i class="fas fa-bolt"></i> Hyperactive
+                                </button>
+                            </div>
+                            <div class="col-12 mt-2">
+                                <button class="btn btn-outline-info btn-action w-100"
+                                    onclick="playNamedMovement('symphony')" title="🎭 30s PERFORMANCE 🎭">
+                                    <i class="fas fa-music"></i> Grand Symphony
+                                </button>
+                            </div>
+                            <div class="col-12 mt-2">
+                                <button class="btn btn-dark btn-action w-100" onclick="playNamedMovement('epic')"
+                                    title="⚔️ THE ULTIMATE PERFORMANCE ⚔️">
+                                    <i class="fas fa-dragon"></i> Epic Journey
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-    </div>
-    </div>
     </div>
     </div>
     </div>
@@ -362,18 +441,57 @@
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
         // Error handling for missing files
-        window.addEventListener('error', function(e) {
+        window.addEventListener('error', function (e) {
             if (e.filename && e.filename.includes('modern_control')) {
                 console.error('Error loading modern_control.js:', e);
                 // Continue without the file - page should still work
             }
         }, true);
     </script>
-    <script src="{{ url_for('static', filename='js/modern_control.js') }}?v={{ timestamp|default('') }}" onerror="console.error('Failed to load modern_control.js')"></script>
+    <script src="{{ url_for('static', filename='js/modern_control.js') }}?v={{ timestamp|default('') }}"
+        onerror="console.error('Failed to load modern_control.js')"></script>
     <script>
+        // Play a named movement from the collection
+        async function playNamedMovement(movementId) {
+            if (!socket || !socket.connected) {
+                showNotification('Socket.IO not connected. Please connect first.', 'warning');
+                return;
+            }
+
+            try {
+                const movementNames = {
+                    'victory': 'Victory Dance! 🏆',
+                    'curiosity': 'Curiosity Peek... 🔍',
+                    'wave': 'Energetic Wave! 👋',
+                    'bow': 'Formal Bow. 🙇',
+                    'happy': 'Happy Dance! ✨',
+                    'hyperactive': '⚡ HYPERACTIVE MODE ⚡',
+                    'symphony': '🎭 THE GRAND SYMPHONY 🎭',
+                    'epic': '⚔️ THE EPIC JOURNEY ⚔️'
+                };
+
+                showNotification(`Starting ${movementNames[movementId] || movementId}`, 'success');
+
+                const response = await fetch('/api/arm/play_movement', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ movement_id: movementId })
+                });
+
+                const result = await response.json();
+                if (!result.success) {
+                    showNotification('Failed to start movement: ' + result.message, 'danger');
+                }
+            } catch (error) {
+                console.error('Error playing movement:', error);
+                showNotification('Error starting movement', 'danger');
+            }
+        }
+
+        // Reset arm to home position
         // Show notification function (fallback if not defined in modern_control.js)
         if (typeof showNotification !== 'function') {
-            window.showNotification = function(message, type = 'info') {
+            window.showNotification = function (message, type = 'info') {
                 // Fallback notification
                 const alertDiv = document.createElement('div');
                 alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3`;
@@ -387,10 +505,10 @@
                 setTimeout(() => alertDiv.remove(), 3000);
             };
         }
-        
+
         // Update connection status function (fallback if not defined in modern_control.js)
         if (typeof updateConnectionStatus !== 'function') {
-            window.updateConnectionStatus = function(connected, message = null) {
+            window.updateConnectionStatus = function (connected, message = null) {
                 const statusBadge = document.getElementById('connectionStatus');
                 if (statusBadge) {
                     statusBadge.className = connected ? 'connection-badge connected' : 'connection-badge disconnected';
@@ -399,7 +517,7 @@
                 }
             };
         }
-        
+
         // Check SocketIO server status on page load
         async function checkSocketIOStatus() {
             try {
@@ -414,62 +532,62 @@
                 console.error('Error checking SocketIO status:', error);
             }
         }
-        
+
         // Track current camera to prevent unnecessary switches
         let currentCameraIndex = null;
-        
+
         // Camera management functions
         let cameraListLoading = false;
-        
+
         async function loadCameraList(forceRefresh = false) {
             // Prevent multiple simultaneous loads
             if (cameraListLoading) {
                 console.log('Camera list already loading, skipping...');
                 return;
             }
-            
+
             const selector = document.getElementById('camera-selector');
             if (!selector) {
                 console.warn('Camera selector element not found');
                 return;
             }
-            
+
             try {
                 cameraListLoading = true;
                 window.lastCameraListLoadTime = Date.now();
                 console.log('Loading camera list...');
-                
+
                 // Set loading state
                 selector.innerHTML = '<option value="">Loading cameras...</option>';
                 selector.disabled = true;
-                
+
                 // Simple fetch like the working feed page - no complex timeout logic
                 const url = forceRefresh ? '/api/camera/list?refresh=true' : '/api/camera/list';
                 const response = await fetch(url);
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
-                
+
                 const result = await response.json();
-                
+
                 console.log('Camera list response:', result);
-                
+
                 selector.disabled = false;
-                
+
                 if (!result.success) {
                     console.error('Camera list API returned error:', result.message);
                     selector.innerHTML = `<option value="">Error: ${result.message || 'Failed to load cameras'}</option>`;
                     return;
                 }
-                
+
                 if (result.success && result.cameras) {
                     // Temporarily remove onchange handler to prevent triggering during update
                     const originalOnchange = selector.onchange;
                     selector.onchange = null;
-                    
+
                     selector.innerHTML = '';
-                    
+
                     if (result.cameras.length === 0) {
                         selector.innerHTML = '<option value="">No cameras found</option>';
                         selector.onchange = originalOnchange; // Restore handler
@@ -477,7 +595,7 @@
                         console.warn('No cameras detected');
                         return;
                     }
-                    
+
                     result.cameras.forEach(camera => {
                         const option = document.createElement('option');
                         option.value = camera.index;
@@ -490,10 +608,10 @@
                         }
                         selector.appendChild(option);
                     });
-                    
+
                     // Restore onchange handler
                     selector.onchange = originalOnchange;
-                    
+
                     console.log(`Loaded ${result.cameras.length} camera(s)`);
                 } else {
                     console.error('Failed to load cameras:', result.message || 'Unknown error');
@@ -510,85 +628,85 @@
                 window.lastCameraListLoadTime = null;
             }
         }
-        
+
         // Make functions globally accessible for onclick handlers (define early)
-        window.refreshCameraList = function() {
+        window.refreshCameraList = function () {
             loadCameraList(true); // Force refresh to re-detect all cameras
         };
-        
-        window.switchCamera = function() {
+
+        window.switchCamera = function () {
             const selector = document.getElementById('camera-selector');
             if (!selector) return;
-            
+
             const cameraIndex = parseInt(selector.value);
             if (isNaN(cameraIndex)) return;
-            
+
             // Don't switch if we're already on this camera
             if (currentCameraIndex === cameraIndex) {
                 console.log(`Already on camera ${cameraIndex}, skipping switch`);
                 return;
             }
-            
+
             switchCameraInternal(cameraIndex);
         };
-        
+
         window.loadCameraList = loadCameraList;
-        
+
         // Camera feed control
         let isCameraFeedRunning = false;
-        
+
         function startCameraFeed() {
             if (isCameraFeedRunning) return;
-            
+
             const cameraFeed = document.getElementById('cameraFeed');
             const placeholder = document.getElementById('cameraPlaceholder');
             const btnStart = document.getElementById('btnStartCamera');
             const btnStop = document.getElementById('btnStopCamera');
-            
+
             if (cameraFeed && placeholder) {
                 placeholder.style.display = 'none';
                 cameraFeed.style.display = 'block';
                 cameraFeed.src = "/api/camera/feed?" + new Date().getTime();
                 isCameraFeedRunning = true;
-                
+
                 if (btnStart) btnStart.style.display = 'none';
                 if (btnStop) btnStop.style.display = 'inline-block';
             }
         }
-        
+
         function stopCameraFeed() {
             if (!isCameraFeedRunning) return;
-            
+
             const cameraFeed = document.getElementById('cameraFeed');
             const placeholder = document.getElementById('cameraPlaceholder');
             const btnStart = document.getElementById('btnStartCamera');
             const btnStop = document.getElementById('btnStopCamera');
-            
+
             if (cameraFeed) {
                 cameraFeed.src = '';
                 cameraFeed.removeAttribute('src');
                 cameraFeed.style.display = 'none';
                 try {
                     cameraFeed.load();
-                } catch (e) {}
+                } catch (e) { }
             }
-            
+
             if (placeholder) {
                 placeholder.style.display = 'flex';
             }
-            
+
             isCameraFeedRunning = false;
-            
+
             if (btnStart) btnStart.style.display = 'inline-block';
             if (btnStop) btnStop.style.display = 'none';
         }
-        
+
         // Make camera feed functions globally accessible
         window.startCameraFeed = startCameraFeed;
         window.stopCameraFeed = stopCameraFeed;
-        
+
         // Stop camera feed on page unload
-        window.addEventListener('beforeunload', function() {
+        window.addEventListener('beforeunload', function () {
             if (isCameraFeedRunning) {
                 try {
                     navigator.sendBeacon('/api/camera/stop', '');
@@ -598,8 +716,8 @@
                 stopCameraFeed();
             }
         });
-        
-        window.addEventListener('pagehide', function() {
+
+        window.addEventListener('pagehide', function () {
             if (isCameraFeedRunning) {
                 try {
                     navigator.sendBeacon('/api/camera/stop', '');
@@ -609,15 +727,15 @@
                 stopCameraFeed();
             }
         });
-        
+
         async function switchCameraInternal(cameraIndex) {
             try {
                 const response = await fetch('/api/camera/switch', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({index: cameraIndex})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ index: cameraIndex })
                 });
-                
+
                 const result = await response.json();
                 if (result.success) {
                     currentCameraIndex = cameraIndex; // Update tracked index
@@ -648,7 +766,7 @@
                 showNotification('Error switching camera: ' + error.message, 'danger');
             }
         }
-        
+
         // Load camera list and check SocketIO on page load
         function initializePage() {
             console.log('Initializing page...');
@@ -659,7 +777,7 @@
                 loadCameraList();
             }, 100);
         }
-        
+
         if (document.readyState === 'loading') {
             // DOM is still loading, wait for DOMContentLoaded
             console.log('DOM still loading, waiting for DOMContentLoaded...');
@@ -673,4 +791,5 @@
 </body>
 
 </html>
+
 </html>

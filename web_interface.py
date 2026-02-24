@@ -898,6 +898,22 @@ def api_move_arm():
         hw_controller.move_arm(x, y, z)
         return jsonify({'success': True, 'message': f'Arm moved to ({x}, {y}, {z})'})
 
+@app.route('/api/arm/play_movement', methods=['POST'])
+def api_arm_play_movement():
+    """Trigger a named movement sequence"""
+    if not hw_controller:
+        return jsonify({'success': False, 'message': 'Hardware controller not available'})
+    
+    data = request.get_json()
+    movement_id = data.get('movement_id', 'victory')
+    
+    # Run in a separate thread to not block the web server
+    def run_movement():
+        hw_controller.play_movement(movement_id)
+        
+    threading.Thread(target=run_movement, daemon=True).start()
+    return jsonify({'success': True, 'message': f'Movement "{movement_id}" started! 🤖'})
+
 @app.route('/api/arm/home', methods=['POST'])
 def api_home_arm():
     """API endpoint to home arm"""
@@ -1905,7 +1921,7 @@ def controller_telemetry_thread():
                 
                 # Determine status
                 status = 'idle'
-                if hw_controller.auto_mode:
+                if hw_controller.auto_mode or hw_controller.movement_active:
                     status = 'running'
                 if not hw_status.get('arduino_connected', False):
                     status = 'disconnected'

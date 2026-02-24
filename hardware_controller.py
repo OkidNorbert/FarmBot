@@ -236,11 +236,13 @@ class HardwareController:
         self.classifier = None
         self.yolo_detector = None
         self.camera_lock = threading.Lock()
+        self.serial_lock = threading.Lock()
         
         # State
         self.arduino_connected = False
         self.camera_connected = False
         self.auto_mode = False
+        self.movement_active = False # Track if a pre-defined movement is playing
         self.last_frame = None
         self.connection_type = connection_type
         self.ble_device_name = ble_device_name
@@ -651,34 +653,39 @@ class HardwareController:
     def get_distance_sensor(self):
         """Read distance from VL53L0X via Arduino"""
         if self.arduino_connected and self.arduino:
-            try:
-                # Send DISTANCE command
-                self.arduino.write(b"DISTANCE\n")
-                time.sleep(0.1)  # Wait for response
-                
-                # Read response
-                response = self.arduino.readline().decode().strip()
-                
-                if response.startswith("DISTANCE: "):
-                    distance_str = response.replace("DISTANCE: ", "")
-                    if distance_str == "OUT_OF_RANGE" or distance_str == "SENSOR_NOT_AVAILABLE":
-                        self.logger.warning(f"Distance sensor: {distance_str}")
+            # Use lock for thread-safe serial access
+            with self.serial_lock:
+                try:
+                    # Clear input buffer to ensure we get fresh data
+                    self.arduino.reset_input_buffer()
+                    # Send DISTANCE command
+                    self.arduino.write(b"DISTANCE\n")
+                    time.sleep(0.05)  # Shorter wait
+                    
+                    # Read response (with a short timeout)
+                    response = self.arduino.readline().decode().strip()
+                    
+                    if response.startswith("DISTANCE: "):
+                        distance_str = response.replace("DISTANCE: ", "")
+                        if distance_str == "OUT_OF_RANGE" or distance_str == "SENSOR_NOT_AVAILABLE":
+                            self.logger.warning(f"Distance sensor: {distance_str}")
+                            return None
+                        try:
+                            distance_mm = int(distance_str)
+                            self.last_distance_reading = distance_mm; return distance_mm
+                        except ValueError:
+                            self.logger.error(f"Invalid distance reading: {distance_str}")
+                            return None
+                    else:
+                        # Log unexpected response but don't treat it as a hard error
+                        # self.logger.debug(f"Unexpected distance response: {response}")
                         return None
-                    try:
-                        distance_mm = int(distance_str)
-                        self.last_distance_reading = distance_mm; return distance_mm
-                    except ValueError:
-                        self.logger.error(f"Invalid distance reading: {distance_str}")
-                        return None
-                else:
-                    self.logger.warning(f"Unexpected distance response: {response}")
+                except Exception as e:
+                    self.logger.error(f"Distance sensor read error: {e}")
                     return None
-            except Exception as e:
-                self.logger.error(f"Distance sensor read error: {e}")
-                return None
         else:
             # Simulation mode
-            return 50  # mm (dummy value)
+            return 85  # mm (dummy value)
 
     def start_auto_mode(self):
         self.auto_mode = True
@@ -1304,13 +1311,14 @@ class HardwareController:
             
             # Try Serial
             if self.arduino and hasattr(self.arduino, 'is_open') and self.arduino.is_open:
-                try:
-                    self.arduino.write(f"{command}\n".encode())
-                    self.logger.info(f"Sent to Arduino (Serial): {command}")
-                    return True
-                except Exception as e:
-                    self.logger.error(f"Serial write error: {e}")
-                    return False
+                with self.serial_lock:
+                    try:
+                        self.arduino.write(f"{command}\n".encode())
+                        self.logger.info(f"Sent to Arduino (Serial): {command}")
+                        return True
+                    except Exception as e:
+                        self.logger.error(f"Serial write error: {e}")
+                        return False
             else:
                 self.logger.warning(f"Arduino not connected - cannot send command: {command}")
                 return False
@@ -1656,6 +1664,7 @@ class HardwareController:
             'camera_index': self.camera_index if self.camera_connected else None,
             'available_cameras': len(self.available_cameras) if hasattr(self, 'available_cameras') else 0,
             'auto_mode': self.auto_mode,
+            'movement_active': self.movement_active,
             'connection_type': connection_type,
             'classifier_loaded': model_loaded,
             'arm_orientation': 'front' if is_facing_front else 'back',
@@ -1701,6 +1710,202 @@ class HardwareController:
             loop.close()
         return devices
     
+    def play_movement(self, movement_id):
+        """Execute a named movement sequence from the collection"""
+        self.logger.info(f"Executing movement: {movement_id} 🤖")
+        
+        # Save current mode
+        previous_auto_mode = self.auto_mode
+        self.auto_mode = False
+        self.movement_active = True
+        
+        try:
+            if movement_id == 'victory':
+                # Victory Dance (Existing)
+                self.send_command("ANGLE -1 150 150 90 90 0")
+                time.sleep(0.8)
+                self.send_command("GRIPPER OPEN")
+                time.sleep(0.4)
+                for _ in range(3):
+                    self.send_command("ANGLE -1 150 150 120 90 90")
+                    time.sleep(0.4)
+                    self.send_command("ANGLE -1 150 150 60 90 90")
+                    time.sleep(0.4)
+            
+            elif movement_id == 'curiosity':
+                # Curious Peek: Leans forward and looks side to side
+                self.send_command("ANGLE -1 160 80 90 120 0")
+                time.sleep(1.0)
+                for _ in range(2):
+                    self.send_command("ANGLE 60 -1 -1 -1 -1 -1")
+                    time.sleep(0.6)
+                    self.send_command("ANGLE 120 -1 -1 -1 -1 -1")
+                    time.sleep(0.6)
+                self.send_command("ANGLE 90 -1 -1 -1 -1 -1")
+            
+            elif movement_id == 'wave':
+                # Energetic Wave: High arm, fast wrist movement
+                self.send_command("ANGLE -1 170 160 90 90 0")
+                time.sleep(0.8)
+                for _ in range(4):
+                    self.send_command("ANGLE -1 -1 -1 -1 140 -1")
+                    time.sleep(0.25)
+                    self.send_command("ANGLE -1 -1 -1 -1 40 -1")
+                    time.sleep(0.25)
+            
+            elif movement_id == 'bow':
+                # Formal Bow: Slow lowering of the entire arm
+                self.send_command("ANGLE -1 90 90 90 90 0")
+                time.sleep(0.5)
+                self.send_command("ANGLE -1 45 45 45 150 0")
+                time.sleep(1.5)
+                self.send_command("ANGLE -1 90 90 90 90 0")
+                time.sleep(1.0)
+
+            elif movement_id == 'happy':
+                # Happy Dance: Jiggle everything
+                for _ in range(3):
+                    self.send_command("ANGLE 85 145 145 85 85 45")
+                    time.sleep(0.2)
+                    self.send_command("ANGLE 95 155 155 95 95 0")
+                    time.sleep(0.2)
+            
+            elif movement_id == 'hyperactive':
+                # Hyperactive: High speed, rapid multi-joint movements
+                self.logger.info("⚡ ENTERING HYPERACTIVE MODE ⚡")
+                for _ in range(2):
+                    self.send_command("ANGLE 45 135 135 45 45 90")
+                    time.sleep(0.15)
+                    self.send_command("ANGLE 135 90 90 135 135 0")
+                    time.sleep(0.15)
+                    self.send_command("ANGLE 90 45 45 90 45 90")
+                    time.sleep(0.15)
+                
+                # Rapid circular-ish sweep
+                for angle in range(60, 121, 20):
+                    self.send_command(f"ANGLE {angle} 150 120 90 90 45")
+                    time.sleep(0.1)
+                for angle in range(120, 59, -20):
+                    self.send_command(f"ANGLE {angle} 150 120 90 90 0")
+                    time.sleep(0.1)
+                
+                # Final jitter
+                for _ in range(5):
+                    self.send_command("ANGLE -1 -1 -1 -1 -1 90")
+                    time.sleep(0.05)
+                    self.send_command("ANGLE -1 -1 -1 -1 -1 0")
+                    time.sleep(0.05)
+            
+            elif movement_id == 'symphony':
+                # The Grand Symphony: A long, complex, multi-stage performance
+                self.logger.info("🎭 STARTING THE GRAND SYMPHONY 🎭")
+                
+                # Part 1: The Awakening (Slow rise)
+                for angle in range(0, 151, 15):
+                    self.send_command(f"ANGLE 90 {angle} {angle} 90 90 0")
+                    time.sleep(0.15)
+                
+                # Part 2: The Scan (Base rotation with varied elbow)
+                for base in range(45, 136, 15):
+                    elbow = 60 if base % 30 == 0 else 120
+                    self.send_command(f"ANGLE {base} 150 150 {elbow} 90 45")
+                    time.sleep(0.3)
+                
+                # Part 3: The Waveform (Fluid joint coordination)
+                for i in range(4):
+                    offset = i * 15
+                    self.send_command(f"ANGLE {90+offset} {150-offset} {150-offset} {90+offset} {90+offset} 90")
+                    time.sleep(0.25)
+                    self.send_command(f"ANGLE {90-offset} {150+offset/2} {150+offset/2} {90-offset} {90-offset} 0")
+                    time.sleep(0.25)
+                
+                # Part 4: The Jitter & Snap
+                for _ in range(6):
+                    target = 160 if _ % 2 == 0 else 20
+                    self.send_command(f"ANGLE -1 -1 -1 -1 {target} -1")
+                    time.sleep(0.1)
+                    self.send_command("GRIPPER " + ("OPEN" if _ % 2 == 0 else "CLOSE"))
+                
+                # Part 5: The Spiral Dive
+                for angle in range(150, 44, -15):
+                    self.send_command(f"ANGLE 90 {angle} {angle} {angle} 90 0")
+                    time.sleep(0.15)
+                
+                # Part 6: Final Pose & Greeting
+                self.send_command("ANGLE 90 170 170 90 90 0")
+                time.sleep(1.0)
+                self.send_command("GRIPPER OPEN")
+                time.sleep(0.5)
+                self.send_command("GRIPPER CLOSE")
+                time.sleep(0.5)
+
+            elif movement_id == 'epic':
+                # The Epic Journey: 50+ steps, extremely complex performance
+                self.logger.info("⚔️ EMBARKING ON THE EPIC JOURNEY ⚔️")
+                
+                # Act 1: Dawn of the Robot (Gradual unfolding)
+                self.send_command("ANGLE 0 45 45 45 45 0")
+                time.sleep(0.5)
+                for angle in range(45, 151, 10):
+                    self.send_command(f"ANGLE 0 {angle} {angle} {angle} 90 0")
+                    time.sleep(0.1)
+                
+                # Act 2: The Horizon Scan (Full range sweep)
+                for base in range(0, 181, 15):
+                    pitch = 120 if base % 30 == 0 else 60
+                    self.send_command(f"ANGLE {base} 150 150 90 {pitch} 90")
+                    time.sleep(0.2)
+                
+                # Act 3: The Ocean Wave (Flowing joints)
+                for _ in range(3):
+                    for angle in range(60, 121, 15):
+                        self.send_command(f"ANGLE 90 {150-(angle-60)} {60+(angle-60)} {angle} 120 45")
+                        time.sleep(0.15)
+                    for angle in range(120, 59, -15):
+                        self.send_command(f"ANGLE 90 {150-(angle-60)} {60+(angle-60)} {angle} 60 0")
+                        time.sleep(0.15)
+                
+                # Act 4: The Mechanical Heartbeat (Rapid pulses)
+                for _ in range(12):
+                    self.send_command("GRIPPER " + ("OPEN" if _ % 2 == 0 else "CLOSE"))
+                    self.send_command(f"ANGLE -1 -1 -1 -1 {-1 if _ % 2 == 0 else 160} -1")
+                    time.sleep(0.12)
+                
+                # Act 5: The Snake (Sinusoidal base + elbow)
+                for i in range(10):
+                    base = 90 + 40 * math.sin(i * 0.6)
+                    elbow = 90 + 30 * math.cos(i * 0.6)
+                    self.send_command(f"ANGLE {int(base)} 150 150 {int(elbow)} 90 45")
+                    time.sleep(0.2)
+                
+                # Act 6: The Summit Reach (Max extension and victory)
+                self.send_command("ANGLE 90 180 180 180 90 90")
+                time.sleep(1.0)
+                for _ in range(4):
+                    self.send_command("ANGLE 70 -1 -1 -1 -1 -1")
+                    time.sleep(0.2)
+                    self.send_command("ANGLE 110 -1 -1 -1 -1 -1")
+                    time.sleep(0.2)
+                
+                # Act 7: The Journey Home (Careful retraction)
+                for angle in range(180, 89, -10):
+                    self.send_command(f"ANGLE 90 {angle} {angle} {angle} 90 0")
+                    time.sleep(0.1)
+
+            else:
+                self.logger.warning(f"Unknown movement ID: {movement_id}")
+                return False
+                
+            self.home_arm()
+            self.logger.info(f"Movement '{movement_id}' complete!")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error during movement '{movement_id}': {e}")
+            return False
+        finally:
+            self.auto_mode = previous_auto_mode
+            self.movement_active = False
+
     def connect_bluetooth_device(self, address, name=None):
         """Connect to a specific Bluetooth device by address"""
         if not BLE_AVAILABLE:
