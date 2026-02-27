@@ -2069,13 +2069,58 @@ def calibrate():
     """Calibration panel"""
     return render_template('pi_calibrate.html')
 
-@app.route('/api/socketio/status', methods=['GET'])
-def api_socketio_status():
-    """Check SocketIO server status"""
-    return jsonify({
-        'available': SOCKETIO_AVAILABLE,
-        'message': 'SocketIO is available' if SOCKETIO_AVAILABLE else 'SocketIO is not installed. Install with: pip install flask-socketio eventlet'
-    })
+@app.route('/api/arm/current_position', methods=['GET'])
+def api_arm_current_position():
+    """Get the current end-effector position from hardware controller"""
+    if HARDWARE_AVAILABLE and hw_controller:
+        pos = hw_controller.get_current_arm_xyz()
+        return jsonify({'success': True, 'position': pos})
+    return jsonify({'success': False, 'message': 'Hardware not available'}), 400
+
+@app.route('/api/control/pick_at_pixel', methods=['POST'])
+def api_pick_at_pixel():
+    """Command the arm to pick an item at a specific camera pixel"""
+    try:
+        data = request.get_json()
+        if not data or 'x' not in data or 'y' not in data:
+            return jsonify({'success': False, 'message': 'Invalid coordinates'}), 400
+        
+        px, py = data['x'], data['y']
+        
+        if HARDWARE_AVAILABLE and hw_controller:
+            # Convert pixel to world
+            coords = hw_controller.pixel_to_arm_coordinates(px, py)
+            if not coords:
+                return jsonify({'success': False, 'message': 'Coordinate conversion failed'}), 500
+            
+            arm_x, arm_y = coords
+            
+            # Use ToF or default depth
+            tof_dist = hw_controller.get_distance_sensor()
+            # For click-to-pick, we don't have a YOLO target, so we use a dummy target or fixed depth
+            # Default to 20mm above surface if TOF fails
+            arm_z = 20.0
+            if tof_dist and tof_dist > 0:
+                arm_z = max(5.0, tof_dist - 25.0) # Assume 25mm tomato radius
+            
+            # Validate reachable
+            if not hw_controller.is_position_reachable(arm_x, arm_y, arm_z):
+                return jsonify({'success': False, 'message': f'Position ({arm_x:.1f}, {arm_y:.1f}) out of reach'}), 400
+            
+            # Trigger pick
+            # ready_class = 1 (always assume pick requested is for a good item)
+            pick_command = f"PICK {int(arm_x)} {int(arm_y)} {int(arm_z)} 1"
+            hw_controller.send_command(pick_command)
+            
+            return jsonify({
+                'success': True, 
+                'message': f'Pick command sent for ({arm_x:.1f}, {arm_y:.1f}, {arm_z:.1f})',
+                'coordinates': {'x': arm_x, 'y': arm_y, 'z': arm_z}
+            })
+            
+        return jsonify({'success': False, 'message': 'Hardware not available'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 # ==========================================
 # Calibration API Routes

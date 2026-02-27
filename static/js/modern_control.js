@@ -2,6 +2,9 @@
 let socket = null;
 let isConnected = false;
 let currentSpeed = 100;
+let pickMode = false;
+let pickModeCooldown = false;
+
 
 // Initialize SocketIO connection with error handling
 function initializeSocketIO() {
@@ -955,3 +958,75 @@ function showNotification(message, type = 'info') {
         alertDiv.remove();
     }, 3000);
 }
+
+// Toggle Pick Mode
+function togglePickMode() {
+    const toggle = document.getElementById('pickModeToggle');
+    pickMode = toggle.checked;
+
+    const cameraContainer = document.getElementById('cameraContainer');
+    if (pickMode) {
+        cameraContainer.style.cursor = 'crosshair';
+        cameraContainer.title = 'Click to Pick';
+        showNotification('Pick Mode Enabled: Click on the camera feed to pick an item.', 'info');
+    } else {
+        cameraContainer.style.cursor = 'default';
+        cameraContainer.title = '';
+        showNotification('Pick Mode Disabled.', 'secondary');
+    }
+}
+
+// Initialize Pick Mode click handler
+function initializePickMode() {
+    const cameraFeed = document.getElementById('cameraFeed');
+    if (!cameraFeed) return;
+
+    cameraFeed.addEventListener('click', async function (e) {
+        if (!pickMode || pickModeCooldown) return;
+
+        // Cooldown to prevent multiple accidental clicks
+        pickModeCooldown = true;
+        setTimeout(() => { pickModeCooldown = false; }, 2000);
+
+        const rect = cameraFeed.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        // Convert to image coordinates
+        const imgWidth = cameraFeed.naturalWidth || 640;
+        const imgHeight = cameraFeed.naturalHeight || 480;
+        const scaleX = imgWidth / rect.width;
+        const scaleY = imgHeight / rect.height;
+
+        const pixelX = Math.round(x * scaleX);
+        const pixelY = Math.round(y * scaleY);
+
+        console.log(`Pick Mode click: (${pixelX}, ${pixelY})`);
+        showNotification(`Picking at (${pixelX}, ${pixelY})...`, 'info');
+
+        try {
+            const response = await fetch('/api/control/pick_at_pixel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x: pixelX, y: pixelY })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                showNotification(`Success: ${result.message}`, 'success');
+            } else {
+                showNotification(`Pick failed: ${result.message}`, 'danger');
+            }
+        } catch (error) {
+            console.error('Error in click-to-pick:', error);
+            showNotification('Error sending pick command', 'danger');
+        }
+    });
+}
+
+// Global initialization
+document.addEventListener('DOMContentLoaded', () => {
+    initializeSocketIO();
+    initializeCamera();
+    initializePickMode();
+});

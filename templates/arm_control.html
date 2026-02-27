@@ -186,6 +186,11 @@
                                 title="Refresh Camera List">
                                 <i class="fas fa-sync-alt"></i>
                             </button>
+                            <div class="form-check form-switch ms-3">
+                                <input class="form-check-input" type="checkbox" id="pickModeToggle"
+                                    onchange="togglePickMode()">
+                                <label class="form-check-label small" for="pickModeToggle">Pick Mode</label>
+                            </div>
                         </div>
                         <div class="camera-feed" id="cameraContainer">
                             <img id="cameraFeed" alt="Camera Feed" style="display: none; width: 100%; height: auto;">

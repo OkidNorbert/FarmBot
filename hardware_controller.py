@@ -1463,16 +1463,59 @@ class HardwareController:
                 # Fallback: simple scaling (needs calibration!)
                 # Assume camera is 640x480, workspace is roughly 300x200mm
                 # This is a rough estimate and should be replaced with proper calibration
-                scale_x = 300.0 / 640.0  # mm per pixel
-                scale_y = 200.0 / 480.0  # mm per pixel
-                arm_x = pixel_x * scale_x - 150  # Center at 0
-                arm_y = pixel_y * scale_y + 50   # Offset from base
+                # Ugandan setup: camera height ~350mm, viewport covers roughly 250x180mm
+                scale_x = 250.0 / 640.0  # mm per pixel
+                scale_y = 180.0 / 480.0  # mm per pixel
+                arm_x = pixel_x * scale_x - 125  # Center at 0
+                arm_y = pixel_y * scale_y + 80   # Offset from base
                 self.logger.debug(f"Using fallback scaling: ({pixel_x}, {pixel_y}) -> ({arm_x:.1f}, {arm_y:.1f})")
                 return arm_x, arm_y
                 
         except Exception as e:
             self.logger.error(f"Coordinate conversion failed: {e}")
             return None
+
+    def get_current_arm_xyz(self):
+        """Calculate current arm end-effector position (X, Y, Z) from servo angles
+        
+        Returns:
+            dict: {'x': x, 'y': y, 'z': z} in mm, or default if unavailable
+        """
+        try:
+            # Get current angles
+            base = self.current_servo_angles.get('base', 90)
+            shoulder = self.current_servo_angles.get('shoulder', 90)
+            forearm = self.current_servo_angles.get('forearm', 90)
+            
+            # Simple Forward Kinematics (Approximation)
+            # l1 = shoulder to forearm joint, l2 = forearm to end-effector
+            l1 = 120.0 # mm
+            l2 = 140.0 # mm
+            
+            # Convert to radians and adjust for zero-position offsets
+            # Mapping depends on physical assembly
+            rad_base = math.radians(base - 90)
+            rad_shoulder = math.radians(shoulder - 90)
+            rad_forearm = math.radians(forearm - 90)
+            
+            # Planar projection for shoulder/forearm
+            # z is vertical, distal is horizontal
+            distal = l1 * math.cos(rad_shoulder) + l2 * math.cos(rad_shoulder + rad_forearm)
+            z = l1 * math.sin(rad_shoulder) + l2 * math.sin(rad_shoulder + rad_forearm) + 50 # +50mm base height
+            
+            # Project distal into X, Y based on base rotation
+            x = distal * math.sin(rad_base)
+            y = distal * math.cos(rad_base)
+            
+            return {
+                'x': round(float(x), 1),
+                'y': round(float(y), 1),
+                'z': round(float(z), 1)
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to calculate current arm XYZ: {e}")
+            return {'x': 0, 'y': 150, 'z': 50} # Default safe position
+
     
     def is_position_reachable(self, arm_x, arm_y, arm_z):
         """Check if position is within arm workspace bounds
