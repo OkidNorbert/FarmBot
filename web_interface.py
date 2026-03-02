@@ -131,11 +131,13 @@ if SOCKETIO_AVAILABLE:
     socketio = SocketIO(
         app, 
         cors_allowed_origins="*", 
-        async_mode='threading',  # Changed from 'eventlet' - threading is compatible with PyTorch
-        ping_timeout=60,  # Increase ping timeout to 60 seconds
-        ping_interval=25,  # Send ping every 25 seconds
-        logger=False,  # Disable verbose logging
-        engineio_logger=False  # Disable engineio logging
+        async_mode='threading',  # threading mode is most compatible
+        ping_timeout=60,
+        ping_interval=25,
+        logger=False,
+        engineio_logger=False,
+        manage_middleware=True,
+        handle_sidecars=False
     )
 else:
     socketio = SocketIO(app)  # Dummy instance

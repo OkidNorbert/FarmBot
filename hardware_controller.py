@@ -259,6 +259,9 @@ class HardwareController:
             'pitch': True,     # Pitch servo available
             'claw': True       # Claw servo available
         }
+        # claw calibration endpoints (default safe values)
+        self.claw_min = 10
+        self.claw_max = 110
         
         # Fixed positions for unavailable servos (manually set)
         # These should match your manual adjustments
@@ -276,7 +279,7 @@ class HardwareController:
             'forearm': 90,
             'elbow': 90,  # Also called 'wrist_yaw' in backend
             'pitch': 90,  # Also called 'wrist_pitch' in backend
-            'claw': 0
+            'claw': 110  # home position is fully closed
         }
         
         # Configuration
@@ -1223,8 +1226,21 @@ class HardwareController:
         
         tracked_name = servo_map.get(servo_name.lower(), servo_name.lower())
         if tracked_name in self.current_servo_angles:
+            # clamp claw angle to known endpoints
+            if tracked_name == 'claw':
+                try:
+                    angle = self.clamp_claw(int(angle))
+                except Exception:
+                    pass
             self.current_servo_angles[tracked_name] = int(angle)
             self.logger.debug(f"Updated {tracked_name} angle to {angle}°")
+
+    def clamp_claw(self, angle):
+        """Ensure claw angle stays within calibrated endpoints."""
+        try:
+            return max(self.claw_min, min(self.claw_max, int(angle)))
+        except Exception:
+            return angle
 
     def filter_servo_command(self, command):
         """Filter servo commands to skip unavailable servos
@@ -1258,6 +1274,9 @@ class HardwareController:
                     # Update our tracking with fixed angle
                     if servo_name in self.fixed_servo_angles:
                         self.current_servo_angles[servo_name] = self.fixed_servo_angles[servo_name]
+                # clamp claw angle if present
+                if servo_name == 'claw' and angles[i] != -1:
+                    angles[i] = self.clamp_claw(angles[i])
             
             # Reconstruct command
             filtered_command = f"ANGLE {' '.join(str(a) for a in angles)}"
@@ -1284,6 +1303,9 @@ class HardwareController:
                         if angle_str != '-1' and i < len(servo_names):
                             try:
                                 angle = int(angle_str)
+                                # clamp claw before tracking
+                                if servo_names[i] == 'claw':
+                                    angle = self.clamp_claw(angle)
                                 self.update_servo_angle(servo_names[i], angle)
                             except ValueError:
                                 pass
@@ -1415,6 +1437,14 @@ class HardwareController:
                 import json
                 with open(calib_json, 'r') as f:
                     data = json.load(f)
+                    # load claw endpoints if present
+                    if 'claw_open_angle' in data and 'claw_closed_angle' in data:
+                        try:
+                            self.claw_min = int(data['claw_open_angle'])
+                            self.claw_max = int(data['claw_closed_angle'])
+                            self.logger.info(f"✅ Loaded claw endpoints: open={self.claw_min}, closed={self.claw_max}")
+                        except Exception:
+                            pass
                     # Check for homography directly or in calibration.matrix
                     if 'homography' in data:
                         self.homography_matrix = np.array(data['homography'])

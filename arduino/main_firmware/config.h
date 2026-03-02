@@ -30,13 +30,14 @@
 #define PULSE_MAX_MG99X     2400
 
 // Safety Limits (Degrees)
-// Claw (SG90) - CLAW_CLOSED_POSITION = Closed, 90° = Open
+// Claw (SG90) - 10° = Open, 100° = Closed
 // NOTE: Some servos may need a slight offset (1-2°) to fully close
-// If 0° doesn't fully close, try setting CLAW_CLOSED_POSITION to 1 or 2
-// Test your servo: send angle 0, then 1, then 2 - use the value that fully closes
-#define LIMIT_CLAW_MIN      0
-#define LIMIT_CLAW_MAX      90
-#define CLAW_CLOSED_POSITION 0  // Actual position for fully closed claw (0-5 degrees, adjust if needed)
+// The claw is considered "fully open" at 10° by default; the host software
+// clamps any commands below 10° as well.  You can still adjust these values
+// during calibration if your hardware behaves differently.
+#define LIMIT_CLAW_MIN      10   // do not drive claw below this angle (fully open)
+#define LIMIT_CLAW_MAX      110  // do not drive claw above this angle (fully closed)
+#define CLAW_CLOSED_POSITION 110  // Actual position for fully closed claw
 
 // Pitch (SG90)
 #define LIMIT_PITCH_MIN     20

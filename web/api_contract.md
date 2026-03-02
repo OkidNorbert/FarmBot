@@ -105,3 +105,19 @@ The Web Backend sends commands to the Arduino.
   "home_angle": 90
 }
 ```
+
+### 3.2. Optional Claw Calibration
+When a calibration wizard is run the resulting JSON may include two extra
+fields that describe the physical endpoints of the claw.  These are used by
+both host software and firmware to constrain movement and can be loaded into
+`HardwareController`.
+
+```json
+{
+  "claw_open_angle": 10,   # servo value for fully open claw
+  "claw_closed_angle": 90 # servo value for fully closed claw
+}
+```
+
+The backend will respect these limits when processing `ANGLE` commands and
+the web UI slider is configured to the same range.

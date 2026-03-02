@@ -18,6 +18,9 @@ class PixelToServoWizard:
         self.calibration_points = []
         self.camera = None
         self.lookup_table = {}
+        # claw endpoint angles (determined by calibration or manual entry)
+        self.claw_open_angle = None    # servo angle corresponding to fully open claw
+        self.claw_closed_angle = None  # servo angle corresponding to fully closed claw
         
     def initialize_camera(self, camera_index=0):
         """Initialize camera"""
@@ -87,6 +90,42 @@ class PixelToServoWizard:
             return self.lookup_table[closest_range]
         else:
             return None
+
+    def calibrate_claw_endpoints(self):
+        """Interactive assistance for claw open/closed angles.
+        The user may manually move the claw or use the camera stream to
+        choose endpoints.  If camera is available it will display live video
+        and respond to `o` (open) and `c` (closed) key presses; otherwise the
+        operator simply types the angles.
+        """
+        print("\n=== Claw End‑Point Calibration ===")
+        if not self.initialize_camera():
+            print("Camera not available – please enter angles manually.")
+            self.claw_open_angle = int(input("Enter servo angle when claw is fully open: "))
+            self.claw_closed_angle = int(input("Enter servo angle when claw is fully closed: "))
+            return
+
+        print("Press 'o' when claw is open, 'c' when claw is closed, ESC to finish.")
+        open_val = None
+        closed_val = None
+        while open_val is None or closed_val is None:
+            ret, frame = self.camera.read()
+            if not ret:
+                continue
+            cv2.imshow('Claw Calibration - press o/c', frame)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('o'):
+                open_val = int(input("Servo angle for open state: "))
+                print(f"Recorded open angle {open_val}")
+            elif key == ord('c'):
+                closed_val = int(input("Servo angle for closed state: "))
+                print(f"Recorded closed angle {closed_val}")
+            elif key == 27:  # ESC
+                break
+        cv2.destroyAllWindows()
+        self.claw_open_angle = open_val
+        self.claw_closed_angle = closed_val
+        print(f"Claw endpoints: open={self.claw_open_angle}, closed={self.claw_closed_angle}")
     
     def save_calibration(self, filename="pixel_to_servo_calibration.json"):
         """Save calibration data"""
@@ -96,6 +135,11 @@ class PixelToServoWizard:
             'created': datetime.now().isoformat(),
             'point_count': len(self.calibration_points)
         }
+        # include claw endpoints if available
+        if self.claw_open_angle is not None:
+            data['claw_open_angle'] = self.claw_open_angle
+        if self.claw_closed_angle is not None:
+            data['claw_closed_angle'] = self.claw_closed_angle
         
         os.makedirs('calibration', exist_ok=True)
         filepath = os.path.join('calibration', filename)
@@ -118,6 +162,12 @@ class PixelToServoWizard:
         
         self.calibration_points = data.get('calibration_points', [])
         self.lookup_table = data.get('lookup_table', {})
+        # load claw endpoints if present
+        self.claw_open_angle = data.get('claw_open_angle')
+        self.claw_closed_angle = data.get('claw_closed_angle')
+        if self.claw_open_angle is not None and self.claw_closed_angle is not None:
+            print(f"   Claw open angle: {self.claw_open_angle}°")
+            print(f"   Claw closed angle: {self.claw_closed_angle}°")
         
         print(f"✅ Calibration loaded from {filepath}")
         print(f"   Points: {len(self.calibration_points)}")
@@ -188,6 +238,10 @@ class PixelToServoWizard:
         
         # Generate lookup table
         if self.generate_lookup_table():
+            # optionally calibrate claw endpoints
+            yn = input("\nWould you like to calibrate claw open/closed angles now? (y/n): ").strip().lower()
+            if yn == 'y':
+                self.calibrate_claw_endpoints()
             # Save calibration
             filename = input("\nEnter filename to save (default: pixel_to_servo_calibration.json): ").strip()
             if not filename:
@@ -207,9 +261,10 @@ def main():
     print("1. New calibration")
     print("2. Load existing calibration")
     print("3. Test calibration")
-    print("4. Exit")
+    print("4. Calibrate claw end‑points")
+    print("5. Exit")
     
-    choice = input("\nEnter choice (1-4): ").strip()
+    choice = input("\nEnter choice (1-5): ").strip()
     
     if choice == '1':
         wizard.interactive_calibration()
@@ -231,10 +286,17 @@ def main():
                 print(f"  Base: {angles['base_angle']}°")
                 print(f"  Shoulder: {angles['shoulder_angle']}°")
                 print(f"  Forearm: {angles['forearm_angle']}°")
+                if wizard.claw_open_angle is not None:
+                    print(f"  Claw open endpoint: {wizard.claw_open_angle}°")
+                if wizard.claw_closed_angle is not None:
+                    print(f"  Claw closed endpoint: {wizard.claw_closed_angle}°")
             else:
                 print("No matching lookup entry found")
+    elif choice == '4':
+        wizard.calibrate_claw_endpoints()
     else:
         print("Exiting...")
+
 
 if __name__ == "__main__":
     main()

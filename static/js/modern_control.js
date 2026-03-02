@@ -123,7 +123,7 @@ const servoConfig = {
     shoulder: { min: 15, max: 165, default: 90 },
     elbow: { min: 15, max: 165, default: 90 },
     pitch: { min: 20, max: 160, default: 90 },
-    claw: { min: 0, max: 90, default: 0 },
+    claw: { min: 10, max: 110, default: 110 },
     speed: { min: 33, max: 100, default: 100 }
 };
 
