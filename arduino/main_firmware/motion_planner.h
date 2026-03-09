@@ -8,12 +8,12 @@
 
 // Bin positions (servo angles)
 struct BinPose {
-    int base;
-    int shoulder;
-    int forearm;
-    int elbow;
-    int pitch;
-    int claw;
+    int waist;    // ID 0
+    int shoulder; // ID 1
+    int elbow;    // ID 2
+    int wrist_roll; // ID 3
+    int wrist_pitch; // ID 4
+    int claw;     // ID 5
 };
 
 // Pick sequence states
@@ -21,12 +21,18 @@ enum PickState {
     PICK_IDLE,
     PICK_CALCULATE_POSE,
     PICK_MOVE_TO_APPROACH,
+    PICK_WAIT_FOR_APPROACH,
     PICK_APPROACH_TOF,
     PICK_GRASP,
+    PICK_WAIT_GRASP,
     PICK_LIFT,
+    PICK_WAIT_FOR_LIFT,
     PICK_MOVE_TO_BIN,
+    PICK_WAIT_FOR_BIN,
     PICK_RELEASE,
+    PICK_WAIT_RELEASE,
     PICK_RETURN_HOME,
+    PICK_WAIT_FOR_HOME,
     PICK_COMPLETE,
     PICK_ABORTED
 };
@@ -36,7 +42,7 @@ public:
     MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr);
     
     // Pick sequence control
-    bool startPick(int pixel_x, int pixel_y, float confidence, String class_type);
+    bool startPick(int x, int y, int z, float confidence, String class_type);
     void update(); // Call in loop() for state machine
     void abort();
     
@@ -61,8 +67,9 @@ private:
     String _lastError;
     
     // Current pick parameters
-    int _targetPixelX;
-    int _targetPixelY;
+    int _targetX;
+    int _targetY;
+    int _targetZ;
     String _targetClass;
     float _targetConfidence;
     String _pickId;
@@ -78,10 +85,10 @@ private:
     
     // State machine helpers
     void calculateTargetPose();
-    bool moveToPose(int base, int shoulder, int forearm, int elbow, int pitch, int claw);
+    bool moveToPose(int waist, int shoulder, int elbow, int wrist_roll, int wrist_pitch, int claw);
     bool waitForMotionComplete(unsigned long timeout_ms = 5000);
-    int pixelToBaseAngle(int pixel_x); // Simple mapping (needs calibration)
-    int calculateApproachPose(int target_base, int target_shoulder);
+    int cartesianToBaseAngle(int x, int y);
+    int calculateApproachPose(int target_waist, int target_shoulder);
     
     // Timing
     unsigned long _stateStartTime;

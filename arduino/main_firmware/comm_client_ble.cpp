@@ -38,7 +38,7 @@ bool CommClientBLE::begin() {
     _commandChar = new BLEStringCharacteristic(
         BLE_CHAR_UUID,
         BLERead | BLEWrite | BLENotify,
-        512  // Max 512 bytes
+        256  // Reduced from 512 for stability on R4 WiFi
     );
     Serial.print("✅ Command characteristic created: ");
     Serial.println(BLE_CHAR_UUID);
@@ -47,7 +47,7 @@ bool CommClientBLE::begin() {
     _telemetryChar = new BLEStringCharacteristic(
         "19B10002-E8F2-537E-4F6C-D104768A1214",
         BLERead | BLENotify,
-        512
+        256
     );
     Serial.println("✅ Telemetry characteristic created");
     
@@ -107,12 +107,14 @@ void CommClientBLE::update() {
             if (_connected) {
                 Serial.println("⚠️  BLE central disconnected");
                 _connected = false;
+                BLE.advertise(); // Resume advertising immediately
             }
         }
     } else {
         if (_connected) {
             Serial.println("⚠️  BLE central disconnected");
             _connected = false;
+            BLE.advertise(); // Ensure advertising if central is gone
         }
         
         // Print status every 10 seconds if not connected

@@ -118,13 +118,13 @@ function setupSocketHandlers() {
 
 // Servo configuration
 const servoConfig = {
-    base: { min: 0, max: 180, default: 90 },
-    forearm: { min: 10, max: 170, default: 90 },
-    shoulder: { min: 15, max: 165, default: 90 },
-    elbow: { min: 15, max: 165, default: 90 },
-    pitch: { min: 20, max: 160, default: 90 },
-    claw: { min: 10, max: 110, default: 110 },
-    speed: { min: 33, max: 100, default: 100 }
+    'waist': { min: 0, max: 180, default: 90, unit: '°' },
+    'shoulder': { min: 15, max: 165, default: 90, unit: '°' },
+    'elbow': { min: 10, max: 180, default: 90, unit: '°' },
+    'wrist_roll': { min: 15, max: 165, default: 90, unit: '°' },
+    'wrist_pitch': { min: 0, max: 160, default: 90, unit: '°' },
+    'claw': { min: 10, max: 115, default: 115, unit: '°' },
+    'speed': { min: 1, max: 180, default: 20, unit: ' deg/s' }
 };
 
 // Initialize on page load
@@ -204,7 +204,7 @@ function initializeSliders() {
                 updateSliderDisplay(servo, value);
 
                 // Update arm orientation when shoulder or forearm changes
-                if (servo === 'shoulder' || servo === 'forearm') {
+                if (servo === 'shoulder' || servo === 'elbow') { // Updated for new joint names
                     updateArmOrientation();
                 }
 
@@ -265,35 +265,35 @@ function unhighlightServo(servo) {
     }
 }
 
-// Determine arm orientation (front/back) based on shoulder and forearm angles
+// Determine arm orientation (front/back) based on shoulder and elbow angles
 function determineArmOrientation() {
     const shoulderSlider = document.getElementById('shoulderSlider');
-    const forearmSlider = document.getElementById('forearmSlider');
+    const elbowSlider = document.getElementById('elbowSlider');
 
-    if (!shoulderSlider || !forearmSlider) {
+    if (!shoulderSlider || !elbowSlider) {
         return null;
     }
 
     const shoulderAngle = parseInt(shoulderSlider.value);
-    const forearmAngle = parseInt(forearmSlider.value);
+    const elbowAngle = parseInt(elbowSlider.value);
 
-    // Front: shoulder and forearm are 90-180 degrees
-    // Back: shoulder and forearm are 90-0 degrees
+    // Front: shoulder and elbow are 90-180 degrees
+    // Back: shoulder and elbow are 90-0 degrees
     const isShoulderFront = shoulderAngle >= 90 && shoulderAngle <= 180;
-    const isForearmFront = forearmAngle >= 90 && forearmAngle <= 180;
+    const isElbowFront = elbowAngle >= 90 && elbowAngle <= 180;
     const isShoulderBack = shoulderAngle >= 0 && shoulderAngle <= 90;
-    const isForearmBack = forearmAngle >= 0 && forearmAngle <= 90;
+    const isElbowBack = elbowAngle >= 0 && elbowAngle <= 90;
 
     // Determine orientation based on both servos
-    if (isShoulderFront && isForearmFront) {
+    if (isShoulderFront && isElbowFront) {
         return 'front';
-    } else if (isShoulderBack && isForearmBack) {
+    } else if (isShoulderBack && isElbowBack) {
         return 'back';
     } else {
         // Mixed orientation - determine based on which is more dominant
         const shoulderFrontness = (shoulderAngle - 90) / 90; // 0 to 1 for front
-        const forearmFrontness = (forearmAngle - 90) / 90; // 0 to 1 for front
-        const avgFrontness = (shoulderFrontness + forearmFrontness) / 2;
+        const elbowFrontness = (elbowAngle - 90) / 90; // 0 to 1 for front
+        const avgFrontness = (shoulderFrontness + elbowFrontness) / 2;
 
         return avgFrontness > 0 ? 'front' : 'back';
     }
@@ -316,16 +316,17 @@ function updateArmOrientation() {
 function updateSliderDisplay(servo, value) {
     const valueElement = document.getElementById(`${servo}Value`);
     if (valueElement) {
-        if (servo === 'speed') {
-            valueElement.textContent = `${value}%`;
+        const config = servoConfig[servo];
+        if (config) {
+            valueElement.textContent = `${value}${config.unit}`;
         } else {
-            valueElement.textContent = `${value}°`;
-            updateArmVisualization(servo, value);
+            valueElement.textContent = `${value}`; // Fallback if unit not defined
+        }
+        updateArmVisualization(servo, value);
 
-            // Update arm orientation when shoulder or forearm changes
-            if (servo === 'shoulder' || servo === 'forearm') {
-                updateArmOrientation();
-            }
+        // Update arm orientation when shoulder or elbow changes
+        if (servo === 'shoulder' || servo === 'elbow') {
+            updateArmOrientation();
         }
     }
 }
@@ -340,19 +341,19 @@ function updateArmVisualization(servo, angle) {
 
     let rotation = 0;
     let centerX = 200;
-    let centerY = 450;
+    let centerY = 450; // Default for waist
 
     switch (servo) {
-        case 'base':
-            // Base rotation is around Z axis - rotate entire arm assembly
-            const baseRect = group.querySelector('rect');
-            if (baseRect) {
+        case 'waist':
+            // Waist rotation is around Z axis - rotate entire arm assembly
+            const waistRect = group.querySelector('rect');
+            if (waistRect) {
                 // Visual feedback: change color intensity based on angle
                 const intensity = Math.abs(angle - 90) / 90; // 0 to 1
                 const hue = 210 + (intensity * 30); // Blue to cyan
-                baseRect.setAttribute('fill', `hsl(${hue}, 70%, ${50 + intensity * 20}%)`);
+                waistRect.setAttribute('fill', `hsl(${hue}, 70%, ${50 + intensity * 20}%)`);
             }
-            // Rotate entire arm assembly for base rotation
+            // Rotate entire arm assembly for waist rotation
             const armAssembly = document.getElementById('arm-assembly');
             if (armAssembly) {
                 rotation = angle - 90; // Convert 0-180° to -90 to +90°
@@ -364,29 +365,29 @@ function updateArmVisualization(servo, angle) {
             return;
 
         case 'shoulder':
-            centerY = 450; // Base of shoulder (top of base)
+            centerY = 450; // Base of shoulder (top of waist)
             rotation = angle - 90; // Convert 0-180° to -90 to +90°
             break;
 
-        case 'forearm':
-            centerY = 350; // Joint between shoulder and forearm
-            rotation = angle - 90;
-            break;
-
         case 'elbow':
-            centerY = 250; // Elbow joint
+            centerY = 350; // Joint between shoulder and elbow
             rotation = angle - 90;
             break;
 
-        case 'pitch':
-            centerY = 150; // Wrist pitch joint
+        case 'wrist_roll':
+            centerY = 250; // Joint between elbow and wrist_roll
+            rotation = angle - 90;
+            break;
+
+        case 'wrist_pitch':
+            centerY = 150; // Joint between wrist_roll and wrist_pitch
             rotation = angle - 90;
             break;
 
         case 'claw':
             // Claw opens/closes
-            // angle: 0 = closed, 90 = open
-            const openAmount = angle / 90; // 0 to 1
+            // angle: 60 = closed, 150 = open (based on new config)
+            const openAmount = (angle - servoConfig.claw.min) / (servoConfig.claw.max - servoConfig.claw.min); // 0 to 1
             const leftFinger = group.querySelector('.claw-finger-left');
             const rightFinger = group.querySelector('.claw-finger-right');
 
@@ -434,17 +435,13 @@ function sendServoCommand(servo, angle, speed) {
     }
 
     // Map frontend servo names to Arduino expected names
-    // Arduino expects: base, shoulder, forearm, elbow, pitch, claw
-    // Frontend uses: base, forearm, shoulder, elbow, pitch, claw
     const servoMap = {
-        'shoulder': 'shoulder',  // Frontend 'shoulder' -> Arduino 'shoulder'
-        'elbow': 'elbow',  // Frontend 'elbow' -> Arduino 'elbow'
-        'pitch': 'pitch',  // Frontend 'pitch' -> Arduino 'pitch'
-        // Others map directly
-        'base': 'base',
-        'forearm': 'forearm',
-        'claw': 'claw',
-        'speed': 'speed'  // Speed is handled separately
+        'waist': 'waist',
+        'shoulder': 'shoulder',
+        'elbow': 'elbow',
+        'wrist_roll': 'wrist_roll',
+        'wrist_pitch': 'wrist_pitch',
+        'claw': 'claw'
     };
 
     const backendServo = servoMap[servo] || servo;
@@ -683,7 +680,7 @@ function capturePose() {
 
     if (telemetryAngles && Object.keys(telemetryAngles).length > 0) {
         // Copy known keys (ensure consistent servo keys)
-        ['base', 'shoulder', 'forearm', 'elbow', 'pitch', 'claw'].forEach(k => {
+        ['waist', 'shoulder', 'elbow', 'wrist_roll', 'wrist_pitch', 'claw'].forEach(k => {
             if (telemetryAngles[k] !== undefined && telemetryAngles[k] !== null) {
                 pose[k] = parseInt(telemetryAngles[k]);
             }

@@ -11,7 +11,7 @@ struct ServoConfig {
     int max_pulse;
     int min_angle;
     int max_angle;
-    int current_angle;
+    float current_angle;
     int target_angle;
     bool is_continuous;  // True for continuous rotation servos
     Servo servo;
@@ -25,7 +25,7 @@ public:
     
     // Motion Control
     bool setTarget(uint8_t servo_id, int angle);
-    bool setTargets(int base, int shoulder, int forearm, int elbow, int pitch, int claw);
+    bool setTargets(int waist, int shoulder, int elbow, int wrist_roll, int wrist_pitch, int claw);
     void home();
     void emergencyStop();
     
@@ -44,13 +44,15 @@ private:
     int _current_speed; // Current speed in degrees per second
     
     // Continuous rotation tracking
-    unsigned long _base_rotation_start_time;
-    int _base_rotation_direction; // -1 = CCW, 0 = stop, 1 = CW
-    int _base_virtual_angle; // Tracked virtual position for continuous rotation
+    unsigned long _rotation_start_time[6];
+    int _rotation_direction[6]; // -1 = CCW, 0 = stop, 1 = CW
+    float _virtual_angle[6]; // Tracked virtual position for continuous rotation
     
     void attachServo(int id, int pin, int min_p, int max_p, int min_a, int max_a, bool continuous = false);
     int constrainAngle(int id, int angle);
     void updateContinuousRotation(int id);
+    
+    static const int UPDATE_INTERVAL_MS = 20; // 50Hz update frequency for smooth motion
 };
 
 #endif // SERVO_MANAGER_H

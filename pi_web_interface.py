@@ -231,7 +231,7 @@ def api_move_arm():
     
     # Send command to hardware
     hw_controller.move_arm(x, y, z)
-    return jsonify({'success': True, 'message': f'Arm moved to ({x}, {y}, {z})'})
+    return jsonify({'success': True, 'message': f'Arm moved to joint values ({x}, {y}, {z})'})
 
 @app.route('/api/arm/home', methods=['POST'])
 def api_home_arm():

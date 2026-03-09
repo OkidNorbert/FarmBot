@@ -799,11 +799,11 @@ def api_manual_move():
     
     command = {
         'cmd': 'move_joints',
-        'base': data.get('base', 90),
+        'waist': data.get('waist', 90),
         'shoulder': data.get('shoulder', 90),
-        'forearm': data.get('forearm', 90),
         'elbow': data.get('elbow', 90),
-        'pitch': data.get('pitch', 90),
+        'wrist_roll': data.get('wrist_roll', 90),
+        'wrist_pitch': data.get('wrist_pitch', 90),
         'claw': data.get('claw', 0)
     }
     
@@ -940,12 +940,15 @@ def api_set_servo():
     servo = data.get('servo', '').lower()
     angle = data.get('angle', 90)
     
-    # Map servo names to indices: 0=base, 1=shoulder, 2=forearm, 3=elbow, 4=pitch, 5=claw
+    # Map servo names to indices: 0=waist, 1=shoulder, 2=elbow, 3=wrist_roll, 4=wrist_pitch, 5=claw
     servo_map = {
+        'waist': 0,
         'base': 0,
         'shoulder': 1,
+        'elbow': 2,
         'forearm': 2,
-        'elbow': 3,
+        'wrist_roll': 3,
+        'wrist_pitch': 4,
         'pitch': 4,
         'claw': 5
     }
@@ -1619,27 +1622,27 @@ def handle_servo_command(data):
             angle = data.get('angle', 90)
             speed = data.get('speed', None)  # Optional dynamic speed (0-100%)
             
-            # Map servo names to hardware controller methods
+            # Map servo names to backend joint names
             servo_map = {
-                'base': 'base',
-                'forearm': 'forearm',
-                'shoulder': 'shoulder',  # Direct mapping to shoulder servo
-                'elbow': 'elbow',  # Direct mapping to elbow servo
-                'pitch': 'pitch',  # Direct mapping to pitch servo
-                'arm': 'shoulder',  # Legacy: Arm is shoulder in hardware
-                'wrist_yaw': 'elbow',  # Legacy: Wrist yaw is elbow
-                'wrist_pitch': 'pitch',  # Legacy: Wrist pitch is pitch
+                'waist': 'waist',
+                'base': 'waist',
+                'shoulder': 'shoulder',
+                'elbow': 'elbow',
+                'forearm': 'elbow',
+                'wrist_roll': 'wrist_roll',
+                'wrist_pitch': 'wrist_pitch',
+                'pitch': 'wrist_pitch',
                 'claw': 'claw'
             }
             
             if servo_name in servo_map and HARDWARE_AVAILABLE and hw_controller:
                 # Send ANGLE command to Arduino
                 servo_index_map = {
-                    'base': 0,
+                    'waist': 0,
                     'shoulder': 1,
-                    'forearm': 2,
-                    'elbow': 3,
-                    'pitch': 4,
+                    'elbow': 2,
+                    'wrist_roll': 3,
+                    'wrist_pitch': 4,
                     'claw': 5
                 }
                 
@@ -1874,7 +1877,7 @@ def handle_servo_command(data):
                     
                     # Also send explicit ANGLE command to ensure all servos reset
                     # Format: ANGLE base shoulder forearm elbow pitch claw
-                    home_command = "ANGLE 90 90 90 90 90 0"  # All 90° except claw at 0°
+                    home_command = "ANGLE -1 90 90 90 90 115"  # Match init: joints at 90°, claw closed at 115°
                     if hw_controller.ble_client and hw_controller.ble_client.connected:
                         hw_controller.ble_client.send_command(home_command)
                     elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:

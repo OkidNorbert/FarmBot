@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import serial
 import time
+import math
 import threading
 import os
 import logging
@@ -73,6 +74,7 @@ class BLEClient:
         self.command_queue = asyncio.Queue()
         self.device_address = None
         self.on_connect_callback = on_connect_callback  # Callback when connection state changes
+        self.logger = logging.getLogger("BLEClient")
         
     def _run_loop(self):
         """Run asyncio event loop in separate thread"""
@@ -98,13 +100,19 @@ class BLEClient:
             if device:
                 self.device_address = device.address
                 self.logger.info(f"Found device: {device.name} ({device.address})")
-                self.client = BleakClient(device)
+                
+                def disconnected_callback(client):
+                    self.logger.warning("BLE Client disconnected callback triggered")
+                    self.connected = False
+                    if self.on_connect_callback:
+                        self.on_connect_callback(False)
+
+                self.client = BleakClient(device, disconnected_callback=disconnected_callback)
                 try:
                     await self.client.connect()
                     self.connected = True
                     self.logger.info("BLE Connected!")
                     
-                    # Notify callback if connection state changed
                     if self.on_connect_callback:
                         self.on_connect_callback(True)
                     
@@ -161,22 +169,18 @@ class BLEClient:
     async def _send_command(self, command):
         """Send command via BLE"""
         try:
-            # Check if client is still connected
-            if not self.client.is_connected:
-                self.logger.error("BLE client not connected, cannot send command")
-                self.connected = False
-                if self.on_connect_callback:
-                    self.on_connect_callback(False)
-                return
-            
             # Send command with newline
             command_bytes = f"{command}\n".encode('utf-8')
             await self.client.write_gatt_char(self.char_uuid, command_bytes)
             self.logger.info(f"Sent BLE command: {command}")
         except Exception as e:
             self.logger.error(f"BLE write error: {e}")
-            self.logger.error(f"Error type: {type(e).__name__}")
             self.connected = False
+            try:
+                if self.client:
+                    await self.client.disconnect()
+            except:
+                pass
             if self.on_connect_callback:
                 self.on_connect_callback(False)
     
@@ -252,34 +256,32 @@ class HardwareController:
         # Servo availability configuration
         # Set to False for servos that are not available (manually fixed)
         self.servo_available = {
-            'base': False,      # Base servo not available - manually fixed
-            'shoulder': True,  # Shoulder servo now available (was manually adjusted)
-            'forearm': True,   # Forearm servo available
-            'elbow': True,     # Elbow servo available
-            'pitch': True,     # Pitch servo available
-            'claw': True       # Claw servo available
+            'waist': False,      # Waist servo not available - manually fixed
+            'shoulder': True,   # Shoulder servo now available
+            'elbow': True,      # Elbow servo available
+            'wrist_roll': True, # Wrist roll available
+            'wrist_pitch': True,# Wrist pitch available
+            'claw': True        # Claw servo available
         }
         # claw calibration endpoints (default safe values)
         self.claw_min = 10
-        self.claw_max = 110
+        self.claw_max = 115
         
         # Fixed positions for unavailable servos (manually set)
         # These should match your manual adjustments
         self.fixed_servo_angles = {
-            'base': 90        # Manually fixed base position
-            # Shoulder moved back to servo control; previous manual value preserved as comment
-            # 'shoulder': 135
+            'waist': 90        # Manually fixed waist position
         }
         
         # Track current servo angles (for front/back detection)
         # Servo indices: 0=base, 1=shoulder/arm, 2=forearm, 3=elbow/wrist_yaw, 4=pitch, 5=claw
         self.current_servo_angles = {
-            'base': self.fixed_servo_angles['base'],
+            'waist': self.fixed_servo_angles['waist'],
             'shoulder': 90,
-            'forearm': 90,
-            'elbow': 90,  # Also called 'wrist_yaw' in backend
-            'pitch': 90,  # Also called 'wrist_pitch' in backend
-            'claw': 110  # home position is fully closed
+            'elbow': 90,
+            'wrist_roll': 90,
+            'wrist_pitch': 90,
+            'claw': 115  # home position is fully closed
         }
         
         # Configuration
@@ -410,29 +412,16 @@ class HardwareController:
         else:
             shoulder_angle = self.current_servo_angles.get('shoulder', 90)
         
-        forearm_angle = self.current_servo_angles.get('forearm', 90)
+        # Consideration: arm is front if elbow and shoulder are mostly front
+        elbow_angle = self.current_servo_angles.get('elbow', 90)
         
-        # Front: shoulder and forearm are 90-180 degrees
-        # Back: shoulder and forearm are 90-0 degrees
-        is_shoulder_front = 90 <= shoulder_angle <= 180
-        is_forearm_front = 90 <= forearm_angle <= 180
-        is_shoulder_back = 0 <= shoulder_angle <= 90
-        is_forearm_back = 0 <= forearm_angle <= 90
+        # Consider front if average frontness > 0 (more toward 180 than 0)
+        # Frontness: 0 (back) to 1 (front) based on how far from 90° toward 180°
+        shoulder_frontness = (shoulder_angle - 90) / 90.0
+        elbow_frontness = (elbow_angle - 90) / 90.0
+        avg_frontness = (shoulder_frontness + elbow_frontness) / 2.0
         
-        # If both are clearly front or back, use that
-        if is_shoulder_front and is_forearm_front:
-            return True
-        elif is_shoulder_back and is_forearm_back:
-            return False
-        else:
-            # Mixed orientation - calculate average "frontness"
-            # Frontness: 0 (back) to 1 (front) based on how far from 90° toward 180°
-            shoulder_frontness = (shoulder_angle - 90) / 90.0  # 0 to 1 for 90-180
-            forearm_frontness = (forearm_angle - 90) / 90.0  # 0 to 1 for 90-180
-            avg_frontness = (shoulder_frontness + forearm_frontness) / 2.0
-            
-            # Consider front if average frontness > 0 (more toward 180 than 0)
-            return avg_frontness > 0
+        return avg_frontness > 0
 
     def process_auto_cycle(self):
         """Single cycle of autonomous logic - Only picks 'ready' tomatoes"""
@@ -701,7 +690,11 @@ class HardwareController:
         return True
         
     def setup_logging(self):
-        logging.basicConfig(level=logging.INFO)
+        """Configure logging for the controller"""
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
         self.logger = logging.getLogger("HardwareController")
 
     def connect_hardware(self):
@@ -1213,14 +1206,11 @@ class HardwareController:
         """Update tracked servo angle"""
         # Map backend servo names to our tracking names
         servo_map = {
-            'base': 'base',
-            'arm': 'shoulder',  # Backend 'arm' is frontend 'shoulder'
+            'waist': 'waist',
             'shoulder': 'shoulder',
-            'forearm': 'forearm',
-            'wrist_yaw': 'elbow',  # Backend 'wrist_yaw' is frontend 'elbow'
             'elbow': 'elbow',
-            'wrist_pitch': 'pitch',  # Backend 'wrist_pitch' is frontend 'pitch'
-            'pitch': 'pitch',
+            'wrist_roll': 'wrist_roll',
+            'wrist_pitch': 'wrist_pitch',
             'claw': 'claw'
         }
         
@@ -1246,7 +1236,7 @@ class HardwareController:
         """Filter servo commands to skip unavailable servos
         
         Args:
-            command: Command string (e.g., "ANGLE 90 90 90 90 90 0")
+            command: Command string (e.g., "ANGLE 90 90 90 90 90 110")
         
         Returns:
             str: Filtered command with unavailable servos set to -1 (no change)
@@ -1255,7 +1245,7 @@ class HardwareController:
             return command  # Not a servo command, return as-is
         
         try:
-            # Parse ANGLE command: "ANGLE base shoulder forearm elbow pitch claw"
+            # Parse ANGLE command: "ANGLE waist shoulder elbow wrist_roll wrist_pitch claw"
             parts = command.split()
             if len(parts) != 7:  # "ANGLE" + 6 servo values
                 return command
@@ -1263,17 +1253,13 @@ class HardwareController:
             angles = [int(parts[i]) if parts[i] != '-1' else -1 for i in range(1, 7)]
             
             # Map servo indices to names
-            servo_map = ['base', 'shoulder', 'forearm', 'elbow', 'pitch', 'claw']
+            servo_map = ['waist', 'shoulder', 'elbow', 'wrist_roll', 'wrist_pitch', 'claw']
             
             # Replace unavailable servos with -1 (no change) or use fixed angle
             for i, servo_name in enumerate(servo_map):
                 if not self.servo_available.get(servo_name, True):
                     # Use -1 to keep current position (servo is manually fixed)
-                    # The fixed angle is just for tracking, not sent to Arduino
                     angles[i] = -1
-                    # Update our tracking with fixed angle
-                    if servo_name in self.fixed_servo_angles:
-                        self.current_servo_angles[servo_name] = self.fixed_servo_angles[servo_name]
                 # clamp claw angle if present
                 if servo_name == 'claw' and angles[i] != -1:
                     angles[i] = self.clamp_claw(angles[i])
@@ -1296,9 +1282,9 @@ class HardwareController:
         if command.startswith("ANGLE"):
             try:
                 parts = command.split()
-                if len(parts) >= 7:  # ANGLE base shoulder forearm elbow pitch claw
+                if len(parts) >= 7:  # ANGLE waist shoulder elbow wrist_roll wrist_pitch claw
                     # Update tracked angles (skip -1 values which mean "keep current")
-                    servo_names = ['base', 'shoulder', 'forearm', 'elbow', 'pitch', 'claw']
+                    servo_names = ['waist', 'shoulder', 'elbow', 'wrist_roll', 'wrist_pitch', 'claw']
                     for i, angle_str in enumerate(parts[1:7]):
                         if angle_str != '-1' and i < len(servo_names):
                             try:
@@ -1306,6 +1292,7 @@ class HardwareController:
                                 # clamp claw before tracking
                                 if servo_names[i] == 'claw':
                                     angle = self.clamp_claw(angle)
+                                # Map 'waist' directly to update_servo_angle
                                 self.update_servo_angle(servo_names[i], angle)
                             except ValueError:
                                 pass
@@ -1513,9 +1500,9 @@ class HardwareController:
         """
         try:
             # Get current angles
-            base = self.current_servo_angles.get('base', 90)
+            waist = self.current_servo_angles.get('waist', 90)
             shoulder = self.current_servo_angles.get('shoulder', 90)
-            forearm = self.current_servo_angles.get('forearm', 90)
+            elbow = self.current_servo_angles.get('elbow', 90)
             
             # Simple Forward Kinematics (Approximation)
             # l1 = shoulder to forearm joint, l2 = forearm to end-effector
@@ -1524,18 +1511,18 @@ class HardwareController:
             
             # Convert to radians and adjust for zero-position offsets
             # Mapping depends on physical assembly
-            rad_base = math.radians(base - 90)
+            rad_waist = math.radians(waist - 90)
             rad_shoulder = math.radians(shoulder - 90)
-            rad_forearm = math.radians(forearm - 90)
+            rad_elbow = math.radians(elbow - 90)
             
-            # Planar projection for shoulder/forearm
+            # Planar projection for shoulder/elbow
             # z is vertical, distal is horizontal
-            distal = l1 * math.cos(rad_shoulder) + l2 * math.cos(rad_shoulder + rad_forearm)
-            z = l1 * math.sin(rad_shoulder) + l2 * math.sin(rad_shoulder + rad_forearm) + 50 # +50mm base height
+            distal = l1 * math.cos(rad_shoulder) + l2 * math.cos(rad_shoulder + rad_elbow)
+            z = l1 * math.sin(rad_shoulder) + l2 * math.sin(rad_shoulder + rad_elbow) + 50 # +50mm base height
             
-            # Project distal into X, Y based on base rotation
-            x = distal * math.sin(rad_base)
-            y = distal * math.cos(rad_base)
+            # Project distal into X, Y based on waist rotation
+            x = distal * math.sin(rad_waist)
+            y = distal * math.cos(rad_waist)
             
             return {
                 'x': round(float(x), 1),

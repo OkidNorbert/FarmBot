@@ -32,7 +32,7 @@ String currentMode = "MANUAL";  // Track current mode: "MANUAL" or "AUTO"
 // Forward Declarations
 void handleWebSocketMessage(String payload);
 void processTextCommand(String command);  // Handle text-based commands (backward compatibility)
-void executePick(String id, int x, int y, String type, float confidence);
+void executePick(String id, int x, int y, int z, String type, float confidence);
 void sendStatus();
 void checkEmergencyStop();
 
@@ -80,19 +80,19 @@ void setup() {
     calibrationManager.getBinPose("unripe", bin_unripe);
     
     BinPose ripePose;
-    ripePose.base = bin_ripe[0];
+    ripePose.waist = bin_ripe[0];
     ripePose.shoulder = bin_ripe[1];
-    ripePose.forearm = bin_ripe[2];
-    ripePose.elbow = bin_ripe[3];
-    ripePose.pitch = bin_ripe[4];
+    ripePose.elbow = bin_ripe[2];
+    ripePose.wrist_roll = bin_ripe[3];
+    ripePose.wrist_pitch = bin_ripe[4];
     ripePose.claw = bin_ripe[5];
     
     BinPose unripePose;
-    unripePose.base = bin_unripe[0];
+    unripePose.waist = bin_unripe[0];
     unripePose.shoulder = bin_unripe[1];
-    unripePose.forearm = bin_unripe[2];
-    unripePose.elbow = bin_unripe[3];
-    unripePose.pitch = bin_unripe[4];
+    unripePose.elbow = bin_unripe[2];
+    unripePose.wrist_roll = bin_unripe[3];
+    unripePose.wrist_pitch = bin_unripe[4];
     unripePose.claw = bin_unripe[5];
     
     motionPlanner.setBinPose("ripe", ripePose);
@@ -241,17 +241,18 @@ void handleWebSocketMessage(String payload) {
             String id = data["id"] | "unknown";
             int x = data["x"] | 320;
             int y = data["y"] | 240;
+            int z = data["z"] | 50;
             String type = data["class"] | "ripe";
             float confidence = data["confidence"] | 0.0;
-            executePick(id, x, y, type, confidence);
+            executePick(id, x, y, z, type, confidence);
         }
         else if (cmd == "move_joints") {
             servoManager.setTargets(
-                data["base"] | 90,
+                data["waist"] | 90,
                 data["shoulder"] | 90,
-                data["forearm"] | 90,
                 data["elbow"] | 90,
-                data["pitch"] | 90,
+                data["wrist_roll"] | 90,
+                data["wrist_pitch"] | 90,
                 data["claw"] | 0
             );
         }
@@ -261,16 +262,16 @@ void handleWebSocketMessage(String payload) {
             int angle = data["angle"] | 90;
             int speed = data["speed"] | 0;  // 0 means use current speed
             
-            // Map servo names to IDs: base=0, shoulder=1, forearm=2, elbow=3, pitch=4, claw=5
-            if (servo == "base") {
+            // Map servo names to IDs: waist=0, shoulder=1, elbow=2, wrist_roll=3, wrist_pitch=4, claw=5
+            if (servo == "waist" || servo == "base") {
                 servoManager.setTarget(0, angle);
             } else if (servo == "shoulder" || servo == "arm") {
                 servoManager.setTarget(1, angle);
-            } else if (servo == "forearm") {
+            } else if (servo == "elbow") {
                 servoManager.setTarget(2, angle);
-            } else if (servo == "elbow" || servo == "wrist_yaw") {
+            } else if (servo == "wrist_roll" || servo == "forearm") {
                 servoManager.setTarget(3, angle);
-            } else if (servo == "pitch" || servo == "wrist_pitch") {
+            } else if (servo == "wrist_pitch" || servo == "pitch") {
                 servoManager.setTarget(4, angle);
             } else if (servo == "claw") {
                 servoManager.setTarget(5, angle);
@@ -405,7 +406,7 @@ void processTextCommand(String command) {
         
         // Convert to pick command (using motion planner)
         String type = (class_id == 1) ? "ripe" : "unripe";
-        executePick("move_" + String(millis()), (int)x, (int)y, type, 1.0);
+        executePick("move_" + String(millis()), (int)x, (int)y, 50, type, 1.0);
     }
     else if (command.startsWith("PICK")) {
         // PICK X Y Z CLASS - Pick from coordinates
@@ -435,7 +436,7 @@ void processTextCommand(String command) {
         
         // Convert to pick command
         String type = (class_id == 1) ? "ripe" : "unripe";
-        executePick("pick_" + String(millis()), (int)x, (int)y, type, 1.0);
+        executePick("pick_" + String(millis()), (int)x, (int)y, (int)z, type, 1.0);
     }
     else if (command.startsWith("HOME")) {
         Serial.println("HOME command received");
@@ -479,9 +480,9 @@ void processTextCommand(String command) {
         }
     }
     else if (command.startsWith("ANGLE")) {
-        // ANGLE base shoulder forearm elbow pitch claw
+        // ANGLE waist shoulder elbow wrist_roll wrist_pitch claw
         // Format: ANGLE A1 A2 A3 A4 A5 A6
-        // Order: Base, Shoulder, Forearm, Elbow, Pitch, Claw
+        // Order: Waist, Shoulder, Elbow, Wrist Roll, Wrist Pitch, Claw
         // Use -1 to keep current angle for any servo
         int firstSpace = command.indexOf(' ');
         if (firstSpace == -1) {
@@ -548,7 +549,7 @@ void processTextCommand(String command) {
     }
 }
 
-void executePick(String id, int x, int y, String type, float confidence) {
+void executePick(String id, int x, int y, int z, String type, float confidence) {
     if (currentState != IDLE && currentState != MOVING) {
         Serial.println("Cannot start pick - system busy");
         commClient.sendPickResult(id.c_str(), "FAILED", "busy", 0);
@@ -564,10 +565,12 @@ void executePick(String id, int x, int y, String type, float confidence) {
     
     Serial.print("Starting Pick Sequence: ID=");
     Serial.print(id);
-    Serial.print(", Pixel=(");
+    Serial.print(", Coords=(");
     Serial.print(x);
     Serial.print(",");
     Serial.print(y);
+    Serial.print(",");
+    Serial.print(z);
     Serial.print("), Class=");
     Serial.print(type);
     Serial.print(", Confidence=");
@@ -585,7 +588,7 @@ void executePick(String id, int x, int y, String type, float confidence) {
     }
     
     // Start motion planner
-    if (motionPlanner.startPick(x, y, confidence, normalizedType)) {
+    if (motionPlanner.startPick(x, y, z, confidence, normalizedType)) {
         currentState = PICKING;
         Serial.println("Pick sequence started");
     } else {

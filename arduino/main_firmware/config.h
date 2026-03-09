@@ -6,12 +6,12 @@
 // ==========================================
 
 // Servos
-#define PIN_SERVO_CLAW      2
-#define PIN_SERVO_PITCH     3
-#define PIN_SERVO_ELBOW     4
-#define PIN_SERVO_FOREARM   5
-#define PIN_SERVO_SHOULDER  6
-#define PIN_SERVO_BASE      7
+#define PIN_SERVO_CLAW         2
+#define PIN_SERVO_WRIST_PITCH  3   // Previously Pitch
+#define PIN_SERVO_WRIST_ROLL   4   // Previously Elbow
+#define PIN_SERVO_ELBOW        5   // Previously Forearm
+#define PIN_SERVO_SHOULDER     6
+#define PIN_SERVO_BASE         7   // Waist
 
 // Sensors
 // VL53L0X uses I2C (SDA/SCL) - on R4 WiFi these are default pins
@@ -36,24 +36,24 @@
 // clamps any commands below 10° as well.  You can still adjust these values
 // during calibration if your hardware behaves differently.
 #define LIMIT_CLAW_MIN      10   // do not drive claw below this angle (fully open)
-#define LIMIT_CLAW_MAX      110  // do not drive claw above this angle (fully closed)
-#define CLAW_CLOSED_POSITION 110  // Actual position for fully closed claw
+#define LIMIT_CLAW_MAX      115  // do not drive claw above this angle (fully closed)
+#define CLAW_CLOSED_POSITION 115  // Actual position for fully closed claw
 
-// Pitch (SG90)
-#define LIMIT_PITCH_MIN     20
-#define LIMIT_PITCH_MAX     160
+// Wrist Pitch (SG90) - Previously Pitch
+#define LIMIT_WRIST_PITCH_MIN  0
+#define LIMIT_WRIST_PITCH_MAX  160
 
-// Elbow (SG90)
-#define LIMIT_ELBOW_MIN     15
-#define LIMIT_ELBOW_MAX     165
+// Wrist Roll (SG90) - Previously Elbow
+#define LIMIT_WRIST_ROLL_MIN   15
+#define LIMIT_WRIST_ROLL_MAX   165
 
-// Forearm (MG99x)
-#define LIMIT_FOREARM_MIN   10
-#define LIMIT_FOREARM_MAX   170
+// Elbow (MG99x) - Previously Forearm
+#define LIMIT_ELBOW_MIN        10
+#define LIMIT_ELBOW_MAX        180
 
 // Shoulder (SG90) - Updated to match servo type
-#define LIMIT_SHOULDER_MIN  15
-#define LIMIT_SHOULDER_MAX  165
+#define LIMIT_SHOULDER_MIN     15
+#define LIMIT_SHOULDER_MAX     165
 
 // Base (MG99x)
 // Set to true if using a continuous rotation servo for base
@@ -70,17 +70,26 @@
 #define BASE_COASTING_TIME_MS 100 // Estimated coasting time in milliseconds after stop command
 #define BASE_STOP_TOLERANCE  2    // Stop tolerance in degrees (virtual position)
 
+// Pitch Servo (Continuous rotation if true, standard 180 if false)
+#define PITCH_CONTINUOUS_ROTATION  false
+#define PITCH_ROTATION_SPEED       90.0 // Degrees per second calibration
+#define PITCH_COASTING_TIME_MS     100  // MS to coast after stop command
+#define PITCH_STOP_TOLERANCE       2.0  // Degrees threshold to stop early
+
 // Motion - Speed Configuration
 #define DEFAULT_SPEED       20  // Default speed (degrees per second)
 #define AUTO_MODE_SPEED     45  // Automatic mode speed (deg/s) - optimized for AI/camera/sensor coordination
 #define MANUAL_MODE_MAX     120 // Maximum speed for manual mode (deg/s)
 #define MIN_SPEED           1   // Minimum speed (deg/s)
 #define MAX_SPEED           180 // Absolute maximum speed (deg/s) - hardware limit
-#define HOME_ANGLE          90
+#define HOME_BASE_ANGLE         90
+#define HOME_SHOULDER_ANGLE     90
+#define HOME_ELBOW_ANGLE        90   // Reset to 90 per user request
+#define HOME_WRIST_ROLL_ANGLE   90
+#define HOME_WRIST_PITCH_ANGLE  90
+#define HOME_CLAW_ANGLE         CLAW_CLOSED_POSITION // Closed on initiation per request
 
-// ==========================================
-// Communication Configuration
-// ==========================================
+#define HOME_ANGLE          90   // Legacy default for unspecified joints
 // Choose communication method: "WIFI", "BLE", or "AUTO" (tries WiFi first, falls back to BLE)
 // Set to BLE since WiFi WebSocket client library has compatibility issues
 #define COMM_MODE           "BLE"

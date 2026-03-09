@@ -6,46 +6,6 @@
   "detection_history": [],
   "session_history": [
     {
-      "start_time": "2025-12-06T21:31:53.816643",
-      "session_id": "session_1765045913"
-    },
-    {
-      "start_time": "2025-12-07T08:21:13.239334",
-      "session_id": "session_1765084873"
-    },
-    {
-      "start_time": "2025-12-07T08:22:22.305109",
-      "session_id": "session_1765084942"
-    },
-    {
-      "start_time": "2025-12-07T08:35:56.399793",
-      "session_id": "session_1765085756"
-    },
-    {
-      "start_time": "2025-12-10T16:03:27.669913",
-      "session_id": "session_1765371807"
-    },
-    {
-      "start_time": "2025-12-11T06:22:02.649813",
-      "session_id": "session_1765423322"
-    },
-    {
-      "start_time": "2025-12-11T06:39:04.433446",
-      "session_id": "session_1765424344"
-    },
-    {
-      "start_time": "2025-12-11T08:16:11.570818",
-      "session_id": "session_1765430171"
-    },
-    {
-      "start_time": "2025-12-11T08:34:35.334812",
-      "session_id": "session_1765431275"
-    },
-    {
-      "start_time": "2025-12-11T08:43:52.751936",
-      "session_id": "session_1765431832"
-    },
-    {
       "start_time": "2025-12-11T08:46:07.317912",
       "session_id": "session_1765431967"
     },
@@ -204,6 +164,46 @@
     {
       "start_time": "2026-03-02T12:59:11.215751",
       "session_id": "session_1772445551"
+    },
+    {
+      "start_time": "2026-03-09T11:01:08.848598",
+      "session_id": "session_1773043268"
+    },
+    {
+      "start_time": "2026-03-09T12:41:33.025425",
+      "session_id": "session_1773049293"
+    },
+    {
+      "start_time": "2026-03-09T12:50:25.037866",
+      "session_id": "session_1773049825"
+    },
+    {
+      "start_time": "2026-03-09T12:57:08.934162",
+      "session_id": "session_1773050228"
+    },
+    {
+      "start_time": "2026-03-09T12:58:39.072029",
+      "session_id": "session_1773050319"
+    },
+    {
+      "start_time": "2026-03-09T13:26:52.114643",
+      "session_id": "session_1773052012"
+    },
+    {
+      "start_time": "2026-03-09T13:27:41.691400",
+      "session_id": "session_1773052061"
+    },
+    {
+      "start_time": "2026-03-09T13:30:27.522329",
+      "session_id": "session_1773052227"
+    },
+    {
+      "start_time": "2026-03-09T13:31:10.481874",
+      "session_id": "session_1773052270"
+    },
+    {
+      "start_time": "2026-03-09T13:33:09.091911",
+      "session_id": "session_1773052389"
     }
   ]
 }
