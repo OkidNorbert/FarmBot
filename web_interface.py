@@ -548,12 +548,16 @@ def pi_status():
         system_state['auto_mode'] = hw_status.get('auto_mode', False)
         system_state['connection_type'] = hw_status.get('connection_type', 'none')
         system_state['classifier_loaded'] = hw_status.get('classifier_loaded', False)
+        system_state['tof_distance'] = hw_status.get('tof_distance')
+        system_state['distance_mm'] = hw_status.get('tof_distance') # Alias for compatibility
     else:
         system_state['camera_connected'] = False
         system_state['arduino_connected'] = False
         system_state['auto_mode'] = False
         system_state['connection_type'] = 'none'
         system_state['classifier_loaded'] = False
+        system_state['tof_distance'] = None
+        system_state['distance_mm'] = None
     
     # Load persistent stats
     stats = load_stats()
@@ -830,10 +834,6 @@ def home_arm():
         return jsonify({'status': 'home', 'message': 'Arm moved to home position'})
     return jsonify({'status': 'error', 'message': 'Hardware not available'})
 
-@app.route('/pi/control/calibrate')
-def start_calibration():
-    """Start coordinate calibration"""
-    return jsonify({'status': 'calibration', 'message': 'Calibration started'})
 
 @app.route('/api/system/start', methods=['POST'])
 def api_start_system():
@@ -2069,10 +2069,6 @@ def monitor():
     """Monitoring panel"""
     return render_template('pi_monitor.html')
 
-@app.route('/calibrate')
-def calibrate():
-    """Calibration panel"""
-    return render_template('pi_calibrate.html')
 
 @app.route('/api/arm/current_position', methods=['GET'])
 def api_arm_current_position():

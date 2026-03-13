@@ -43,6 +43,11 @@
                             <span>AI Model:</span>
                             <span id="model-status" class="badge bg-secondary ms-2">Checking...</span>
                         </div>
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-ruler-vertical me-2"></i>
+                            <span>ToF Sensor:</span>
+                            <span id="tof-value" class="badge bg-info ms-2">-- mm</span>
+                        </div>
                     </div>
                     <div class="col-6">
                         <div class="d-flex align-items-center mb-2">
@@ -261,17 +266,6 @@
                             <div class="col-md-6 mb-3">
                                 <div class="card">
                                     <div class="card-body">
-                                        <h6><i class="fas fa-ruler"></i> Calibrate</h6>
-                                        <p class="text-muted">Calibrate coordinate mapping</p>
-                                        <a href="{{ url_for('calibrate') }}" class="btn btn-warning w-100">
-                                            <i class="fas fa-arrow-right"></i> Open Calibration
-                                        </a>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <div class="card">
-                                    <div class="card-body">
                                         <h6><i class="fas fa-video"></i> Live Camera</h6>
                                         <p class="text-muted">View live camera feed with detection</p>
                                         <a href="{{ url_for('camera_feed') }}" class="btn btn-success w-100">
@@ -318,6 +312,18 @@ function updateSystemStatus() {
             
             document.getElementById('model-status').textContent = data.classifier_loaded ? 'Loaded' : 'Not Loaded';
             document.getElementById('model-status').className = 'badge ' + (data.classifier_loaded ? 'bg-success' : 'bg-warning') + ' ms-2';
+
+            // ToF Distance (check both keys for robustness)
+            const tofValue = document.getElementById('tof-value');
+            const dist = data.tof_distance !== undefined && data.tof_distance !== null ? data.tof_distance : data.distance_mm;
+            
+            if (dist !== null && dist !== undefined && dist > 0) {
+                tofValue.textContent = dist + ' mm';
+                tofValue.className = 'badge bg-success ms-2';
+            } else {
+                tofValue.textContent = 'Offline';
+                tofValue.className = 'badge bg-danger ms-2';
+            }
         })
         .catch(error => {
             console.error('Error updating status:', error);

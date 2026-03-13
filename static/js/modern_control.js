@@ -861,14 +861,35 @@ function updateTelemetry(data) {
 
     // Update distance (ToF)
     const distanceElement = document.getElementById('distanceValue');
+    const tofTerminal = document.getElementById('tofTerminal');
+    
     if (distanceElement) {
         if (data.distance_mm !== undefined && data.distance_mm !== null && data.distance_mm > 0) {
-            distanceElement.textContent = `${data.distance_mm} mm`;
+            const distStr = `${data.distance_mm} mm`;
+            distanceElement.textContent = distStr;
+            
+            // Update terminal
+            if (tofTerminal) {
+                // Remove placeholder if it exists
+                if (tofTerminal.querySelector('.text-info')) {
+                    tofTerminal.innerHTML = '';
+                }
+                
+                const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                const line = document.createElement('div');
+                line.className = 'terminal-line';
+                line.innerHTML = `<span class="terminal-time">[${time}]</span> Reading: <span class="terminal-dist">${distStr}</span>`;
+                
+                tofTerminal.prepend(line);
+                
+                // Keep only last 50 lines
+                while (tofTerminal.children.length > 50) {
+                    tofTerminal.removeChild(tofTerminal.lastChild);
+                }
+            }
         } else {
             distanceElement.textContent = '-- mm';
         }
-    } else {
-        console.warn('distanceValue element not found');
     }
 
     // Update status
@@ -973,9 +994,14 @@ function togglePickMode() {
 
     const cameraContainer = document.getElementById('cameraContainer');
     if (pickMode) {
+        // Disable calibration mode if active
+        if (calibrationMode) {
+            document.getElementById('calibrationModeToggle').checked = false;
+            toggleCalibrationMode();
+        }
         cameraContainer.style.cursor = 'crosshair';
         cameraContainer.title = 'Click to Pick';
-        showNotification('Pick Mode Enabled: Click on the camera feed to pick an item.', 'info');
+        showNotification('Pick Mode Enabled: Click on the camera feed.', 'info');
     } else {
         cameraContainer.style.cursor = 'default';
         cameraContainer.title = '';
@@ -983,18 +1009,179 @@ function togglePickMode() {
     }
 }
 
-// Initialize Pick Mode click handler
-function initializePickMode() {
+// ============================================================
+// Calibration Module
+// ============================================================
+let calibrationPoints = [];
+let calibrationMode = false;
+let calibrationModeCooldown = false;
+
+function toggleCalibrationMode() {
+    const toggle = document.getElementById('calibrationModeToggle');
+    if (!toggle) return;
+    
+    calibrationMode = toggle.checked;
+    const cameraContainer = document.getElementById('cameraContainer');
+    const calibrationPanel = document.getElementById('calibrationPanel');
+    
+    if (calibrationMode) {
+        // Disable pick mode if active
+        if (pickMode) {
+            document.getElementById('pickModeToggle').checked = false;
+            togglePickMode();
+        }
+        
+        cameraContainer.classList.add('calibrating');
+        if (calibrationPanel) calibrationPanel.style.display = 'block';
+        showNotification('Calibration Mode ON: Click arm position in video.', 'info');
+    } else {
+        cameraContainer.classList.remove('calibrating');
+        if (calibrationPanel) calibrationPanel.style.display = 'none';
+        showNotification('Calibration Mode OFF.', 'secondary');
+    }
+}
+
+async function handleCalibrationClick(pixelX, pixelY, displayX, displayY) {
+    if (calibrationModeCooldown) return;
+    calibrationModeCooldown = true;
+    setTimeout(() => { calibrationModeCooldown = false; }, 1000);
+
+    showNotification('Capturing arm position...', 'info');
+
+    try {
+        const resp = await fetch('/api/arm/current_position');
+        const result = await resp.json();
+
+        if (result.success && result.position) {
+            const worldX = result.position.x;
+            const worldY = result.position.y;
+
+            const point = {
+                pixel: [pixelX, pixelY],
+                world: [worldX, worldY],
+                displayX: displayX,
+                displayY: displayY
+            };
+
+            calibrationPoints.push(point);
+            addCalibrationMarker(point, calibrationPoints.length);
+            updateCalibrationPointsList();
+            
+            showNotification(`Captured Point P${calibrationPoints.length}`, 'success');
+        } else {
+            showNotification('Could not get arm position.', 'danger');
+        }
+    } catch (err) {
+        console.error('Calibration capture error:', err);
+    }
+}
+
+function addCalibrationMarker(point, index) {
+    const overlay = document.getElementById('calibrationOverlay');
+    if (!overlay) return;
+    
+    const marker = document.createElement('div');
+    marker.className = 'calibration-marker';
+    marker.style.left = `${(point.displayX / document.getElementById('cameraFeed').offsetWidth) * 100}%`;
+    marker.style.top = `${(point.displayY / document.getElementById('cameraFeed').offsetHeight) * 100}%`;
+    marker.innerHTML = index;
+    overlay.appendChild(marker);
+}
+
+function updateCalibrationPointsList() {
+    const list = document.getElementById('calibrationPointsList');
+    const status = document.getElementById('calibrationStatus');
+    const btn = document.getElementById('btnCalculateCalib');
+    if (!list || !status || !btn) return;
+
+    if (calibrationPoints.length === 0) {
+        list.innerHTML = '<div class="p-3 text-center text-muted small">No points captured</div>';
+        status.className = "alert alert-info py-2 small mb-3";
+        status.innerHTML = "Click 4 points in the video where the arm tip is located.";
+        btn.disabled = true;
+        return;
+    }
+
+    list.innerHTML = calibrationPoints.map((p, i) => `
+        <div class="calibration-point-item">
+            <span><strong>P${i+1}</strong>: [${p.pixel[0]}, ${p.pixel[1]}]</span>
+            <button class="btn btn-link btn-sm text-danger p-0" onclick="removeCalibrationPoint(${i})">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `).join('');
+
+    const needed = Math.max(0, 4 - calibrationPoints.length);
+    if (needed > 0) {
+        status.className = "alert alert-warning py-2 small mb-3";
+        status.innerHTML = `Need <strong>${needed}</strong> more point${needed > 1 ? 's' : ''}.`;
+        btn.disabled = true;
+    } else {
+        status.className = "alert alert-success py-2 small mb-3";
+        status.innerHTML = "Ready to calculate matrix!";
+        btn.disabled = false;
+    }
+}
+
+function removeCalibrationPoint(i) {
+    calibrationPoints.splice(i, 1);
+    const overlay = document.getElementById('calibrationOverlay');
+    if (overlay) overlay.innerHTML = '';
+    calibrationPoints.forEach((p, idx) => addCalibrationMarker(p, idx + 1));
+    updateCalibrationPointsList();
+}
+
+function resetCalibration() {
+    calibrationPoints = [];
+    const overlay = document.getElementById('calibrationOverlay');
+    if (overlay) overlay.innerHTML = '';
+    const accuracyPanel = document.getElementById('calibrationAccuracy');
+    if (accuracyPanel) accuracyPanel.style.display = 'none';
+    updateCalibrationPointsList();
+}
+
+async function runCalibration() {
+    const btn = document.getElementById('btnCalculateCalib');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processing...';
+
+    try {
+        const response = await fetch('/api/calibration/calculate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ points: calibrationPoints })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            const accuracyPanel = document.getElementById('calibrationAccuracy');
+            const accuracyVal = document.getElementById('accuracyValue');
+            if (accuracyPanel) accuracyPanel.style.display = 'block';
+            if (accuracyVal) accuracyVal.textContent = `${result.data.accuracy.toFixed(2)}mm`;
+            
+            await fetch('/api/calibration/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ points: calibrationPoints, calibration: result.data })
+            });
+            showNotification('Calibration saved!', 'success');
+        } else {
+            showNotification('Failed: ' + result.message, 'danger');
+        }
+    } catch (e) {
+        showNotification('Calibration error', 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-save me-2"></i>Save Calibration Matrix';
+    }
+}
+
+// Initialize Pick/Calibration Mode click handler
+function initializeInteractionHandlers() {
     const cameraFeed = document.getElementById('cameraFeed');
     if (!cameraFeed) return;
 
     cameraFeed.addEventListener('click', async function (e) {
-        if (!pickMode || pickModeCooldown) return;
-
-        // Cooldown to prevent multiple accidental clicks
-        pickModeCooldown = true;
-        setTimeout(() => { pickModeCooldown = false; }, 2000);
-
         const rect = cameraFeed.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
@@ -1008,25 +1195,37 @@ function initializePickMode() {
         const pixelX = Math.round(x * scaleX);
         const pixelY = Math.round(y * scaleY);
 
-        console.log(`Pick Mode click: (${pixelX}, ${pixelY})`);
-        showNotification(`Picking at (${pixelX}, ${pixelY})...`, 'info');
+        // Scenario 1: Calibration Mode
+        if (calibrationMode) {
+            handleCalibrationClick(pixelX, pixelY, x, y);
+            return;
+        }
 
-        try {
-            const response = await fetch('/api/control/pick_at_pixel', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ x: pixelX, y: pixelY })
-            });
+        // Scenario 2: Pick Mode
+        if (pickMode && !pickModeCooldown) {
+            pickModeCooldown = true;
+            setTimeout(() => { pickModeCooldown = false; }, 2000);
 
-            const result = await response.json();
-            if (result.success) {
-                showNotification(`Success: ${result.message}`, 'success');
-            } else {
-                showNotification(`Pick failed: ${result.message}`, 'danger');
+            console.log(`Pick Mode click: (${pixelX}, ${pixelY})`);
+            showNotification(`Picking at (${pixelX}, ${pixelY})...`, 'info');
+
+            try {
+                const response = await fetch('/api/control/pick_at_pixel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x: pixelX, y: pixelY })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showNotification(`Success: ${result.message}`, 'success');
+                } else {
+                    showNotification(`Pick failed: ${result.message}`, 'danger');
+                }
+            } catch (error) {
+                console.error('Error in click-to-pick:', error);
+                showNotification('Error sending pick command', 'danger');
             }
-        } catch (error) {
-            console.error('Error in click-to-pick:', error);
-            showNotification('Error sending pick command', 'danger');
         }
     });
 }
@@ -1035,7 +1234,7 @@ function initializePickMode() {
 document.addEventListener('DOMContentLoaded', () => {
     initializeSocketIO();
     initializeCamera();
-    initializePickMode();
+    initializeInteractionHandlers();
 });
 
 // ============================================================

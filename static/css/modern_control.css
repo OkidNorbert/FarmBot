@@ -360,3 +360,123 @@ input:checked+.mode-slider:before {
 .claw-finger-right {
     transition: transform 0.15s ease-out;
 }
+
+/* Calibration Mode Styles */
+.calibrating .camera-feed {
+    cursor: crosshair;
+    outline: 3px solid var(--primary);
+    outline-offset: -3px;
+}
+
+.calibration-marker {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    background: rgba(220, 53, 69, 0.7);
+    border: 2px solid white;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    z-index: 100;
+    pointer-events: none;
+}
+
+.calibration-panel {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    margin-bottom: 2rem;
+    border-left: 5px solid var(--primary);
+    transition: all 0.3s ease;
+}
+
+.calibration-panel-header {
+    background: var(--light);
+    padding: 1rem;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.calibration-point-item {
+    padding: 8px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.85rem;
+    display: flex;
+    justify-content: space-between;
+}
+
+.calibration-point-item:last-child {
+    border-bottom: none;
+}
+
+.accuracy-display {
+    padding: 10px;
+    background: #e7f3ff;
+    border-radius: 8px;
+    margin: 10px 0;
+    text-align: center;
+}
+
+.accuracy-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--primary);
+}
+/* ToF Terminal Styles - High Visibility 'Matrix' Theme */
+.tof-terminal {
+    background: #000000;
+    border: 2px solid #00ff00;
+    border-radius: 8px;
+    padding: 12px;
+    font-family: 'Fira Code', 'JetBrains Mono', 'Courier New', Courier, monospace;
+    font-size: 0.95rem;
+    height: 180px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column-reverse;
+    box-shadow: inset 0 0 15px rgba(0, 255, 0, 0.2), 0 0 10px rgba(0, 0, 0, 0.5);
+    scrollbar-width: thin;
+    scrollbar-color: #00ff00 #000000;
+}
+
+.tof-terminal::-webkit-scrollbar {
+    width: 6px;
+}
+
+.tof-terminal::-webkit-scrollbar-track {
+    background: #000000;
+}
+
+.tof-terminal::-webkit-scrollbar-thumb {
+    background-color: #00ff00;
+    border-radius: 10px;
+}
+
+.terminal-line {
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(0, 255, 0, 0.1);
+    color: #ffffff;
+    text-shadow: 0 0 2px rgba(0, 255, 0, 0.5);
+}
+
+.terminal-time {
+    color: #00ff00;
+    margin-right: 12px;
+    font-weight: bold;
+    opacity: 0.8;
+}
+
+.terminal-dist {
+    color: #00ff00;
+    font-weight: 800;
+    text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
+}

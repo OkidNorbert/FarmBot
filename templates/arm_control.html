@@ -57,9 +57,6 @@
                     <li class="nav-item">
                         <a class="nav-link" href="/monitor"><i class="fas fa-chart-line"></i> Monitor</a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/calibrate"><i class="fas fa-crosshairs"></i> Calibrate</a>
-                    </li>
                 </ul>
             </div>
         </div>
@@ -191,12 +188,49 @@
                                     onchange="togglePickMode()">
                                 <label class="form-check-label small" for="pickModeToggle">Pick Mode</label>
                             </div>
+                            <div class="form-check form-switch ms-3">
+                                <input class="form-check-input" type="checkbox" id="calibrationModeToggle"
+                                    onchange="toggleCalibrationMode()">
+                                <label class="form-check-label small" for="calibrationModeToggle">Calibrate</label>
+                            </div>
                         </div>
                         <div class="camera-feed" id="cameraContainer">
                             <img id="cameraFeed" alt="Camera Feed" style="display: none; width: 100%; height: auto;">
+                            <!-- Calibration Overlay -->
+                            <div id="calibrationOverlay" class="calibration-overlay"></div>
                             <div class="camera-placeholder" id="cameraPlaceholder">
                                 <i class="fas fa-camera"></i>
                                 <p>Click "Start" to begin camera feed</p>
+                            </div>
+                        </div>
+
+                        <!-- Calibration Panel -->
+                        <div id="calibrationPanel" class="calibration-panel mt-3" style="display: none;">
+                            <div class="calibration-panel-header">
+                                <span class="fw-bold"><i class="fas fa-crosshairs me-2 text-primary"></i>Calibration System</span>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-xs btn-outline-danger py-0" onclick="resetCalibration()" style="font-size: 0.75rem;">Reset</button>
+                                </div>
+                            </div>
+                            <div class="p-3">
+                                <div id="calibrationStatus" class="alert alert-info py-2 small mb-3">
+                                    Move arm to a spot, then click that spot on the camera feed. (Need 4 points)
+                                </div>
+                                
+                                <div id="calibrationPointsList" class="list-group list-group-flush mb-3 border rounded" style="max-height: 150px; overflow-y: auto;">
+                                    <!-- Points dynamic -->
+                                </div>
+
+                                <div class="accuracy-display" id="calibrationAccuracy" style="display: none;">
+                                    <div class="small text-muted">Estimated Accuracy</div>
+                                    <div class="accuracy-value" id="accuracyValue">0.00mm</div>
+                                </div>
+
+                                <div class="d-grid">
+                                    <button id="btnCalculateCalib" class="btn btn-primary btn-sm" disabled onclick="runCalibration()">
+                                        <i class="fas fa-save me-2"></i>Save Calibration Matrix
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -219,8 +253,16 @@
                             </div>
                         </div>
                         <div class="telemetry-card">
-                            <div class="telemetry-label"><i class="fas fa-info-circle"></i> Status</div>
+                            <div class="telemetry-label"><i class="fas fa-microchip"></i> System Status</div>
                             <div class="telemetry-value" id="statusValue">Idle</div>
+                        </div>
+
+                        <!-- ToF Live Terminal -->
+                        <div class="mt-4">
+                            <h6 class="text-muted small fw-bold mb-2"><i class="fas fa-terminal me-2"></i>ToF Live Readings</h6>
+                            <div id="tofTerminal" class="tof-terminal">
+                                <div class="terminal-line text-info">Waiting for data...</div>
+                            </div>
                         </div>
                         <div class="telemetry-card">
                             <div class="telemetry-label"><i class="fas fa-clock"></i> Last Update</div>
@@ -462,6 +504,12 @@
                                 <button class="btn btn-dark btn-action w-100"
                                     onclick="playNamedMovement('hyperactive')" title="Stress Test">
                                     <i class="fas fa-bolt"></i> Hyper
+                                </button>
+                            </div>
+                            <div class="col-12 mt-2">
+                                <button class="btn btn-dark btn-action w-100 shadow-sm"
+                                    onclick="playNamedMovement('epic')" title="The Ultimate Journey">
+                                    <i class="fas fa-dragon me-2"></i>The Great Odyssey
                                 </button>
                             </div>
                         </div>
