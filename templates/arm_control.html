@@ -247,7 +247,7 @@
                                 <div class="servo-value" id="clawValue">115°</div>
                             </div>
                             <div class="slider-wrapper">
-                                <input type="range" class="servo-slider claw" id="clawSlider" min="0" max="115" value="115"
+                                <input type="range" class="servo-slider claw" id="clawSlider" min="30" max="115" value="115"
                                     data-servo="claw">
                             </div>
                         </div>
@@ -262,7 +262,7 @@
                                         <div class="servo-value" id="wrist_pitchValue">90°</div>
                                     </div>
                                     <div class="slider-wrapper">
-                                        <input type="range" class="servo-slider wrist_pitch" id="wrist_pitchSlider" min="0" max="160"
+                                        <input type="range" class="servo-slider wrist_pitch" id="wrist_pitchSlider" min="20" max="160"
                                             value="90" data-servo="wrist_pitch">
                                     </div>
                                 </div>
@@ -313,8 +313,7 @@
                         </div>
 
                         <!-- Waist Servo (Bottom of arm - lowest) - DISABLED: Not available -->
-                        <div class="servo-control" style="opacity: 0.5; pointer-events: none;"
-                            title="Waist servo not available - manually fixed">
+                        <div class="servo-control" style="display: none;">
                             <div class="servo-header">
                                 <div class="servo-name">
                                     <i class="fas fa-circle-notch" style="color: var(--primary);"></i>
@@ -367,11 +366,41 @@
                             </button>
                         </div>
                     </div>
+
+                <!-- PS4 / Gamepad Controller Card -->
+                <div class="card status-card mt-4" id="gamepadCard">
+                    <div class="card-header d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #1a1a2e, #16213e); color: #fff;">
+                        <h5 class="mb-0"><i class="fas fa-gamepad"></i> PS4 / Gamepad Controller</h5>
+                        <span class="badge bg-secondary" id="gamepadStatus">
+                            <i class="fas fa-circle me-1"></i> Not Connected
+                        </span>
+                    </div>
+                    <div class="card-body" style="font-size: 0.85rem;">
+                        <p class="text-muted mb-2" id="gamepadHint">
+                            <i class="fas fa-info-circle"></i>
+                            Connect a PS4/gamepad via USB or Bluetooth, then press any button to activate.
+                        </p>
+                        <div id="gamepadMappings" style="display:none;">
+                            <div class="row g-1">
+                                <div class="col-6"><span class="badge bg-primary w-100 text-start px-2 py-1">L-Stick ↕ → Shoulder</span></div>
+                                <div class="col-6"><span class="badge bg-primary w-100 text-start px-2 py-1">R-Stick ↕ → Elbow</span></div>
+                                <div class="col-6"><span class="badge bg-info w-100 text-start px-2 py-1">◽ / ◯ → Wrist Roll</span></div>
+                                <div class="col-6"><span class="badge bg-info w-100 text-start px-2 py-1">D-Pad ↕ → Wrist Pitch</span></div>
+                                <div class="col-6"><span class="badge bg-success w-100 text-start px-2 py-1">R2 / R1 → Claw Open</span></div>
+                                <div class="col-6"><span class="badge bg-danger w-100 text-start px-2 py-1">L2 / L1 → Claw Close</span></div>
+                                <div class="col-12"><span class="badge bg-warning text-dark w-100 text-start px-2 py-1">Options / Start → Reset to Home</span></div>
+                            </div>
+                            <p class="text-muted mt-2 mb-0" style="font-size:0.78rem;">
+                                <i class="fas fa-lightbulb"></i> Move sticks slowly for fine control. Speed slider still applies.
+                            </p>
+                        </div>
+                    </div>
+                </div>
                 </div>
                 <!-- Movement Collection -->
                 <div class="card status-card mt-4">
-                    <div class="card-header bg-gradient-purple text-white">
-                        <h5 class="mb-0"><i class="fas fa-magic"></i> Movement Collection</h5>
+                    <div class="card-header bg-gradient-purple text-white shadow-sm">
+                        <h5 class="mb-0"><i class="fas fa-magic me-2"></i>Movement Collection</h5>
                     </div>
                     <div class="card-body">
                         <div class="row g-2">
@@ -383,14 +412,14 @@
                             </div>
                             <div class="col-6">
                                 <button class="btn btn-outline-info btn-action w-100"
-                                    onclick="playNamedMovement('curiosity')" title="Look Around">
-                                    <i class="fas fa-search"></i> Curious
+                                    onclick="playNamedMovement('curiosity')" title="Intelligent Scout">
+                                    <i class="fas fa-search"></i> Scout
                                 </button>
                             </div>
                             <div class="col-6">
                                 <button class="btn btn-outline-success btn-action w-100"
                                     onclick="playNamedMovement('wave')" title="Say Hello">
-                                    <i class="fas fa-hand-wave"></i> Wave
+                                    <i class="fas fa-hand-sparkles"></i> Wave
                                 </button>
                             </div>
                             <div class="col-6">
@@ -399,30 +428,62 @@
                                     <i class="fas fa-user-tie"></i> Bow
                                 </button>
                             </div>
-                            <div class="col-12">
+                            <div class="col-6">
                                 <button class="btn btn-outline-warning btn-action w-100"
-                                    onclick="playNamedMovement('happy')" title="Wiggle Wiggle">
-                                    <i class="fas fa-grin-stars"></i> Happy Dance
+                                    onclick="playNamedMovement('happy')" title="Joyful Jiggle">
+                                    <i class="fas fa-smile-beam"></i> Happy
                                 </button>
                             </div>
-                            <div class="col-12 mt-2">
+                            <div class="col-6">
                                 <button class="btn btn-outline-danger btn-action w-100"
-                                    onclick="playNamedMovement('hyperactive')" title="⚡ ULTRA SPEED ⚡">
-                                    <i class="fas fa-bolt"></i> Hyperactive
+                                    onclick="playNamedMovement('symphony')" title="Complex Performance">
+                                    <i class="fas fa-music"></i> Symphony
                                 </button>
                             </div>
-                            <div class="col-12 mt-2">
+                            <div class="col-6">
+                                <button class="btn btn-outline-dark btn-action w-100"
+                                    onclick="playNamedMovement('ninja')" title="Fast & Precise">
+                                    <i class="fas fa-user-ninja"></i> Ninja
+                                </button>
+                            </div>
+                            <div class="col-6">
+                                <button class="btn btn-outline-primary btn-action w-100"
+                                    onclick="playNamedMovement('disco')" title="Party Mode">
+                                    <i class="fas fa-compact-disc"></i> Disco
+                                </button>
+                            </div>
+                            <div class="col-6">
                                 <button class="btn btn-outline-info btn-action w-100"
-                                    onclick="playNamedMovement('symphony')" title="🎭 30s PERFORMANCE 🎭">
-                                    <i class="fas fa-music"></i> Grand Symphony
+                                    onclick="playNamedMovement('kata')" title="Dojo Training">
+                                    <i class="fas fa-fist-raised"></i> Kata
                                 </button>
                             </div>
-                            <div class="col-12 mt-2">
-                                <button class="btn btn-dark btn-action w-100" onclick="playNamedMovement('epic')"
-                                    title="⚔️ THE ULTIMATE PERFORMANCE ⚔️">
-                                    <i class="fas fa-dragon"></i> Epic Journey
+                            <div class="col-6">
+                                <button class="btn btn-dark btn-action w-100"
+                                    onclick="playNamedMovement('hyperactive')" title="Stress Test">
+                                    <i class="fas fa-bolt"></i> Hyper
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- System Health & Diagnostics -->
+                <div class="card status-card mt-4 border-info">
+                    <div class="card-header bg-info text-dark d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-stethoscope"></i> Health & Diagnostics</h5>
+                        <div id="diagnosticStatus" style="display:none;">
+                            <span class="badge bg-dark pulse-animation">Testing...</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            <i class="fas fa-info-circle"></i> Sequential range test (Home → Left → Right → Home) for all joints.
+                        </p>
+                        <button class="btn btn-info w-100" id="runDiagnosticBtn" onclick="runServoDiagnostic()">
+                            <i class="fas fa-play-circle me-1"></i> Run System Diagnostic
+                        </button>
+                        <div id="diagnosticProgress" class="mt-2 small text-center fw-bold" style="display:none;">
+                            Starting test...
                         </div>
                     </div>
                 </div>
@@ -490,6 +551,120 @@
             } catch (error) {
                 console.error('Error playing movement:', error);
                 showNotification('Error starting movement', 'danger');
+            }
+        }
+
+        /**
+         * Diagnostic tool: Iterates through all servos and moves them
+         * from Home -> Min -> Max -> Home.
+         */
+        async function runServoDiagnostic() {
+            console.log('🧪 Starting Servo Diagnostic Test...');
+            const btn = document.getElementById('runDiagnosticBtn');
+            const status = document.getElementById('diagnosticStatus');
+            const progress = document.getElementById('diagnosticProgress');
+
+            if (btn && btn.disabled) {
+                console.warn('Diagnostic button is disabled, skipping.');
+                return;
+            }
+
+            if (!socket || !socket.connected) {
+                console.error('Socket not connected');
+                showNotification('Socket.IO not connected. Please wait for connection...', 'warning');
+                return;
+            }
+
+            if (!confirm('Start full system diagnostic? Servos will move to their limits.')) {
+                console.log('Diagnostic cancelled by user.');
+                return;
+            }
+
+            // Lock UI
+            if (btn) btn.disabled = true;
+            if (status) status.style.display = 'block';
+            if (progress) {
+                progress.style.display = 'block';
+                progress.textContent = 'Initializing test...';
+            }
+
+            // Sequence of servos to test
+            const servosToTest = ['waist', 'shoulder', 'elbow', 'wrist_roll', 'wrist_pitch', 'claw'];
+            const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
+            // Use slower/safe speed for diagnostic
+            const testSpeed = 40;
+
+            try {
+                // Ensure we have access to servoConfig (globally defined in modern_control.js)
+                const config = (typeof servoConfig !== 'undefined') ? servoConfig : null;
+                if (!config) {
+                    throw new Error('Servo configuration not found. Check if modern_control.js loaded correctly.');
+                }
+
+                for (const servo of servosToTest) {
+                    console.log(`Diagnostic: Testing joint "${servo}"`);
+                    if (progress) progress.textContent = `Testing ${servo.toUpperCase()}...`;
+
+                    const jointConfig = config[servo];
+                    if (!jointConfig) {
+                        console.warn(`No configuration found for joint: ${servo}, skipping.`);
+                        continue;
+                    }
+
+                    // Sequence: Home -> Left -> Home -> Right -> Home
+                    const sequence = [
+                        jointConfig.default,
+                        jointConfig.min,
+                        jointConfig.default,
+                        jointConfig.max,
+                        jointConfig.default
+                    ];
+
+                    for (const targetAngle of sequence) {
+                        // Calculate required delay based on distance and speed (40 deg/s)
+                        const currentAngle = parseFloat(document.getElementById(servo + 'Slider')?.value || 90);
+                        const distance = Math.abs(currentAngle - targetAngle);
+                        // Time = (Distance / Speed) * 1000ms + 600ms buffer
+                        const movementDelay = Math.max(800, (distance / testSpeed) * 1000 + 600);
+
+                        console.log(`  -> Moving ${servo} from ${currentAngle}° to ${targetAngle}° (Waiting ${Math.round(movementDelay)}ms)`);
+
+                        // Update UI slider if it exists to show visual feedback
+                        const slider = document.getElementById(servo + 'Slider');
+                        if (slider) {
+                            slider.value = targetAngle;
+                            if (typeof updateSliderDisplay === 'function') {
+                                updateSliderDisplay(servo, targetAngle);
+                            }
+                        }
+
+                        // Send command via Socket.IO
+                        socket.emit('servo_command', {
+                            cmd: 'move',
+                            servo: servo,
+                            angle: targetAngle,
+                            speed: testSpeed
+                        });
+
+                        // Wait for movement to finish
+                        await delay(movementDelay);
+                    }
+                }
+
+                console.log('✅ Diagnostic Test Complete!');
+                showNotification('Diagnostic Test Complete!', 'success');
+            } catch (err) {
+                console.error('❌ Diagnostic Error:', err);
+                showNotification('Diagnostic interrupted: ' + err.message, 'danger');
+            } finally {
+                // Restore UI state
+                if (btn) btn.disabled = false;
+                if (status) status.style.display = 'none';
+                if (progress) {
+                    progress.textContent = 'Diagnostic Complete';
+                    setTimeout(() => { progress.style.display = 'none'; }, 3000);
+                }
             }
         }
 

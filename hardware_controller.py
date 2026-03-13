@@ -256,16 +256,22 @@ class HardwareController:
         # Servo availability configuration
         # Set to False for servos that are not available (manually fixed)
         self.servo_available = {
-            'waist': False,      # Waist servo not available - manually fixed
+            'waist': True,       # Enabled for diagnostic and control
             'shoulder': True,   # Shoulder servo now available
             'elbow': True,      # Elbow servo available
             'wrist_roll': True, # Wrist roll available
             'wrist_pitch': True,# Wrist pitch available
             'claw': True        # Claw servo available
         }
-        # claw calibration endpoints (default safe values)
-        self.claw_min = 10
-        self.claw_max = 115
+        # Strict safe endpoints matching config.h
+        self.servo_limits = {
+            'waist': {'min': 0, 'max': 180},
+            'shoulder': {'min': 15, 'max': 165},
+            'elbow': {'min': 10, 'max': 180},
+            'wrist_roll': {'min': 15, 'max': 165},
+            'wrist_pitch': {'min': 20, 'max': 160},
+            'claw': {'min': 30, 'max': 115}
+        }
         
         # Fixed positions for unavailable servos (manually set)
         # These should match your manual adjustments
@@ -308,6 +314,23 @@ class HardwareController:
         self.pending_picks = {}  # Track pick commands sent to Arduino
         self.pick_timeout = 10.0  # seconds to wait for pick completion
         self.max_pick_retries = 2
+
+        # Alignment-based auto-pick settings
+        # How close to image center (fraction of image width/height) triggers a pick
+        self.alignment_threshold_x = 0.20   # ±20% of image width
+        self.alignment_threshold_y = 0.25   # ±25% of image height
+        self.alignment_min_tof_mm  = 30     # Ignore ToF readings below this (noise)
+        self.alignment_max_tof_mm  = 400    # Ignore readings above this (too far away)
+        self.alignment_cooldown    = 5.0    # Seconds between successive auto-picks
+        self._last_auto_pick_time  = 0.0    # Timestamp of last pick
+        
+        # Dwell-time state for auto-pick
+        self.alignment_start_time  = 0.0    # When the current target first aligned
+        self.dwell_time_threshold  = 1.0    # Seconds target must be aligned to trigger
+        
+        # Movement collection
+        self.movements = {}
+        self.load_movements()
         
         # Initialize AI
         self.initialize_classifier()
@@ -424,133 +447,117 @@ class HardwareController:
         return avg_frontness > 0
 
     def process_auto_cycle(self):
-        """Single cycle of autonomous logic - Only picks 'ready' tomatoes"""
-        # Check if arm is facing front before detecting tomatoes
-        # Tomatoes are always placed in front of the arm
-        if not self.is_arm_facing_front():
-            self.logger.debug("[AUTO] Arm is facing back, skipping detection (tomatoes are in front)")
-            return
+        """Auto-pick cycle: fires PICK when a ready tomato is aligned with the arm center.
         
+        Strategy:
+          1. Capture a frame and run YOLO detection.
+          2. Find the best (highest confidence) *ready* tomato.
+          3. Check alignment: the tomato's centre must be within
+             alignment_threshold_x/y of the camera image centre.
+          4. Confirm the ToF sensor reads a plausible distance.
+          5. Send a PICK command with the live ToF depth.
+        
+        No coordinate-transform / homography is required because the base is
+        fixed and the arm points straight forward.
+        """
+        # Enforce cooldown between picks
+        now = time.time()
+        if now - self._last_auto_pick_time < self.alignment_cooldown:
+            return
+
         frame = self.get_frame()
         if frame is None:
             return
 
-        # 1. Detect (only when arm is facing front)
+        # 1. Detect tomatoes
         detections = self.detect_tomatoes(frame)
-        
-        # 2. Filter: Only pick "ready" tomatoes in automatic mode
-        # Lower confidence threshold for Ugandan tomatoes (they may have different appearance)
-        ready_tomatoes = [d for d in detections if d['class'].lower() in ['ready', 'ripe']]
-        
-        if not ready_tomatoes:
-            # No ready tomatoes found - skip this cycle
+
+        # 2. Filter to ready/ripe only
+        ready = [d for d in detections if d['class'].lower() in ['ready', 'ripe']]
+        if not ready:
             if detections:
-                self.logger.info(f"[AUTO] Found {len(detections)} tomatoes, but none are ready. Classes: {[d['class'] for d in detections]}")
-            else:
-                self.logger.debug("[AUTO] No tomatoes detected in frame")
+                self.logger.debug(f"[AUTO] {len(detections)} tomato(s) found, none ready.")
             return
+
+        # 3. Pick best candidate (highest confidence)
+        ready.sort(key=lambda d: d['confidence'], reverse=True)
+        target = ready[0]
+        center_x, center_y = target['center']
+
+        # Image dimensions for normalisation
+        h, w = frame.shape[:2]
+        img_cx, img_cy = w / 2.0, h / 2.0
+
+        # Normalised offset from image centre  (-1 = far left/top, +1 = far right/bottom)
+        offset_x = (center_x - img_cx) / img_cx
+        offset_y = (center_y - img_cy) / img_cy
+
+        self.logger.debug(
+            f"[AUTO] Best tomato: conf={target['confidence']:.2f}  "
+            f"offset_x={offset_x:+.2f}  offset_y={offset_y:+.2f}  "
+            f"(thresh ±{self.alignment_threshold_x:.0%} / ±{self.alignment_threshold_y:.0%})"
+        )
+
+        # 4. Alignment check
+        aligned_x = abs(offset_x) <= self.alignment_threshold_x
+        aligned_y = abs(offset_y) <= self.alignment_threshold_y
         
-        # 3. Sort ready tomatoes by confidence (highest first) for better picking order
-        ready_tomatoes.sort(key=lambda x: x['confidence'], reverse=True)
-        
-        self.logger.info(f"[AUTO] Found {len(ready_tomatoes)} ready tomato(s) to pick")
-        
-        # 4. Pick ALL ready tomatoes in sequence
-        picked_count = 0
-        skipped_count = 0
-        
-        for i, target in enumerate(ready_tomatoes):
-            self.logger.info(f"[AUTO] Processing tomato {i+1}/{len(ready_tomatoes)} (confidence: {target['confidence']:.2f}, class: {target['class']})")
-            
-            # Act (if connected)
-            if not self.arduino_connected:
-                self.logger.info(f"[AUTO] Simulation: Pick command {i+1}/{len(ready_tomatoes)} (Arduino not connected)")
-                continue
-            
-            try:
-                # Get pixel coordinates from detection
-                center_x, center_y = target['center']
-                
-                # Convert pixel coordinates to arm coordinates (mm)
-                arm_coords = self.pixel_to_arm_coordinates(center_x, center_y)
-                if arm_coords is None:
-                    self.logger.error(f"[AUTO] Failed to convert coordinates for tomato {i+1}, skipping")
-                    skipped_count += 1
-                    continue
-                
-                arm_x, arm_y = arm_coords
-                self.logger.debug(f"[AUTO] Pixel ({center_x:.0f}, {center_y:.0f}) -> Arm ({arm_x:.1f}, {arm_y:.1f}) mm {'[CALIBRATED]' if self.homography_matrix is not None else '[FALLBACK]'}")
-                
-                # Get distance from ToF sensor (on claw) to tomato
-                # NOTE: ToF is on the claw, so it moves with the arm
-                # When arm is at approach position, ToF reads distance from claw to tomato
-                tof_distance = self.get_distance_sensor()
-                
-                # Calculate accurate depth for tomato
-                # Since ToF is on claw, distance is from claw to tomato surface
-                z_depth = self.calculate_tomato_depth(target, tof_distance)
-                
-                if tof_distance is None:
-                    self.logger.warning(f"[AUTO] ToF sensor unavailable, using calculated depth: {z_depth:.1f}mm")
-                else:
-                    self.logger.debug(f"[AUTO] ToF distance (claw to tomato): {tof_distance:.1f}mm, Calculated depth: {z_depth:.1f}mm")
-                
-                # Validate position is reachable
-                if not self.is_position_reachable(arm_x, arm_y, z_depth):
-                    self.logger.warning(f"[AUTO] Position ({arm_x:.1f}, {arm_y:.1f}, {z_depth:.1f}) out of reach, skipping tomato {i+1}")
-                    skipped_count += 1
-                    continue
-                
-                self.logger.info(f"[AUTO] Picking tomato {i+1} at arm coordinates: ({arm_x:.1f}, {arm_y:.1f}, {z_depth:.1f}) mm")
-                
-                # Send Pick Command
-                # Format: PICK <x> <y> <z> <class_id>
-                # class_id: 1=Ready/Ripe (goes to right), 0=Other (goes to left)
-                # Since we only pick ready tomatoes, always use class_id=1 (right bin)
-                class_id = 1  # Ready tomatoes go to the right
-                
-                # Generate unique pick ID for tracking
-                pick_id = f"auto_{int(time.time() * 1000)}_{i}"
-                
-                # Send pick command
-                pick_command = f"PICK {int(arm_x)} {int(arm_y)} {int(z_depth)} {class_id}"
-                self.send_command(pick_command)
-                
-                # Track pick command
-                self.pending_picks[pick_id] = {
-                    'target': target,
-                    'arm_coords': (arm_x, arm_y, z_depth),
-                    'timestamp': time.time(),
-                    'retries': 0
-                }
-                
-                # Wait for pick operation to complete
-                # Arduino pick sequence typically takes 3-8 seconds
-                wait_time = 8.0
-                time.sleep(wait_time)
-                
-                # Check if pick completed (would need Arduino feedback for accurate tracking)
-                # For now, assume success after wait time
-                if pick_id in self.pending_picks:
-                    # Pick should have completed by now
-                    del self.pending_picks[pick_id]
-                    picked_count += 1
-                    self.logger.info(f"[AUTO] Pick {i+1} completed (assumed success)")
-                
-            except Exception as e:
-                self.logger.error(f"[AUTO] Error picking tomato {i+1}: {e}")
-                import traceback
-                traceback.print_exc()
-                skipped_count += 1
-                continue
-        
-        # Summary
-        if picked_count > 0:
-            self.logger.info(f"[AUTO] ✅ Successfully picked {picked_count} tomato(s)")
-        if skipped_count > 0:
-            self.logger.warning(f"[AUTO] ⚠️  Skipped {skipped_count} tomato(s)")
-        
-        self.logger.info(f"[AUTO] Completed cycle: {picked_count} picked, {skipped_count} skipped out of {len(ready_tomatoes)} ready tomatoes")
+        if not (aligned_x and aligned_y):
+            if self.alignment_start_time > 0:
+                self.logger.info(f"[AUTO] Target LOST alignment (offset_x={offset_x:+.2f}, offset_y={offset_y:+.2f}). Resetting timer.")
+            self.alignment_start_time = 0 # Reset if alignment lost
+            return
+
+        # Initialize alignment timer if just started
+        if self.alignment_start_time == 0:
+            self.alignment_start_time = time.time()
+            self.logger.info(f"[AUTO] Target ALIGNED. Waiting {self.dwell_time_threshold}s dwell time...")
+            return
+
+        # Check dwell time
+        elapsed = time.time() - self.alignment_start_time
+        if elapsed < self.dwell_time_threshold:
+            self.logger.debug(f"[AUTO] Aligning... {elapsed:.1f}s / {self.dwell_time_threshold}s")
+            return
+
+        self.logger.info(
+            f"[AUTO] ✅ Target DWELL COMPLETE ({elapsed:.1f}s) — preparing to pick."
+        )
+
+        # 5. Read ToF depth
+        tof_distance = self.get_distance_sensor()
+        if tof_distance is None or not (
+            self.alignment_min_tof_mm <= tof_distance <= self.alignment_max_tof_mm
+        ):
+            self.logger.warning(
+                f"[AUTO] ToF reading invalid or out of range ({tof_distance}mm) — skipping pick."
+            )
+            return
+
+        self.logger.info(f"[AUTO] ToF depth = {tof_distance}mm — sending PICK command.")
+
+        # 6. Fire pick command
+        # Format: PICK <x_unused> <y_unused> <z_mm> <class_id>
+        # x/y are unused because the arm is fixed; class_id=1 → right bin (ready)
+        pick_command = f"PICK 0 0 {int(tof_distance)} 1"
+        pick_id = f"align_{int(time.time() * 1000)}"
+
+        if self.arduino_connected:
+            self.send_command(pick_command)
+            self.pending_picks[pick_id] = {
+                'target': target,
+                'tof_mm': tof_distance,
+                'timestamp': now,
+            }
+            self._last_auto_pick_time = now
+            # Wait for the pick sequence to finish on the Arduino
+            time.sleep(self.pick_timeout)
+            self.pending_picks.pop(pick_id, None)
+            self.logger.info(f"[AUTO] Pick sequence complete (assumed success).")
+        else:
+            self.logger.info(f"[AUTO] Simulation pick at ToF={tof_distance}mm (Arduino not connected).")
+            self._last_auto_pick_time = now
+
 
     def detect_tomatoes(self, frame):
         """Run detection on frame - uses YOLO if available, otherwise ResNet + color detection"""
@@ -1216,19 +1223,20 @@ class HardwareController:
         
         tracked_name = servo_map.get(servo_name.lower(), servo_name.lower())
         if tracked_name in self.current_servo_angles:
-            # clamp claw angle to known endpoints
-            if tracked_name == 'claw':
-                try:
-                    angle = self.clamp_claw(int(angle))
-                except Exception:
-                    pass
+            try:
+                angle = self.clamp_servo(tracked_name, int(angle))
+            except Exception:
+                pass
             self.current_servo_angles[tracked_name] = int(angle)
             self.logger.debug(f"Updated {tracked_name} angle to {angle}°")
 
-    def clamp_claw(self, angle):
-        """Ensure claw angle stays within calibrated endpoints."""
+    def clamp_servo(self, servo_name, angle):
+        """Ensure servo angle stays within calibrated endpoints."""
         try:
-            return max(self.claw_min, min(self.claw_max, int(angle)))
+            limits = self.servo_limits.get(servo_name)
+            if limits:
+                return max(limits['min'], min(limits['max'], int(angle)))
+            return int(angle)
         except Exception:
             return angle
 
@@ -1260,9 +1268,9 @@ class HardwareController:
                 if not self.servo_available.get(servo_name, True):
                     # Use -1 to keep current position (servo is manually fixed)
                     angles[i] = -1
-                # clamp claw angle if present
-                if servo_name == 'claw' and angles[i] != -1:
-                    angles[i] = self.clamp_claw(angles[i])
+                # clamp all servo angles if present
+                if angles[i] != -1:
+                    angles[i] = self.clamp_servo(servo_name, angles[i])
             
             # Reconstruct command
             filtered_command = f"ANGLE {' '.join(str(a) for a in angles)}"
@@ -1277,6 +1285,12 @@ class HardwareController:
         # Filter servo commands to skip unavailable servos
         if command.startswith("ANGLE"):
             command = self.filter_servo_command(command)
+            
+        # Handle legacy GRIPPER commands
+        if command.startswith("GRIPPER"):
+            parts = command.split()
+            if len(parts) >= 2:
+                return self.set_gripper(parts[1])
         
         # Parse ANGLE commands to track servo angles
         if command.startswith("ANGLE"):
@@ -1289,9 +1303,8 @@ class HardwareController:
                         if angle_str != '-1' and i < len(servo_names):
                             try:
                                 angle = int(angle_str)
-                                # clamp claw before tracking
-                                if servo_names[i] == 'claw':
-                                    angle = self.clamp_claw(angle)
+                                # clamp value before tracking
+                                angle = self.clamp_servo(servo_names[i], angle)
                                 # Map 'waist' directly to update_servo_angle
                                 self.update_servo_angle(servo_names[i], angle)
                             except ValueError:
@@ -1344,8 +1357,12 @@ class HardwareController:
         return self.send_command("HOME")
 
     def set_gripper(self, state):
-        """Control gripper (OPEN/CLOSE)"""
-        return self.send_command(f"GRIPPER {state}")
+        """Control gripper (OPEN/CLOSE) using ANGLE command"""
+        # OPEN: 10, CLOSE: 115 (based on config.h and servoConfig)
+        angle = self.claw_min if state.upper() == "OPEN" else self.claw_max
+        # Format: ANGLE waist shoulder elbow wrist_roll wrist_pitch claw
+        # We only want to change the claw (Index 5)
+        return self.send_command(f"ANGLE -1 -1 -1 -1 -1 {angle}")
     
     def handle_pick_result(self, pick_id, status, result, duration_ms=0):
         """Handle pick result from Arduino
@@ -1770,93 +1787,73 @@ class HardwareController:
             loop.close()
         return devices
     
+    def load_movements(self):
+        """Load movement definitions from config/movements.json"""
+        import json
+        config_path = self.project_root / "config" / "movements.json"
+        
+        if config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    data = json.load(f)
+                    self.movements = data.get("movements", {})
+                self.logger.info(f"✅ Loaded {len(self.movements)} movements from config")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to load movements.json: {e}")
+        else:
+            self.logger.warning("⚠️  movements.json not found")
+
     def play_movement(self, movement_id):
         """Execute a named movement sequence from the collection"""
         self.logger.info(f"Executing movement: {movement_id} 🤖")
         
-        # Save current mode
+        # Check if movement exists in config
+        if movement_id in self.movements:
+            movement = self.movements[movement_id]
+            steps = movement.get("steps", [])
+            
+            # Save current mode
+            previous_auto_mode = self.auto_mode
+            self.auto_mode = False
+            self.movement_active = True
+            
+            try:
+                for step in steps:
+                    angles = step.get("angles", [])
+                    speed = step.get("speed")
+                    delay_ms = step.get("delay_ms", 500)
+                    comment = step.get("comment", "")
+                    
+                    # Apply speed if specified
+                    if speed is not None:
+                        self.send_command(f"SPEED {speed}")
+                        self.logger.debug(f"  Speed set to {speed}")
+                    
+                    if len(angles) == 6:
+                        # Build ANGLE command
+                        cmd = f"ANGLE {' '.join(str(a) for a in angles)}"
+                        self.send_command(cmd)
+                        if comment:
+                            self.logger.debug(f"  Step: {comment}")
+                        time.sleep(delay_ms / 1000.0)
+                
+                self.home_arm()
+                self.logger.info(f"Movement '{movement_id}' complete!")
+                return True
+            except Exception as e:
+                self.logger.error(f"Error playing movement '{movement_id}': {e}")
+                return False
+            finally:
+                self.auto_mode = previous_auto_mode
+                self.movement_active = False
+        
+        # Fallback for legacy hardcoded movements or complex ones
         previous_auto_mode = self.auto_mode
         self.auto_mode = False
         self.movement_active = True
         
         try:
-            if movement_id == 'victory':
-                # Victory Dance (Existing)
-                self.send_command("ANGLE -1 150 150 90 90 0")
-                time.sleep(0.8)
-                self.send_command("GRIPPER OPEN")
-                time.sleep(0.4)
-                for _ in range(3):
-                    self.send_command("ANGLE -1 150 150 120 90 90")
-                    time.sleep(0.4)
-                    self.send_command("ANGLE -1 150 150 60 90 90")
-                    time.sleep(0.4)
-            
-            elif movement_id == 'curiosity':
-                # Curious Peek: Leans forward and looks side to side
-                self.send_command("ANGLE -1 160 80 90 120 0")
-                time.sleep(1.0)
-                for _ in range(2):
-                    self.send_command("ANGLE 60 -1 -1 -1 -1 -1")
-                    time.sleep(0.6)
-                    self.send_command("ANGLE 120 -1 -1 -1 -1 -1")
-                    time.sleep(0.6)
-                self.send_command("ANGLE 90 -1 -1 -1 -1 -1")
-            
-            elif movement_id == 'wave':
-                # Energetic Wave: High arm, fast wrist movement
-                self.send_command("ANGLE -1 170 160 90 90 0")
-                time.sleep(0.8)
-                for _ in range(4):
-                    self.send_command("ANGLE -1 -1 -1 -1 140 -1")
-                    time.sleep(0.25)
-                    self.send_command("ANGLE -1 -1 -1 -1 40 -1")
-                    time.sleep(0.25)
-            
-            elif movement_id == 'bow':
-                # Formal Bow: Slow lowering of the entire arm
-                self.send_command("ANGLE -1 90 90 90 90 0")
-                time.sleep(0.5)
-                self.send_command("ANGLE -1 45 45 45 150 0")
-                time.sleep(1.5)
-                self.send_command("ANGLE -1 90 90 90 90 0")
-                time.sleep(1.0)
-
-            elif movement_id == 'happy':
-                # Happy Dance: Jiggle everything
-                for _ in range(3):
-                    self.send_command("ANGLE 85 145 145 85 85 45")
-                    time.sleep(0.2)
-                    self.send_command("ANGLE 95 155 155 95 95 0")
-                    time.sleep(0.2)
-            
-            elif movement_id == 'hyperactive':
-                # Hyperactive: High speed, rapid multi-joint movements
-                self.logger.info("⚡ ENTERING HYPERACTIVE MODE ⚡")
-                for _ in range(2):
-                    self.send_command("ANGLE 45 135 135 45 45 90")
-                    time.sleep(0.15)
-                    self.send_command("ANGLE 135 90 90 135 135 0")
-                    time.sleep(0.15)
-                    self.send_command("ANGLE 90 45 45 90 45 90")
-                    time.sleep(0.15)
-                
-                # Rapid circular-ish sweep
-                for angle in range(60, 121, 20):
-                    self.send_command(f"ANGLE {angle} 150 120 90 90 45")
-                    time.sleep(0.1)
-                for angle in range(120, 59, -20):
-                    self.send_command(f"ANGLE {angle} 150 120 90 90 0")
-                    time.sleep(0.1)
-                
-                # Final jitter
-                for _ in range(5):
-                    self.send_command("ANGLE -1 -1 -1 -1 -1 90")
-                    time.sleep(0.05)
-                    self.send_command("ANGLE -1 -1 -1 -1 -1 0")
-                    time.sleep(0.05)
-            
-            elif movement_id == 'symphony':
+            if movement_id == 'symphony':
                 # The Grand Symphony: A long, complex, multi-stage performance
                 self.logger.info("🎭 STARTING THE GRAND SYMPHONY 🎭")
                 

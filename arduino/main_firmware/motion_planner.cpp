@@ -105,7 +105,13 @@ void MotionPlanner::update() {
                     _stateStartTime = millis();
                 } else {
                     int current_pitch = _servoMgr->getAngle(4);
-                    _servoMgr->setTarget(4, current_pitch + 2); 
+                    // Stop pitching if limit reached to prevent grinding/ghost moves
+                    if (current_pitch >= LIMIT_WRIST_PITCH_MAX) {
+                        _currentState = PICK_GRASP;
+                        _stateStartTime = millis();
+                    } else {
+                        _servoMgr->setTarget(4, current_pitch + 2); 
+                    }
                 }
             }
             

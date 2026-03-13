@@ -35,12 +35,12 @@
 // The claw is considered "fully open" at 10° by default; the host software
 // clamps any commands below 10° as well.  You can still adjust these values
 // during calibration if your hardware behaves differently.
-#define LIMIT_CLAW_MIN      10   // do not drive claw below this angle (fully open)
+#define LIMIT_CLAW_MIN      30   // do not drive claw below this angle (fully open)
 #define LIMIT_CLAW_MAX      115  // do not drive claw above this angle (fully closed)
 #define CLAW_CLOSED_POSITION 115  // Actual position for fully closed claw
 
 // Wrist Pitch (SG90) - Previously Pitch
-#define LIMIT_WRIST_PITCH_MIN  0
+#define LIMIT_WRIST_PITCH_MIN  20
 #define LIMIT_WRIST_PITCH_MAX  160
 
 // Wrist Roll (SG90) - Previously Elbow

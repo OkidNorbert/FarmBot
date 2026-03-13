@@ -122,8 +122,8 @@ const servoConfig = {
     'shoulder': { min: 15, max: 165, default: 90, unit: '°' },
     'elbow': { min: 10, max: 180, default: 90, unit: '°' },
     'wrist_roll': { min: 15, max: 165, default: 90, unit: '°' },
-    'wrist_pitch': { min: 0, max: 160, default: 90, unit: '°' },
-    'claw': { min: 10, max: 115, default: 115, unit: '°' },
+    'wrist_pitch': { min: 20, max: 160, default: 90, unit: '°' },
+    'claw': { min: 30, max: 115, default: 115, unit: '°' },
     'speed': { min: 1, max: 180, default: 20, unit: ' deg/s' }
 };
 
@@ -733,6 +733,7 @@ function resetArm() {
     }
 }
 
+
 // Toggle automatic mode (for tomato detection and picking)
 function toggleAutomaticMode(event) {
     const isAuto = event.target.checked;
@@ -880,10 +881,19 @@ function updateTelemetry(data) {
             // Add visual styling based on status
             if (status === 'running') {
                 statusElement.innerHTML = `<span class="badge bg-success pulse-animation">Running</span>`;
+            } else if (status === 'picking') {
+                statusElement.innerHTML = `<span class="badge bg-warning text-dark pulse-animation"><i class="fas fa-robot me-1"></i>Picking...</span>`;
+                // Show notification once per pick
+                if (!window.lastStatusPicking) {
+                    showNotification('Autonomous Picking Sequence started...', 'info');
+                    window.lastStatusPicking = true;
+                }
             } else if (status === 'idle') {
                 statusElement.innerHTML = `<span class="badge bg-secondary">Idle</span>`;
+                window.lastStatusPicking = false;
             } else if (status === 'disconnected') {
                 statusElement.innerHTML = `<span class="badge bg-danger">Disconnected</span>`;
+                window.lastStatusPicking = false;
             }
         } else {
             console.warn('statusValue element not found');
@@ -1027,3 +1037,224 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeCamera();
     initializePickMode();
 });
+
+// ============================================================
+// PS4 / Gamepad Controller Module
+// ============================================================
+(function () {
+    // Tuning constants
+    const DEADZONE = 0.15;       // Ignore stick inputs below this
+    const STEP_SCALE = 1.2;      // Degrees per frame at max stick deflection
+    const CLAW_STEP = 3;         // Degrees per frame for claw buttons
+    const DPAD_STEP = 2;         // Degrees per frame for D-pad
+    const POLL_INTERVAL_MS = 20; // ~50Hz polling
+
+    // Servo bounds (mirrors servoConfig)
+    const SERVO_LIMITS = {
+        shoulder:    { min: 15,  max: 165 },
+        elbow:       { min: 10,  max: 180 },
+        wrist_roll:  { min: 15,  max: 165 },
+        wrist_pitch: { min: 20,   max: 160 },
+        claw:        { min: 30,  max: 115 }
+    };
+
+    // Current virtual angles (shadow the sliders)
+    const angles = {
+        shoulder: 90, elbow: 90, wrist_roll: 90, wrist_pitch: 90, claw: 115
+    };
+
+    // PS4 button indices (standard mapping)
+    const BTN = {
+        L1: 4, R1: 5, L2: 6, R2: 7,
+        SQUARE: 2, CIRCLE: 1,      // Added for Wrist Roll
+        OPTIONS: 9, START: 9,      // same index on most browsers
+        DPAD_UP: 12, DPAD_DOWN: 13,
+        DPAD_LEFT: 14, DPAD_RIGHT: 15
+    };
+
+    // State
+    let gpConnected = false;
+    let pollTimer = null;
+    let prevOptionsPressed = false;
+    let sendTimers = {};
+
+    // ── UI helpers ──────────────────────────────────────────
+    function setGamepadStatus(connected, name) {
+        const badge = document.getElementById('gamepadStatus');
+        const hint = document.getElementById('gamepadHint');
+        const mappings = document.getElementById('gamepadMappings');
+        if (!badge) return;
+        if (connected) {
+            badge.className = 'badge bg-success';
+            badge.innerHTML = '<i class="fas fa-circle me-1"></i> ' + (name || 'Controller Active');
+            if (hint) hint.style.display = 'none';
+            if (mappings) mappings.style.display = 'block';
+        } else {
+            badge.className = 'badge bg-secondary';
+            badge.innerHTML = '<i class="fas fa-circle me-1"></i> Not Connected';
+            if (hint) hint.style.display = '';
+            if (mappings) mappings.style.display = 'none';
+        }
+    }
+
+    // ── Send a servo command and sync the slider ─────────────
+    function applyAngle(servo, newAngle) {
+        const lim = SERVO_LIMITS[servo];
+        const clamped = Math.round(Math.max(lim.min, Math.min(lim.max, newAngle)));
+        if (clamped === angles[servo]) return;
+        angles[servo] = clamped;
+
+        // Update the HTML slider & display
+        const slider = document.getElementById(servo + 'Slider');
+        if (slider) {
+            slider.value = clamped;
+            updateSliderDisplay(servo, clamped);
+        }
+
+        // Debounce: send command after 30ms of no changes for this servo
+        clearTimeout(sendTimers[servo]);
+        sendTimers[servo] = setTimeout(() => {
+            if (socket && socket.connected && isConnected) {
+                sendServoCommand(servo, clamped);
+            }
+        }, 30);
+    }
+
+    // ── Read axis with dead-zone ─────────────────────────────
+    function axis(gp, idx) {
+        const v = gp.axes[idx] || 0;
+        return Math.abs(v) < DEADZONE ? 0 : v;
+    }
+
+    // ── Button pressed helper ────────────────────────────────
+    function btn(gp, idx) {
+        const b = gp.buttons[idx];
+        return b && (b.pressed || b.value > 0.5);
+    }
+
+    // ── Main polling loop ────────────────────────────────────
+    function poll() {
+        const gamepads = navigator.getGamepads();
+        let gp = null;
+        for (let i = 0; i < gamepads.length; i++) {
+            if (gamepads[i]) { gp = gamepads[i]; break; }
+        }
+        if (!gp) return;
+
+        // Sync slider angles with current state on first poll
+        syncFromSliders();
+
+        // ── Left stick Y → Shoulder (push up = decrease angle)
+        const lY = axis(gp, 1);
+        if (lY !== 0) {
+            applyAngle('shoulder', angles.shoulder - lY * STEP_SCALE);
+        }
+
+        // ── Right stick Y → Elbow
+        const rY = axis(gp, 3);
+        if (rY !== 0) {
+            applyAngle('elbow', angles.elbow - rY * STEP_SCALE);
+        }
+
+        // ── Square/Circle → Wrist Roll (Removed Right Stick X for precision)
+        if (btn(gp, BTN.SQUARE)) {
+            applyAngle('wrist_roll', angles.wrist_roll - DPAD_STEP);
+        }
+        if (btn(gp, BTN.CIRCLE)) {
+            applyAngle('wrist_roll', angles.wrist_roll + DPAD_STEP);
+        }
+
+        // ── D-Pad Up/Down → Wrist Pitch
+        if (btn(gp, BTN.DPAD_UP)) {
+            applyAngle('wrist_pitch', angles.wrist_pitch - DPAD_STEP);
+        }
+        if (btn(gp, BTN.DPAD_DOWN)) {
+            applyAngle('wrist_pitch', angles.wrist_pitch + DPAD_STEP);
+        }
+
+        // ── R2/R1 → Open claw (decrease angle)
+        if (btn(gp, BTN.R2) || btn(gp, BTN.R1)) {
+            applyAngle('claw', angles.claw - CLAW_STEP);
+        }
+
+        // ── L2/L1 → Close claw (increase angle)
+        if (btn(gp, BTN.L2) || btn(gp, BTN.L1)) {
+            applyAngle('claw', angles.claw + CLAW_STEP);
+        }
+
+        // ── Options/Start → Reset arm (edge detect: only on press)
+        const optionsNow = btn(gp, BTN.OPTIONS);
+        if (optionsNow && !prevOptionsPressed) {
+            resetArm();
+        }
+        prevOptionsPressed = optionsNow;
+    }
+
+    // ── Seed angles from current slider values ───────────────
+    let anglesSynced = false;
+    function syncFromSliders() {
+        if (anglesSynced) return;
+        Object.keys(angles).forEach(servo => {
+            const el = document.getElementById(servo + 'Slider');
+            if (el) angles[servo] = parseInt(el.value) || angles[servo];
+        });
+        anglesSynced = true;
+    }
+
+    // ── Gamepad connect / disconnect events ──────────────────
+    window.addEventListener('gamepadconnected', (e) => {
+        gpConnected = true;
+        setGamepadStatus(true, e.gamepad.id.substring(0, 30));
+        if (typeof showNotification === 'function') {
+            showNotification('🎮 Gamepad connected: ' + e.gamepad.id.substring(0, 40), 'success');
+        }
+        anglesSynced = false; // re-sync on next poll
+        if (!pollTimer) {
+            pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+        }
+    });
+
+    window.addEventListener('gamepaddisconnected', () => {
+        gpConnected = false;
+        setGamepadStatus(false);
+        if (typeof showNotification === 'function') {
+            showNotification('🎮 Gamepad disconnected', 'warning');
+        }
+        if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }
+        // Re-start polling in case another gamepad is still connected
+        const gamepads = navigator.getGamepads();
+        for (let i = 0; i < gamepads.length; i++) {
+            if (gamepads[i]) {
+                gpConnected = true;
+                pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+                setGamepadStatus(true, gamepads[i].id.substring(0, 30));
+                break;
+            }
+        }
+    });
+
+    // Some browsers (Firefox) need explicit polling start after a button press
+    // because 'gamepadconnected' may fire late.  We also start a lightweight
+    // presence checker every 2 seconds.
+    setInterval(() => {
+        const gamepads = navigator.getGamepads();
+        let anyConnected = false;
+        for (let i = 0; i < gamepads.length; i++) {
+            if (gamepads[i]) { anyConnected = true; break; }
+        }
+        if (anyConnected && !pollTimer) {
+            pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+            gpConnected = true;
+            setGamepadStatus(true);
+        } else if (!anyConnected && pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            gpConnected = false;
+            setGamepadStatus(false);
+        }
+    }, 2000);
+
+})();
