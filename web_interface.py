@@ -14,10 +14,22 @@ import shutil
 import subprocess
 import csv
 import io
-from pathlib import Path
-from datetime import datetime
 import threading
 import time
+import warnings
+from pathlib import Path
+from datetime import datetime
+
+# Try to import and monkey-patch eventlet for real-time WebSocket support
+# This must be done as early as possible before other imports
+try:
+    import eventlet
+    eventlet.monkey_patch()
+    EVENTLET_PATCHED = True
+except Exception as e:
+    # Fallback if eventlet fails (e.g. on very new Python versions)
+    EVENTLET_PATCHED = False
+    print(f"⚠️  Eventlet monkey-patching failed or not available: {e}")
 
 # Suppress OpenCV warnings and errors globally
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'  # Only show errors, suppress warnings
@@ -61,7 +73,7 @@ try:
     # Suppress eventlet deprecation warning
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-        import eventlet  # noqa: F401  # pyright: ignore
+        # eventlet already imported/patched at top
     from flask_socketio import SocketIO, emit  # noqa: F401  # pyright: ignore
     SOCKETIO_AVAILABLE = True
 except ImportError as e:
@@ -128,10 +140,12 @@ def add_no_cache_headers(response):
 
 # Initialize SocketIO if available
 if SOCKETIO_AVAILABLE:
+    # Use auto mode (None) to pick eventlet if patched, otherwise threading
+    async_mode = 'eventlet' if EVENTLET_PATCHED else 'threading'
     socketio = SocketIO(
         app, 
         cors_allowed_origins="*", 
-        async_mode='threading',  # threading mode is most compatible
+        async_mode=async_mode,
         ping_timeout=60,
         ping_interval=25,
         logger=False,
@@ -139,6 +153,7 @@ if SOCKETIO_AVAILABLE:
         manage_middleware=True,
         handle_sidecars=False
     )
+    print(f"📡 SocketIO initialized with async_mode: {async_mode}")
 else:
     socketio = SocketIO(app)  # Dummy instance
 
@@ -4584,7 +4599,12 @@ if __name__ == '__main__':
     threading.Thread(target=init_camera_cache, daemon=True).start()
     
     if SOCKETIO_AVAILABLE:
-        socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+        # allow_unsafe_werkzeug is only needed for 'threading' mode with Werkzeug
+        # We prefer eventlet if available
+        if async_mode == 'eventlet':
+            socketio.run(app, host='0.0.0.0', port=5000, debug=False)
+        else:
+            socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
     else:
         # Fallback to regular Flask if SocketIO not available
         app.run(host='0.0.0.0', port=5000, debug=False)
