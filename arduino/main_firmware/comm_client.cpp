@@ -159,7 +159,7 @@ void CommClient::handleMessage(String payload) {
     }
 }
 
-void CommClient::sendTelemetry(float voltage, const char* status, const char* last_action) {
+void CommClient::sendTelemetry(float voltage, const char* status, const char* last_action, bool tof_status) {
     if (!isConnected()) return;
     
     #ifdef USE_WIFI
@@ -170,7 +170,9 @@ void CommClient::sendTelemetry(float voltage, const char* status, const char* la
         json += status;
         json += "\",\"last_action\":\"";
         json += last_action;
-        json += "\"}";
+        json += "\",\"tof_status\":";
+        json += tof_status ? "true" : "false";
+        json += "}";
         
         String packet = "42[\"telemetry\"," + json + "]";
         wifiClient->send(packet);
@@ -180,7 +182,30 @@ void CommClient::sendTelemetry(float voltage, const char* status, const char* la
     
     #ifdef USE_BLE
     if (_connectionType == "BLE") {
-        bleClient->sendTelemetry(voltage, status, last_action);
+        bleClient->sendTelemetry(voltage, status, last_action, tof_status);
+        return;
+    }
+    #endif
+}
+
+void CommClient::sendDistance(int distance_mm) {
+    if (!isConnected()) return;
+    
+    #ifdef USE_WIFI
+    if (_connectionType == "WIFI") {
+        String json = "{\"distance_mm\":";
+        json += String(distance_mm);
+        json += "}";
+        
+        String packet = "42[\"distance\"," + json + "]";
+        wifiClient->send(packet);
+        return;
+    }
+    #endif
+    
+    #ifdef USE_BLE
+    if (_connectionType == "BLE") {
+        bleClient->sendDistance(distance_mm);
         return;
     }
     #endif

@@ -104,6 +104,11 @@
                                     <span>AI Model:</span>
                                     <span id="model-status" class="badge bg-secondary ms-2">Unknown</span>
                                 </div>
+                                <div class="d-flex align-items-center mb-2">
+                                    <i class="fas fa-ruler-vertical me-2"></i>
+                                    <span>ToF Sensor:</span>
+                                    <span id="tof-status" class="badge bg-secondary ms-2">Unknown</span>
+                                </div>
                             </div>
                             <div class="col-6">
                                 <div class="d-flex align-items-center mb-2">
@@ -323,6 +328,12 @@
 
                 document.getElementById('model-status').textContent = status.classifier_loaded ? 'Loaded' : 'Not Loaded';
                 document.getElementById('model-status').className = status.classifier_loaded ? 'badge bg-success ms-2' : 'badge bg-danger ms-2';
+
+                const tofStatus = document.getElementById('tof-status');
+                if (tofStatus) {
+                    tofStatus.textContent = status.tof_initialized ? 'Online' : 'Offline';
+                    tofStatus.className = status.tof_initialized ? 'badge bg-success ms-2' : 'badge bg-danger ms-2';
+                }
 
                 document.getElementById('system-status').textContent = status.running ? 'Running' : 'Stopped';
                 document.getElementById('system-status').className = status.running ? 'badge bg-success ms-2' : 'badge bg-danger ms-2';

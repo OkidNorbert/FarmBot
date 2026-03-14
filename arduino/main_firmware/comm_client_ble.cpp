@@ -155,7 +155,7 @@ void CommClientBLE::processReceivedCommand() {
     }
 }
 
-void CommClientBLE::sendTelemetry(float voltage, const char* status, const char* last_action) {
+void CommClientBLE::sendTelemetry(float voltage, const char* status, const char* last_action, bool tof_status) {
     if (!isConnected()) return;
     
     // Create JSON
@@ -165,7 +165,23 @@ void CommClientBLE::sendTelemetry(float voltage, const char* status, const char*
     json += status;
     json += "\",\"last_action\":\"";
     json += last_action;
-    json += "\"}";
+    json += "\",\"tof_status\":";
+    json += tof_status ? "true" : "false";
+    json += "}";
+    
+    // Send via telemetry characteristic
+    if (_telemetryChar) {
+        _telemetryChar->writeValue(json);
+    }
+}
+
+void CommClientBLE::sendDistance(int distance_mm) {
+    if (!isConnected()) return;
+    
+    // Create JSON
+    String json = "{\"distance_mm\":";
+    json += String(distance_mm);
+    json += "}";
     
     // Send via telemetry characteristic
     if (_telemetryChar) {

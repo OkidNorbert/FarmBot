@@ -529,17 +529,25 @@ void processTextCommand(String command) {
     }
     else if (command.startsWith("DISTANCE")) {
         // DISTANCE - Read distance from ToF sensor
-        int distance = tofManager.getDistance();
-        if (distance < 0) {
-            // Sensor not initialized or out of range
-            Serial.println("DISTANCE: OUT_OF_RANGE");
+        if (!tofManager.isInitialized()) {
+            Serial.println("DISTANCE: SENSOR_NOT_AVAILABLE");
+            commClient.sendDistance(-2); // -2 indicates sensor fail/not init
         } else {
-            // Check if distance is in valid range
-            if (tofManager.isRangeValid(distance)) {
-                Serial.print("DISTANCE: ");
-                Serial.println(distance);
-            } else {
+            int distance = tofManager.getDistance();
+            if (distance < 0) {
+                // Out of range
                 Serial.println("DISTANCE: OUT_OF_RANGE");
+                commClient.sendDistance(-1); // -1 indicates out of range
+            } else {
+                // Check if distance is in valid range
+                if (tofManager.isRangeValid(distance)) {
+                    Serial.print("DISTANCE: ");
+                    Serial.println(distance);
+                    commClient.sendDistance(distance);
+                } else {
+                    Serial.println("DISTANCE: OUT_OF_RANGE");
+                    commClient.sendDistance(-1);
+                }
             }
         }
     }
@@ -621,5 +629,5 @@ void sendStatus() {
     if (currentState == PICKING) statusStr = "PICKING";
     if (currentState == ERROR) statusStr = "ERROR";
     
-    commClient.sendTelemetry(voltage, statusStr, "None");
+    commClient.sendTelemetry(voltage, statusStr, "None", tofManager.isInitialized());
 }

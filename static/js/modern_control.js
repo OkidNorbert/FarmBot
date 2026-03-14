@@ -861,16 +861,28 @@ function updateTelemetry(data) {
 
     // Update distance (ToF)
     const distanceElement = document.getElementById('distanceValue');
+    const tofStatusBadge = document.getElementById('tofStatus');
     const tofTerminal = document.getElementById('tofTerminal');
     
+    // Update Sensor Status Badge
+    if (tofStatusBadge) {
+        if (data.tof_initialized) {
+            tofStatusBadge.textContent = 'Online';
+            tofStatusBadge.className = 'badge bg-success ms-2';
+        } else {
+            tofStatusBadge.textContent = 'Offline';
+            tofStatusBadge.className = 'badge bg-danger ms-2';
+        }
+    }
+
     if (distanceElement) {
-        if (data.distance_mm !== undefined && data.distance_mm !== null && data.distance_mm > 0) {
+        if (data.distance_mm !== undefined && data.distance_mm !== null && data.distance_mm >= 0) {
             const distStr = `${data.distance_mm} mm`;
             distanceElement.textContent = distStr;
             
             // Update terminal
             if (tofTerminal) {
-                // Remove placeholder if it exists
+                // Remove placeholder or info message if it exists
                 if (tofTerminal.querySelector('.text-info')) {
                     tofTerminal.innerHTML = '';
                 }
@@ -878,7 +890,7 @@ function updateTelemetry(data) {
                 const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
                 const line = document.createElement('div');
                 line.className = 'terminal-line';
-                line.innerHTML = `<span class="terminal-time">[${time}]</span> Reading: <span class="terminal-dist">${distStr}</span>`;
+                line.innerHTML = `<span class="terminal-time">[${time}]</span> <span class="terminal-dist">Reading: ${data.distance_mm} mm</span>`;
                 
                 tofTerminal.prepend(line);
                 
@@ -888,7 +900,27 @@ function updateTelemetry(data) {
                 }
             }
         } else {
-            distanceElement.textContent = '-- mm';
+            // Check if it's explicitly -1 (out of range) or actually offline
+            if (data.tof_initialized) {
+                distanceElement.textContent = 'Out of Range';
+                
+                // Update terminal with range warning if needed
+                if (tofTerminal && (tofTerminal.children.length === 0 || !tofTerminal.querySelector('.text-warning'))) {
+                    const time = new Date().toLocaleTimeString([], { hour12: false });
+                    const line = document.createElement('div');
+                    line.className = 'terminal-line text-warning';
+                    line.innerHTML = `<span class="terminal-time">[${time}]</span> ⚠️ Target Out of Range`;
+                    tofTerminal.prepend(line);
+                }
+            } else {
+                distanceElement.textContent = 'Sensor Fail';
+                
+                // Add offline message to terminal if it's not already showing error
+                if (tofTerminal && !tofTerminal.querySelector('.text-danger')) {
+                    const time = new Date().toLocaleTimeString([], { hour12: false });
+                    tofTerminal.innerHTML = `<div class="terminal-line text-danger"><span class="terminal-time">[${time}]</span> ❌ TOF Sensor Offline/Init Failed</div>`;
+                }
+            }
         }
     }
 

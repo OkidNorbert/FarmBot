@@ -464,19 +464,19 @@ input:checked+.mode-slider:before {
 .terminal-line {
     padding: 3px 0;
     border-bottom: 1px solid rgba(0, 255, 0, 0.1);
-    color: #ffffff;
-    text-shadow: 0 0 2px rgba(0, 255, 0, 0.5);
+    color: #e0e0e0;
+    text-shadow: 0 0 1px rgba(0, 255, 0, 0.3);
 }
 
 .terminal-time {
     color: #00ff00;
     margin-right: 12px;
-    font-weight: bold;
-    opacity: 0.8;
+    font-weight: 600;
+    font-family: inherit;
+    opacity: 0.9;
 }
 
 .terminal-dist {
-    color: #00ff00;
-    font-weight: 800;
-    text-shadow: 0 0 8px rgba(0, 255, 0, 0.8);
+    color: #00ff88;
+    font-weight: 700;
 }

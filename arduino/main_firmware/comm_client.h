@@ -19,7 +19,8 @@ public:
     void begin();
     void update();
     bool isConnected();
-    void sendTelemetry(float voltage, const char* status, const char* last_action);
+    void sendTelemetry(float voltage, const char* status, const char* last_action, bool tof_status = false);
+    void sendDistance(int distance_mm);
     void sendPickResult(const char* id, const char* status, const char* result, unsigned long duration_ms = 0);
     
     // Callback for received messages

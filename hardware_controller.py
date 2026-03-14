@@ -60,12 +60,13 @@ except ImportError as e:
 
 class BLEClient:
     """Bluetooth Low Energy client for Arduino R4 WiFi"""
-    def __init__(self, service_uuid=None, char_uuid=None, target_name="Arduino", on_connect_callback=None):
+    def __init__(self, service_uuid=None, char_uuid=None, telemetry_uuid=None, target_name="Arduino", on_connect_callback=None, on_data_callback=None):
         if not BLE_AVAILABLE:
             raise ImportError("Bleak library not available")
         
         self.service_uuid = service_uuid or '19B10000-E8F2-537E-4F6C-D104768A1214'
         self.char_uuid = char_uuid or '19B10001-E8F2-537E-4F6C-D104768A1214'
+        self.telemetry_uuid = telemetry_uuid or '19B10002-E8F2-537E-4F6C-D104768A1214'
         self.target_name = target_name
         self.client = None
         self.loop = None
@@ -74,6 +75,7 @@ class BLEClient:
         self.command_queue = asyncio.Queue()
         self.device_address = None
         self.on_connect_callback = on_connect_callback  # Callback when connection state changes
+        self.on_data_callback = on_data_callback        # Callback for incoming telemetry
         self.logger = logging.getLogger("BLEClient")
         
     def _run_loop(self):
@@ -110,6 +112,14 @@ class BLEClient:
                 self.client = BleakClient(device, disconnected_callback=disconnected_callback)
                 try:
                     await self.client.connect()
+                    
+                    # Start notification for telemetry characteristic
+                    try:
+                        await self.client.start_notify(self.telemetry_uuid, self._on_telemetry_notification)
+                        self.logger.info(f"Subscribed to BLE telemetry: {self.telemetry_uuid}")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to subscribe to telemetry: {e}")
+
                     self.connected = True
                     self.logger.info("BLE Connected!")
                     
@@ -166,6 +176,15 @@ class BLEClient:
                 self.logger.error(f"BLE scan error: {e}")
                 await asyncio.sleep(5)
     
+    def _on_telemetry_notification(self, characteristic, data):
+        """Handle incoming telemetry notification"""
+        try:
+            payload = data.decode('utf-8')
+            if self.on_data_callback:
+                self.on_data_callback(payload)
+        except Exception as e:
+            self.logger.error(f"Error decoding BLE telemetry: {e}")
+
     async def _send_command(self, command):
         """Send command via BLE"""
         try:
@@ -252,6 +271,7 @@ class HardwareController:
         self.ble_device_name = ble_device_name
         self.frame_update_thread = None
         self.frame_update_running = False
+        self.tof_initialized = False # Track if ToF sensor is ready on Arduino
         
         # Servo availability configuration
         # Set to False for servos that are not available (manually fixed)
@@ -263,11 +283,11 @@ class HardwareController:
             'wrist_pitch': True,# Wrist pitch available
             'claw': True        # Claw servo available
         }
-        # Strict safe endpoints matching config.h
+        # Strict safe endpoints matching physical robot body limits
         self.servo_limits = {
             'waist': {'min': 0, 'max': 180},
             'shoulder': {'min': 15, 'max': 165},
-            'elbow': {'min': 10, 'max': 180},
+            'elbow': {'min': 10, 'max': 165},
             'wrist_roll': {'min': 15, 'max': 165},
             'wrist_pitch': {'min': 20, 'max': 160},
             'claw': {'min': 30, 'max': 115}
@@ -423,28 +443,35 @@ class HardwareController:
                 self.last_dist_poll = time.time()
             time.sleep(0.1) # Prevent CPU hogging
 
-    def is_arm_facing_front(self):
-        """Determine if arm is facing front based on shoulder and forearm angles
+    def get_arm_body_status(self):
+        """Interpret the physical state of the robot based on servo angles
         
         Returns:
-            bool: True if arm is facing front (shoulder and forearm 90-180°), False otherwise
+            dict: Semantic status of each arm component
         """
-        # If shoulder is fixed, use fixed angle; otherwise use tracked angle
-        if not self.servo_available.get('shoulder', True):
-            shoulder_angle = self.fixed_servo_angles.get('shoulder', 135)
-        else:
-            shoulder_angle = self.current_servo_angles.get('shoulder', 90)
+        angles = self.current_servo_angles
         
-        # Consideration: arm is front if elbow and shoulder are mostly front
-        elbow_angle = self.current_servo_angles.get('elbow', 90)
+        # Mapping according to user-defined body logic
+        status = {
+            'tof_orientation': 'downward' if angles['wrist_pitch'] < 90 else 'upside_down_flipped',
+            'wrist_roll_pos': 'left' if angles['wrist_roll'] < 90 else ('right' if angles['wrist_roll'] > 90 else 'center'),
+            'elbow_pos': 'front' if angles['elbow'] > 90 else 'back_reversed',
+            'shoulder_pos': 'front' if angles['shoulder'] < 90 else 'back_reversed',
+            'claw_state': 'closed' if abs(angles['claw'] - self.servo_limits['claw']['min']) < 5 else 'open_or_active'
+        }
         
-        # Consider front if average frontness > 0 (more toward 180 than 0)
-        # Frontness: 0 (back) to 1 (front) based on how far from 90° toward 180°
-        shoulder_frontness = (shoulder_angle - 90) / 90.0
-        elbow_frontness = (elbow_angle - 90) / 90.0
-        avg_frontness = (shoulder_frontness + elbow_frontness) / 2.0
+        # Calculate overall arm 'frontness'
+        status['is_facing_front'] = (status['elbow_pos'] == 'front' and status['shoulder_pos'] == 'front')
         
-        return avg_frontness > 0
+        # Determine if detection is viable (ToF must be facing down)
+        status['can_detect_ground'] = (status['tof_orientation'] == 'downward')
+        
+        return status
+
+    def is_arm_facing_front(self):
+        """Verify if arm is oriented toward the front workspace"""
+        body = self.get_arm_body_status()
+        return body['is_facing_front']
 
     def process_auto_cycle(self):
         """Auto-pick cycle: fires PICK when a ready tomato is aligned with the arm center.
@@ -508,12 +535,22 @@ class HardwareController:
             self.alignment_start_time = 0 # Reset if alignment lost
             return
 
+        # 4b. Body validation check (Arm Knowledge)
+        body = self.get_arm_body_status()
+        if not body['can_detect_ground']:
+            self.logger.warning("[AUTO] ⚠️ ToF Sensor is UPSIDE DOWN (Wrist Pitch > 90). Cannot detect ground for pick.")
+            return
+            
+        if not body['is_facing_front']:
+            self.logger.warning("[AUTO] ⚠️ Arm is in BACK/REVERSED position. Alignment unreliable.")
+            return
+
         # Initialize alignment timer if just started
         if self.alignment_start_time == 0:
             self.alignment_start_time = time.time()
             self.logger.info(f"[AUTO] Target ALIGNED. Waiting {self.dwell_time_threshold}s dwell time...")
             return
-
+            
         # Check dwell time
         elapsed = time.time() - self.alignment_start_time
         if elapsed < self.dwell_time_threshold:
@@ -649,8 +686,44 @@ class HardwareController:
                 }]
             return []
 
+    def _on_ble_data(self, payload):
+        """Handle telemetry data received via BLE"""
+        try:
+            import json
+            data = json.loads(payload)
+            
+            # Distance reading
+            if 'distance_mm' in data:
+                dist = data['distance_mm']
+                if dist < 0:
+                    self.last_distance_reading = None
+                else:
+                    self.last_distance_reading = dist
+            
+            # Full telemetry
+            if 'tof_status' in data:
+                self.tof_initialized = data['tof_status']
+                if not self.tof_initialized:
+                    self.last_distance_reading = None
+                
+        except Exception as e:
+            if hasattr(self, 'logger'):
+                self.logger.error(f"Error parsing BLE telemetry: {e}")
+
     def get_distance_sensor(self):
         """Read distance from VL53L0X via Arduino"""
+        # If using BLE, distance is updated via passive telemetry (notifications)
+        # So we just return the last cached reading
+        if hasattr(self, 'ble_client') and self.ble_client and self.ble_client.connected:
+            # We still send a DISTANCE command if we want to poll, but passive is better
+            # For now, just return the cache which is updated in _on_ble_data
+            if self.last_distance_reading is not None:
+                return self.last_distance_reading
+            else:
+                # Optionally send a manual poll if cache is empty
+                self.ble_client.send_command("DISTANCE")
+                return None
+
         if self.arduino_connected and self.arduino:
             # Use lock for thread-safe serial access
             with self.serial_lock:
@@ -666,25 +739,33 @@ class HardwareController:
                     
                     if response.startswith("DISTANCE: "):
                         distance_str = response.replace("DISTANCE: ", "")
-                        if distance_str == "OUT_OF_RANGE" or distance_str == "SENSOR_NOT_AVAILABLE":
-                            self.logger.warning(f"Distance sensor: {distance_str}")
+                        if distance_str == "SENSOR_NOT_AVAILABLE":
+                            self.tof_initialized = False
+                            self.last_distance_reading = None
+                            return None
+                        if distance_str == "OUT_OF_RANGE":
+                            self.tof_initialized = True
+                            self.last_distance_reading = None
                             return None
                         try:
                             distance_mm = int(distance_str)
-                            self.last_distance_reading = distance_mm; return distance_mm
+                            self.tof_initialized = True
+                            self.last_distance_reading = distance_mm
+                            return distance_mm
                         except ValueError:
+                            # ...
                             self.logger.error(f"Invalid distance reading: {distance_str}")
                             return None
                     else:
-                        # Log unexpected response but don't treat it as a hard error
-                        # self.logger.debug(f"Unexpected distance response: {response}")
                         return None
                 except Exception as e:
                     self.logger.error(f"Distance sensor read error: {e}")
+                    self.last_distance_reading = None
                     return None
         else:
-            # Simulation mode
-            return 85  # mm (dummy value)
+            # Simulation mode - return None to show sensor is not active
+            self.last_distance_reading = None
+            return None
 
     def start_auto_mode(self):
         self.auto_mode = True
@@ -737,7 +818,11 @@ class HardwareController:
                             self.logger.warning("BLE connection lost")
                     
                     self.logger.info(f"Creating new BLE client for reconnection...")
-                    self.ble_client = BLEClient(target_name=self.ble_device_name, on_connect_callback=on_ble_connect)
+                    self.ble_client = BLEClient(
+                        target_name=self.ble_device_name, 
+                        on_connect_callback=on_ble_connect,
+                        on_data_callback=self._on_ble_data
+                    )
                     self.ble_client.start(logger=self.logger)
                     time.sleep(3)  # Give it time to scan and connect
                     if self.ble_client.connected:
@@ -1728,13 +1813,13 @@ class HardwareController:
         # Determine arm orientation
         is_facing_front = self.is_arm_facing_front()
         
-        # Check if any AI model is loaded (YOLO or ResNet classifier)
+        # Check if any AI model is loaded
         model_loaded = False
         if self.yolo_detector and hasattr(self.yolo_detector, 'is_available') and self.yolo_detector.is_available():
             model_loaded = True
         elif self.classifier is not None:
             model_loaded = True
-        
+            
         status = {
             'arduino_connected': arduino_conn,
             'camera_connected': self.camera_connected,
@@ -1743,19 +1828,19 @@ class HardwareController:
             'auto_mode': self.auto_mode,
             'movement_active': self.movement_active,
             'connection_type': connection_type,
+            'is_facing_front': is_facing_front,
+            'tof_initialized': self.tof_initialized,
+            'tof_distance': getattr(self, 'last_distance_reading', None),
             'classifier_loaded': model_loaded,
-            'arm_orientation': 'front' if is_facing_front else 'back',
-            'servo_angles': self.current_servo_angles.copy(), 'tof_distance': getattr(self, 'last_distance_reading', None)
+            'body': self.get_arm_body_status(),
+            'servo_angles': self.current_servo_angles.copy()
         }
         
         if self.ble_client:
             status['ble_connected'] = ble_connected
             status['ble_address'] = self.ble_client.device_address
             status['ble_client_active'] = self.ble_client.thread.is_alive() if self.ble_client.thread else False
-            # Log connection attempt status for debugging
-            if not ble_connected and self.ble_client.thread and self.ble_client.thread.is_alive():
-                self.logger.debug(f"BLE client active but not connected. Device: {self.ble_client.device_address}")
-        
+            
         return status
     
     def scan_bluetooth_devices(self, timeout=10):

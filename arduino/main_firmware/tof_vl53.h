@@ -9,6 +9,7 @@ class ToFManager {
 public:
     ToFManager();
     bool begin();
+    bool isInitialized() { return _initialized; }
     int getDistance(); // Returns distance in mm
     bool isRangeValid(int distance);
 

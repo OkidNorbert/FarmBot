@@ -565,6 +565,7 @@ def pi_status():
         system_state['classifier_loaded'] = hw_status.get('classifier_loaded', False)
         system_state['tof_distance'] = hw_status.get('tof_distance')
         system_state['distance_mm'] = hw_status.get('tof_distance') # Alias for compatibility
+        system_state['tof_initialized'] = hw_status.get('tof_initialized', False)
     else:
         system_state['camera_connected'] = False
         system_state['arduino_connected'] = False
@@ -1955,7 +1956,8 @@ def controller_telemetry_thread():
                     'camera_connected': hw_status.get('camera_connected', False),
                     'connection_type': hw_status.get('connection_type', 'none'),
                     'arm_orientation': hw_status.get('arm_orientation', 'unknown'),
-                    'servo_angles': hw_status.get('servo_angles', {})
+                    'servo_angles': hw_status.get('servo_angles', {}),
+                    'tof_initialized': hw_status.get('tof_initialized', False)
                 }
                 # Use app context for emit in background thread
                 # Emit to all clients in default namespace
