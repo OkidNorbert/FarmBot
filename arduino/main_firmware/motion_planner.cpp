@@ -24,6 +24,11 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
     _binUnripe.wrist_roll = 90;
     _binUnripe.wrist_pitch = 140;
     _binUnripe.claw = 30;
+    
+    _calculatedWaistAngle = 90;
+    _targetShoulderAngle = 90;
+    _targetElbowAngle = 90;
+    _pickId = "";
 }
 
 bool MotionPlanner::startPick(int x, int y, int z, float confidence, String class_type) {
@@ -70,13 +75,12 @@ void MotionPlanner::update() {
             _stateStartTime = millis();
             break;
             
-        case PICK_MOVE_TO_APPROACH: {
-            // Move to a ready-state in the FRONT
-            int approach_waist = 90;      
-            int approach_shoulder = 60;   // Front
-            int approach_elbow = 120;     // Front
+            // Move to the DYNAMICALLY calculated approach pose
+            int approach_waist = _calculatedWaistAngle;      
+            int approach_shoulder = _targetShoulderAngle;   
+            int approach_elbow = _targetElbowAngle;     
             int approach_wrist_roll = 90;
-            int approach_wrist_pitch = 80; // Starting slightly high
+            int approach_wrist_pitch = 85; // ToF looking down
             int approach_claw = 30;       // Open
             
             if (moveToPose(approach_waist, approach_shoulder, approach_elbow, 
@@ -238,11 +242,40 @@ void MotionPlanner::setBinPose(String bin_type, BinPose pose) {
 }
 
 void MotionPlanner::calculateTargetPose() {
-    // Calculate waist angle from cartesian coordinates
-    int waist_angle = cartesianToBaseAngle(_targetX, _targetY);
+    // Calculate waist angle from cartesian coordinates (maps pixel X to base rotation)
+    _calculatedWaistAngle = cartesianToBaseAngle(_targetX, _targetY);
     
-    // Store for later use
-    // (In full implementation, would calculate all joint angles including Z)
+    // Calculate reach distance (hypotenuse of X and Y)
+    float reach = sqrt(sq((float)_targetX) + sq((float)_targetY));
+    
+    // Simple 2rd order Inverse Kinematics for Shoulder/Elbow
+    // Segment lengths from STL: L1=113mm (Brazo), L2=162mm (Antebrazo)
+    float L1 = 113.0;
+    float L2 = 162.0;
+    
+    // Calculate Elbow angle using Law of Cosines
+    float cos_elbow = (sq(reach) - sq(L1) - sq(L2)) / (2.0 * L1 * L2);
+    cos_elbow = constrain(cos_elbow, -1.0, 1.0);
+    float rad_elbow = acos(cos_elbow);
+    int elbow_deg = (int)(rad_elbow * 180.0 / PI);
+    
+    // Calculate Shoulder angle
+    float rad_shoulder = atan2((float)_targetY, (float)_targetX) - 
+                        atan2(L2 * sin(rad_elbow), L1 + L2 * cos_elbow);
+    int shoulder_deg = (int)(rad_shoulder * 180.0 / PI);
+
+    // Map to servo space (offsets depend on physical zero-pointing)
+    _targetShoulderAngle = constrain(90 - shoulder_deg, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
+    _targetElbowAngle = constrain(180 - elbow_deg, LIMIT_ELBOW_MIN, LIMIT_ELBOW_MAX);
+
+    Serial.print("Target Calculated: Reach=");
+    Serial.print(reach);
+    Serial.print("mm -> Waist:");
+    Serial.print(_calculatedWaistAngle);
+    Serial.print(" Sh:");
+    Serial.print(_targetShoulderAngle);
+    Serial.print(" El:");
+    Serial.println(_targetElbowAngle);
 }
 
 bool MotionPlanner::moveToPose(int waist, int shoulder, int elbow, int wrist_roll, int wrist_pitch, int claw) {

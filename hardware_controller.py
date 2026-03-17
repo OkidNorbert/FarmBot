@@ -272,6 +272,7 @@ class HardwareController:
         self.frame_update_thread = None
         self.frame_update_running = False
         self.tof_initialized = False # Track if ToF sensor is ready on Arduino
+        self.camera_on_arm = False   # Set to True if camera moves with the arm
         
         # Servo availability configuration
         # Set to False for servos that are not available (manually fixed)
@@ -347,6 +348,11 @@ class HardwareController:
         # Dwell-time state for auto-pick
         self.alignment_start_time  = 0.0    # When the current target first aligned
         self.dwell_time_threshold  = 1.0    # Seconds target must be aligned to trigger
+        
+        # Auto-searching & Nudging logic
+        self.consecutive_no_detections = 0
+        self.search_direction = 1 # 1 = up/forward, -1 = down/back
+        self.last_adjustment_time = 0
         
         # Movement collection
         self.movements = {}
@@ -502,9 +508,18 @@ class HardwareController:
         # 2. Filter to ready/ripe only
         ready = [d for d in detections if d['class'].lower() in ['ready', 'ripe']]
         if not ready:
-            if detections:
-                self.logger.debug(f"[AUTO] {len(detections)} tomato(s) found, none ready.")
+            if now - self.last_adjustment_time > 1.5:  # Don't move too frantically
+                self.consecutive_no_detections += 1
+                if self.consecutive_no_detections > 3:  
+                    self.logger.info("[AUTO] 🔍 Workspace obstructed? Moving to CLEAR-SCAN pose.")
+                    # Move arm out of camera view to scan properly
+                    self.move_to_pose('waist', 90, 'shoulder', 130, 'elbow', 30) # Tucked pose
+                    self.consecutive_no_detections = 0 # Reset to watch for results
+                    self.last_adjustment_time = now
             return
+
+        # Found a target! Reset search counter
+        self.consecutive_no_detections = 0
 
         # 3. Pick best candidate (highest confidence)
         ready.sort(key=lambda d: d['confidence'], reverse=True)
@@ -519,21 +534,31 @@ class HardwareController:
         offset_x = (center_x - img_cx) / img_cx
         offset_y = (center_y - img_cy) / img_cy
 
-        self.logger.debug(
-            f"[AUTO] Best tomato: conf={target['confidence']:.2f}  "
-            f"offset_x={offset_x:+.2f}  offset_y={offset_y:+.2f}  "
-            f"(thresh ±{self.alignment_threshold_x:.0%} / ±{self.alignment_threshold_y:.0%})"
-        )
-
-        # 4. Alignment check
-        aligned_x = abs(offset_x) <= self.alignment_threshold_x
-        aligned_y = abs(offset_y) <= self.alignment_threshold_y
-        
-        if not (aligned_x and aligned_y):
-            if self.alignment_start_time > 0:
-                self.logger.info(f"[AUTO] Target LOST alignment (offset_x={offset_x:+.2f}, offset_y={offset_y:+.2f}). Resetting timer.")
-            self.alignment_start_time = 0 # Reset if alignment lost
-            return
+        # 4. Alignment / Targeting Strategy
+        if self.camera_on_arm:
+            # Traditional Visual Servoing: Nudge arm until tomato is centered
+            aligned_x = abs(offset_x) <= self.alignment_threshold_x
+            aligned_y = abs(offset_y) <= self.alignment_threshold_y
+            
+            if not (aligned_x and aligned_y):
+                if now - self.last_adjustment_time > 1.0:
+                    self.logger.info(f"[AUTO] 🎯 Target seen but NOT ALIGNED. Nudging arm...")
+                    current_shoulder = self.current_servo_angles['shoulder']
+                    nudge = -5 if offset_y < 0 else 5
+                    self.move_to_angle('shoulder', current_shoulder + nudge)
+                    self.last_adjustment_time = now
+                self.alignment_start_time = 0 
+                return
+        else:
+            # Fixed Camera Strategy: Translate Pixel (X,Y) to physical (X,Y)
+            # We map pixel offsets directly to target coordinates for the PICK command
+            # Using our STL dimensions (l1=113, l2=162)
+            target_x_mm = offset_x * 100 # Approx +/- 100mm horizontal span
+            target_y_mm = (1.0 - (center_y / h)) * 150 + 100 # Map bottom-to-top of image to 100-250mm reach
+            
+            # In fixed mode, we are "aligned" if the target is within the workspace
+            aligned_x = aligned_y = True 
+            self.logger.debug(f"[AUTO] Fixed Mapping: Target at mm X:{target_x_mm:.1f} Y:{target_y_mm:.1f}")
 
         # 4b. Body validation check (Arm Knowledge)
         body = self.get_arm_body_status()
@@ -574,10 +599,13 @@ class HardwareController:
         self.logger.info(f"[AUTO] ToF depth = {tof_distance}mm — sending PICK command.")
 
         # 6. Fire pick command
-        # Format: PICK <x_unused> <y_unused> <z_mm> <class_id>
-        # x/y are unused because the arm is fixed; class_id=1 → right bin (ready)
-        pick_command = f"PICK 0 0 {int(tof_distance)} 1"
-        pick_id = f"align_{int(time.time() * 1000)}"
+        # Format: PICK <x_mm> <y_mm> <z_mm> <class_id>
+        # x_mm and y_mm are now calculated from the image mapping
+        target_x = 0 if self.camera_on_arm else target_x_mm
+        target_y = 0 if self.camera_on_arm else target_y_mm
+        
+        pick_command = f"PICK {int(target_x)} {int(target_y)} {int(tof_distance)} 1"
+        pick_id = f"auto_{int(time.time() * 1000)}"
 
         if self.arduino_connected:
             self.send_command(pick_command)
@@ -587,12 +615,12 @@ class HardwareController:
                 'timestamp': now,
             }
             self._last_auto_pick_time = now
-            # Wait for the pick sequence to finish on the Arduino
+            # Wait for sequence
             time.sleep(self.pick_timeout)
             self.pending_picks.pop(pick_id, None)
-            self.logger.info(f"[AUTO] Pick sequence complete (assumed success).")
+            self.logger.info(f"[AUTO] Pick sequence complete.")
         else:
-            self.logger.info(f"[AUTO] Simulation pick at ToF={tof_distance}mm (Arduino not connected).")
+            self.logger.info(f"[AUTO] Simulation pick: {pick_command}")
             self._last_auto_pick_time = now
 
 
@@ -1607,20 +1635,20 @@ class HardwareController:
             elbow = self.current_servo_angles.get('elbow', 90)
             
             # Simple Forward Kinematics (Approximation)
-            # l1 = shoulder to forearm joint, l2 = forearm to end-effector
-            l1 = 120.0 # mm
-            l2 = 140.0 # mm
+            # Real-world measurements from STL files (Fabri Creator v2 Print-in-place)
+            l1 = 112.7 # mm (Brazo)
+            l2 = 161.9 # mm (Antebrazo)
+            l3 = 137.5 # mm (Gripper)
             
             # Convert to radians and adjust for zero-position offsets
-            # Mapping depends on physical assembly
             rad_waist = math.radians(waist - 90)
             rad_shoulder = math.radians(shoulder - 90)
             rad_elbow = math.radians(elbow - 90)
             
             # Planar projection for shoulder/elbow
-            # z is vertical, distal is horizontal
-            distal = l1 * math.cos(rad_shoulder) + l2 * math.cos(rad_shoulder + rad_elbow)
-            z = l1 * math.sin(rad_shoulder) + l2 * math.sin(rad_shoulder + rad_elbow) + 50 # +50mm base height
+            # distal is the horizontal reach from the central axis
+            distal = l1 * math.cos(rad_shoulder) + l2 * math.cos(rad_shoulder + rad_elbow) + l3
+            z = l1 * math.sin(rad_shoulder) + l2 * math.sin(rad_shoulder + rad_elbow) + 172.9 # +173mm base height
             
             # Project distal into X, Y based on waist rotation
             x = distal * math.sin(rad_waist)
@@ -1832,7 +1860,7 @@ class HardwareController:
             'tof_initialized': self.tof_initialized,
             'tof_distance': getattr(self, 'last_distance_reading', None),
             'classifier_loaded': model_loaded,
-            'body': self.get_arm_body_status(),
+            'body_status': self.get_arm_body_status(),
             'servo_angles': self.current_servo_angles.copy()
         }
         

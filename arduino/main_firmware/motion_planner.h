@@ -73,6 +73,9 @@ private:
     String _targetClass;
     float _targetConfidence;
     String _pickId;
+    int _calculatedWaistAngle;
+    int _targetShoulderAngle;
+    int _targetElbowAngle;
     
     // Approach parameters
     int _approachOffsetMm;
