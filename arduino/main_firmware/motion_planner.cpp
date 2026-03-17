@@ -8,22 +8,22 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
     _graspDistanceMm = 30;   // Default 30mm grasp distance
     _liftHeightDeg = 20;     // Default 20° lift
     
-    // Default bin poses (will be calibrated)
-    // Right bin (ready/ripe tomatoes) - use -1 for fixed waist/shoulder
-    _binRipe.waist = -1;      // Use current waist angle (fixed)
-    _binRipe.shoulder = -1;   // Use current shoulder angle (fixed)
-    _binRipe.elbow = 90;
-    _binRipe.wrist_roll = 110;
-    _binRipe.wrist_pitch = 80;
-    _binRipe.claw = 90;
+    // Default bin poses (Back sorting bins)
+    // Right bin (ready/ripe tomatoes) - Reaching OVER the shoulder to the back
+    _binRipe.waist = 90;       
+    _binRipe.shoulder = 150;   // Reaching back
+    _binRipe.elbow = 30;       // Folded back
+    _binRipe.wrist_roll = 90;
+    _binRipe.wrist_pitch = 140; // Pointing down at back
+    _binRipe.claw = 30;        // Open to release
     
-    // Left bin (other categories) - use -1 for fixed waist/shoulder
-    _binUnripe.waist = -1;      // Use current waist angle (fixed)
-    _binUnripe.shoulder = -1;   // Use current shoulder angle (fixed)
-    _binUnripe.elbow = 90;
-    _binUnripe.wrist_roll = 110;
-    _binUnripe.wrist_pitch = 80;
-    _binUnripe.claw = 90;
+    // Left bin (other categories) - Slightly different angle or same back location
+    _binUnripe.waist = 90;      
+    _binUnripe.shoulder = 150;  
+    _binUnripe.elbow = 30;      
+    _binUnripe.wrist_roll = 90;
+    _binUnripe.wrist_pitch = 140;
+    _binUnripe.claw = 30;
 }
 
 bool MotionPlanner::startPick(int x, int y, int z, float confidence, String class_type) {
@@ -71,13 +71,13 @@ void MotionPlanner::update() {
             break;
             
         case PICK_MOVE_TO_APPROACH: {
-            // Calculate approach pose (offset from target)
-            int approach_waist = -1;      
-            int approach_shoulder = -1;   
-            int approach_elbow = 10;      
+            // Move to a ready-state in the FRONT
+            int approach_waist = 90;      
+            int approach_shoulder = 60;   // Front
+            int approach_elbow = 120;     // Front
             int approach_wrist_roll = 90;
-            int approach_wrist_pitch = 100; 
-            int approach_claw = 90; 
+            int approach_wrist_pitch = 80; // Starting slightly high
+            int approach_claw = 30;       // Open
             
             if (moveToPose(approach_waist, approach_shoulder, approach_elbow, 
                           approach_wrist_roll, approach_wrist_pitch, approach_claw)) {
