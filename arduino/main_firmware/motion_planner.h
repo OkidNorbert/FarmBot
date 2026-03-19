@@ -19,22 +19,25 @@ struct BinPose {
 // Pick sequence states
 enum PickState {
     PICK_IDLE,
-    PICK_CALCULATE_POSE,
-    PICK_MOVE_TO_APPROACH,
-    PICK_WAIT_FOR_APPROACH,
-    PICK_APPROACH_TOF,
-    PICK_GRASP,
-    PICK_WAIT_GRASP,
-    PICK_LIFT,
-    PICK_WAIT_FOR_LIFT,
-    PICK_MOVE_TO_BIN,
-    PICK_WAIT_FOR_BIN,
-    PICK_RELEASE,
+    PICK_START_FB,          // New Front-to-Back Start
+    PICK_OPEN_CLAW,
+    PICK_WAIT_OPEN_CLAW,
+    PICK_MOVE_APPROACH,     // Front approach
+    PICK_MOVE_DOWN,         // Front pick
+    PICK_CLOSE_CLAW,
+    PICK_WAIT_CLOSE_CLAW,
+    PICK_LIFT,              // Lift from front
+    PICK_WAIT_LIFT,
+    PICK_MOVE_TRANSIT,      // Move to safe rotation height
+    PICK_MOVE_BACK_APPROACH, // Above back bin
+    PICK_MOVE_PLACE_DOWN,   // At back floor
+    PICK_RELEASE,           // Open to release
     PICK_WAIT_RELEASE,
-    PICK_RETURN_HOME,
-    PICK_WAIT_FOR_HOME,
+    PICK_RETREAT,           // Up away from back
+    PICK_GO_HOME,
     PICK_COMPLETE,
-    PICK_ABORTED
+    PICK_ABORTED,
+    PICK_ERROR
 };
 
 class MotionPlanner {
@@ -45,6 +48,7 @@ public:
     bool startPick(int x, int y, int z, float confidence, String class_type);
     void update(); // Call in loop() for state machine
     void abort();
+    void reset();
     
     // Status
     PickState getState();
@@ -76,6 +80,7 @@ private:
     int _calculatedWaistAngle;
     int _targetShoulderAngle;
     int _targetElbowAngle;
+    int _targetClawAngle;
     
     // Approach parameters
     int _approachOffsetMm;
@@ -85,9 +90,19 @@ private:
     // Bin poses
     BinPose _binRipe;
     BinPose _binUnripe;
+    BinPose _homePose;
+    BinPose _frontApproachPose;
+    BinPose _frontPickPose;
+    BinPose _frontLiftPose;
+    BinPose _transitPose;
+    BinPose _backApproachPose;
+    BinPose _backPlacePose;
+    BinPose _backRetreatPose;
     
     // State machine helpers
     void calculateTargetPose();
+    int widthToGripAngle(int width_mm);
+    int widthToOpenAngle(int width_mm);
     bool moveToPose(int waist, int shoulder, int elbow, int wrist_roll, int wrist_pitch, int claw);
     bool waitForMotionComplete(unsigned long timeout_ms = 5000);
     int cartesianToBaseAngle(int x, int y);

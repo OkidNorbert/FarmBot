@@ -335,7 +335,10 @@ function updateSliderDisplay(servo, value) {
 function updateArmVisualization(servo, angle) {
     const group = document.getElementById(`${servo}-group`);
     if (!group) {
-        console.warn(`Visualization group not found for servo: ${servo}`);
+        // Skip warning for non-visualization servos like speed
+        if (servo !== 'speed') {
+            console.warn(`Visualization group not found for servo: ${servo}`);
+        }
         return;
     }
 

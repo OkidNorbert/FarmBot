@@ -943,6 +943,21 @@ def api_home_arm():
         return jsonify({'success': True, 'message': 'Arm homed'})
     return jsonify({'success': False, 'message': 'Hardware not available'})
 
+@app.route('/api/arm/sim_pick', methods=['POST'])
+def api_sim_pick():
+    """API endpoint for simulated pick (front-to-back without AI)"""
+    data = request.json
+    width_mm = data.get('width', 35)
+    if HARDWARE_AVAILABLE and hw_controller:
+        hw_controller.execute_simulated_pick(width_mm)
+        return jsonify({'success': True, 'message': f'Started simulation for {width_mm}mm object'})
+    return jsonify({'success': False, 'message': 'Hardware not available'}), 503
+
+@app.route('/api/socketio/status')
+def socketio_status():
+    """Check if SocketIO is available"""
+    return jsonify({'available': True, 'message': 'SocketIO server is ready'})
+
 @app.route('/api/servo/set', methods=['POST'])
 def api_set_servo():
     """API endpoint to set individual servo angle"""

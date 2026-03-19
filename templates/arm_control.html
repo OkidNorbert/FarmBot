@@ -518,6 +518,29 @@
                         </div>
                     </div>
                 </div>
+                <!-- Simulated Harvester -->
+                <div class="card status-card mt-4 border-success">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="fas fa-seedling"></i> Simulated Harvester</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small">
+                            <i class="fas fa-info-circle"></i> Perform a calibrated "Front-to-Back" pick sequence without AI.
+                        </p>
+                        <div class="mb-3">
+                            <label for="objectWidthSim" class="form-label fw-bold">Target Object Width (mm)</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-arrows-alt-h"></i></span>
+                                <input type="number" class="form-control" id="objectWidthSim" value="35" min="10" max="80">
+                                <span class="input-group-text">mm</span>
+                            </div>
+                            <div class="form-text">Sets the gripper closure depth for this cycle.</div>
+                        </div>
+                        <button class="btn btn-success w-100" id="btn-sim-pick-control" onclick="startSimulatedPickControl()">
+                            <i class="fas fa-play-circle me-1"></i> Start Harvesting Cycle
+                        </button>
+                    </div>
+                </div>
                 <!-- System Health & Diagnostics -->
                 <div class="card status-card mt-4 border-info">
                     <div class="card-header bg-info text-dark d-flex justify-content-between align-items-center">
@@ -602,6 +625,37 @@
             } catch (error) {
                 console.error('Error playing movement:', error);
                 showNotification('Error starting movement', 'danger');
+            }
+        }
+
+        async function startSimulatedPickControl() {
+            const width = document.getElementById('objectWidthSim').value;
+            const btn = document.getElementById('btn-sim-pick-control');
+            
+            showNotification(`Starting simulation for ${width}mm object...`, 'info');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing Pick...';
+            
+            try {
+                const response = await fetch('/api/arm/sim_pick', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ width: parseInt(width) })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotification('Simulated Pick sequence started successfully', 'success');
+                } else {
+                    showNotification('Error: ' + data.message, 'danger');
+                }
+            } catch (error) {
+                showNotification('Connection error to Backend', 'danger');
+            } finally {
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-play-circle me-1"></i> Start Harvesting Cycle';
+                }, 2000);
             }
         }
 

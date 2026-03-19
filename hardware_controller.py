@@ -443,9 +443,10 @@ class HardwareController:
                 except Exception as e:
                     self.logger.error(f"Auto Loop Error: {e}")
             
-            # Poll distance
-            if self.arduino_connected and (time.time() - getattr(self, 'last_dist_poll', 0) > 0.5):
-                self.get_distance_sensor()
+            # Poll distance logic
+            poll_interval = 0.5 if self.tof_initialized else 10.0 # Poll much slower if offline
+            if self.arduino_connected and (time.time() - getattr(self, 'last_dist_poll', 0) > poll_interval):
+                self.get_distance_sensor(force_poll=(not self.tof_initialized))
                 self.last_dist_poll = time.time()
             time.sleep(0.1) # Prevent CPU hogging
 
@@ -623,6 +624,29 @@ class HardwareController:
             self.logger.info(f"[AUTO] Simulation pick: {pick_command}")
             self._last_auto_pick_time = now
 
+    def execute_simulated_pick(self, width_mm=35):
+        """Perform a robust front-to-back pick and place sequence.
+        
+        This uses the new firmware-side state machine:
+        1. Approach Front -> Down -> Grip -> Lift
+        2. Transit via center height
+        3. Approach Back -> Place -> Release -> Retreat
+        """
+        # Clamp width to safe physical range
+        width_mm = max(10, min(int(width_mm), 80))
+        
+        self.logger.info(f"[PICK] Starting front-to-back sequence (Width: {width_mm}mm)")
+        
+        # New robust command format specifically for this workflow
+        pick_command = f"PICK_FB {width_mm}"
+        
+        if self.arduino_connected:
+            self.send_command(pick_command)
+            return True
+        else:
+            self.logger.warning("[PICK] Cannot start: Arduino not connected")
+            return False
+
 
     def detect_tomatoes(self, frame):
         """Run detection on frame - uses YOLO if available, otherwise ResNet + color detection"""
@@ -738,13 +762,14 @@ class HardwareController:
             if hasattr(self, 'logger'):
                 self.logger.error(f"Error parsing BLE telemetry: {e}")
 
-    def get_distance_sensor(self):
+    def get_distance_sensor(self, force_poll=False):
         """Read distance from VL53L0X via Arduino"""
+        # If we know it's offline and we aren't forcing a poll, skip immediately
+        if not self.tof_initialized and not force_poll:
+            return None
+
         # If using BLE, distance is updated via passive telemetry (notifications)
-        # So we just return the last cached reading
         if hasattr(self, 'ble_client') and self.ble_client and self.ble_client.connected:
-            # We still send a DISTANCE command if we want to poll, but passive is better
-            # For now, just return the cache which is updated in _on_ble_data
             if self.last_distance_reading is not None:
                 return self.last_distance_reading
             else:

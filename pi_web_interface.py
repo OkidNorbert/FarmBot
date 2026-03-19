@@ -194,7 +194,7 @@ def dashboard():
 @app.route('/control')
 def control():
     """Control panel"""
-    return render_template('pi_control.html')
+    return render_template('arm_control.html')
 
 @app.route('/monitor')
 def monitor():
@@ -205,6 +205,11 @@ def monitor():
 def calibrate():
     """Calibration panel"""
     return render_template('pi_calibrate.html')
+
+@app.route('/api/socketio/status')
+def socketio_status():
+    """Check if SocketIO is available"""
+    return jsonify({'available': True, 'message': 'SocketIO server is ready'})
 
 # API endpoints for system control
 @app.route('/api/system/start', methods=['POST'])
@@ -232,6 +237,31 @@ def api_move_arm():
     # Send command to hardware
     hw_controller.move_arm(x, y, z)
     return jsonify({'success': True, 'message': f'Arm moved to joint values ({x}, {y}, {z})'})
+
+@app.route('/api/arm/sim_pick', methods=['POST'])
+def api_sim_pick():
+    """API endpoint for robust front-to-back hardware pick routine"""
+    try:
+        data = request.json or {}
+        # Ensure it is a valid integer between 10 and 80mm
+        width_mm = int(data.get('width', 35))
+        width_mm = max(10, min(width_mm, 80))
+        
+        success = hw_controller.execute_simulated_pick(width_mm)
+        
+        if success:
+            return jsonify({
+                'success': True, 
+                'message': f'Started robust pick-and-place for {width_mm}mm object'
+            })
+        else:
+            return jsonify({
+                'success': False, 
+                'message': 'Hardware not connected or busy'
+            }), 400
+            
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 @app.route('/api/arm/home', methods=['POST'])
 def api_home_arm():

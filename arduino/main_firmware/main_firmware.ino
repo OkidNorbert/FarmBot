@@ -131,16 +131,19 @@ void loop() {
             commClient.sendPickResult(currentPickId.c_str(), "SUCCESS", "ripe", duration);
             currentState = IDLE;
             currentPickId = "";
+            motionPlanner.reset(); // Reset state machine for next call
         } else if (pickState == PICK_ABORTED) {
             // Pick aborted
             unsigned long duration = millis() - pickStartTime;
             commClient.sendPickResult(currentPickId.c_str(), "ABORTED", "none", duration);
             currentState = IDLE;
             currentPickId = "";
+            motionPlanner.reset(); // Reset state machine for next call
         }
     } else if (currentState == PICKING) {
-        // Pick finished but state wasn't updated
+        // Fallback: Pick finished but state wasn't updated
         currentState = IDLE;
+        motionPlanner.reset();
     }
     
     // Update system state based on servo movement
@@ -437,6 +440,19 @@ void processTextCommand(String command) {
         // Convert to pick command
         String type = (class_id == 1) ? "ripe" : "unripe";
         executePick("pick_" + String(millis()), (int)x, (int)y, (int)z, type, 1.0);
+    }
+    else if (command.startsWith("PICK_FB")) {
+        // PICK_FB <width_mm>
+        int firstSpace = command.indexOf(' ');
+        if (firstSpace == -1) firstSpace = command.indexOf(',');
+        
+        if (firstSpace != -1) {
+            int width = command.substring(firstSpace + 1).toInt();
+            Serial.print("Simulated Picker: Width=");
+            Serial.println(width);
+            // x=0, y=300 is the hardcoded Front workspace center
+            executePick("sim_" + String(millis()), 0, 300, width, "ripe", 1.0);
+        }
     }
     else if (command.startsWith("HOME")) {
         Serial.println("HOME command received");
