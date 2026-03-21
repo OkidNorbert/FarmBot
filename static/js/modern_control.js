@@ -123,7 +123,7 @@ const servoConfig = {
     'elbow': { min: 10, max: 180, default: 90, unit: '°' },
     'wrist_roll': { min: 15, max: 165, default: 90, unit: '°' },
     'wrist_pitch': { min: 20, max: 160, default: 90, unit: '°' },
-    'claw': { min: 30, max: 115, default: 115, unit: '°' },
+    'claw': { min: 30, max: 110, default: 110, unit: '°' },
     'speed': { min: 1, max: 180, default: 20, unit: ' deg/s' }
 };
 
@@ -1289,12 +1289,12 @@ document.addEventListener('DOMContentLoaded', () => {
         elbow:       { min: 10,  max: 180 },
         wrist_roll:  { min: 15,  max: 165 },
         wrist_pitch: { min: 20,   max: 160 },
-        claw:        { min: 30,  max: 115 }
+        claw:        { min: 30,  max: 110 }
     };
 
     // Current virtual angles (shadow the sliders)
     const angles = {
-        shoulder: 90, elbow: 90, wrist_roll: 90, wrist_pitch: 90, claw: 115
+        shoulder: 90, elbow: 90, wrist_roll: 90, wrist_pitch: 90, claw: 110
     };
 
     // PS4 button indices (standard mapping)

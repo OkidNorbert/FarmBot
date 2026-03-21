@@ -47,7 +47,7 @@ public:
     MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr);
     
     // Pick sequence control
-    bool startPick(int x, int y, int z, float confidence, String class_type, bool isSimulation = false);
+    bool startPick(int x, int y, int z, float confidence, String class_type, bool isSimulation = false, int object_height_mm = 50);
     void update(); // Call in loop() for state machine
     void abort();
     void reset();
@@ -87,6 +87,7 @@ private:
     int _targetShoulderAngle;
     int _targetElbowAngle;
     int _targetClawAngle;
+    int _objectHeightMm; // Height of the object being picked (mm), default 50mm
     
     // Approach parameters
     int _approachOffsetMm;

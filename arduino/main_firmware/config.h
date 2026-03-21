@@ -36,8 +36,8 @@
 // clamps any commands below 10° as well.  You can still adjust these values
 // during calibration if your hardware behaves differently.
 #define LIMIT_CLAW_MIN      30   // do not drive claw below this angle (fully open)
-#define LIMIT_CLAW_MAX      115  // Absolute physical limit
-#define CLAW_CLOSED_POSITION 115  // Limit per user advice
+#define LIMIT_CLAW_MAX      110  // Absolute physical limit (110 avoids overheating)
+#define CLAW_CLOSED_POSITION 110  // Safe closed position - no strain on servo
 
 // Wrist Pitch (SG90) - Previously Pitch
 #define LIMIT_WRIST_PITCH_MIN  20

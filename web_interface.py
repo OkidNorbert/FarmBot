@@ -1908,7 +1908,7 @@ def handle_servo_command(data):
                     
                     # Also send explicit ANGLE command to ensure all servos reset
                     # Format: ANGLE base shoulder forearm elbow pitch claw
-                    home_command = "ANGLE -1 90 90 90 90 115"  # Match init: joints at 90°, claw closed at 115°
+                    home_command = "ANGLE -1 90 90 90 90 110"  # Match init: joints at 90°, claw closed at 110°
                     if hw_controller.ble_client and hw_controller.ble_client.connected:
                         hw_controller.ble_client.send_command(home_command)
                     elif hasattr(hw_controller, 'arduino') and hw_controller.arduino:

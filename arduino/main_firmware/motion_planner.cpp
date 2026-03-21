@@ -22,7 +22,7 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
 
     // Back Workspace (Center around 135 deg)
     _backApproachPose  = {135, 145, 95, 90, 155, 0};
-    _backPlacePose     = {135, 165, 90, 90, 160, 0};
+    _backPlacePose     = {135, 158, 90, 90, 160, 0};
     _backRetreatPose   = {135, 145, 85, 90, 150, 0};
 
     // Bin mirroring (legacy support)
@@ -38,13 +38,13 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
 }
 
 int MotionPlanner::widthToGripAngle(int width_mm) {
-    // Reverted to hardware limit 115 as requested
+    // Reverted to hardware limit 110 as per user configuration
     // We target a width 6mm smaller than actual to "push" for a tighter grip
     // using the 3mm clearance on each side of the gripper to absorb excessive grip.
     int target_width = width_mm - 6; 
     
-    // Mapping: 10mm gap is at 115 deg (max), 70mm gap is at 35 deg (open)
-    int angle = map(target_width, 10, 70, 115, 35);
+    // Mapping: 10mm gap is at 110 deg (max), 70mm gap is at 35 deg (open)
+    int angle = map(target_width, 10, 70, 110, 35);
     
     return constrain(angle, LIMIT_CLAW_MIN, LIMIT_CLAW_MAX);
 }
@@ -57,7 +57,7 @@ int MotionPlanner::widthToOpenAngle(int width_mm) {
     return open;
 }
 
-bool MotionPlanner::startPick(int x, int y, int z, float confidence, String class_type, bool isSimulation) {
+bool MotionPlanner::startPick(int x, int y, int z, float confidence, String class_type, bool isSimulation, int object_height_mm) {
     // Allow starting if idle, complete, or aborted
     if (_currentState != PICK_IDLE && _currentState != PICK_COMPLETE && _currentState != PICK_ABORTED) {
         _lastError = "Already picking";
@@ -70,7 +70,8 @@ bool MotionPlanner::startPick(int x, int y, int z, float confidence, String clas
     _targetClass = class_type;
     _targetConfidence = confidence;
     _isSimulation = isSimulation;
-    _pickId = String(millis()); 
+    _pickId = String(millis());
+    _objectHeightMm = constrain(object_height_mm, 5, 200); // Store object height
     
     _currentState = PICK_CALCULATE_POSE;
     _stateStartTime = millis();
@@ -97,6 +98,23 @@ void MotionPlanner::update() {
     switch (_currentState) {
         case PICK_CALCULATE_POSE:
             _targetClawAngle = widthToGripAngle(_targetZ);
+            
+            // Adjust pick and place depths based on object height.
+            // Reference height is 50mm. Each 10mm taller = 2° higher shoulder.
+            // Taller object: shoulder goes UP (higher angle = arm draws back = gripper higher).
+            {
+                int heightDelta = (_objectHeightMm - 50) / 5; // degrees per 5mm height
+                heightDelta = constrain(heightDelta, -10, 15);  // cap at safe range
+                
+                // Apply to pick pose: taller -> higher pick shoulder
+                _frontPickPose.shoulder      = constrain(22 + heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
+                _frontApproachPose.shoulder  = constrain(35 + heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
+                _frontLiftPose.shoulder      = constrain(45 + heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
+                
+                // Apply to place pose: taller -> higher place shoulder (less lean forward)
+                _backPlacePose.shoulder      = constrain(158 - heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
+                _backApproachPose.shoulder   = constrain(145 - heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
+            }
             
             if (_isSimulation) {
                 _currentState = PICK_START_FB;
@@ -294,7 +312,7 @@ void MotionPlanner::calculateTargetPose() {
     int objectWidth = _targetZ; 
     if (objectWidth < 5) objectWidth = 35; // Fallback to 3.5cm if invalid
     
-    // Simple linear mapping: 0mm -> 115deg, 80mm -> 30deg
+    // Simple linear mapping: 0mm -> 110deg, 80mm -> 30deg
     float claw_mapped = map(objectWidth, 0, 80, LIMIT_CLAW_MAX, LIMIT_CLAW_MIN);
     _targetClawAngle = constrain((int)claw_mapped, LIMIT_CLAW_MIN, LIMIT_CLAW_MAX);
 

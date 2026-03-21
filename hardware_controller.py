@@ -291,7 +291,7 @@ class HardwareController:
             'elbow': {'min': 10, 'max': 165},
             'wrist_roll': {'min': 15, 'max': 165},
             'wrist_pitch': {'min': 20, 'max': 160},
-            'claw': {'min': 30, 'max': 115}
+            'claw': {'min': 30, 'max': 110}
         }
         
         # Fixed positions for unavailable servos (manually set)
@@ -308,7 +308,7 @@ class HardwareController:
             'elbow': 90,
             'wrist_roll': 90,
             'wrist_pitch': 90,
-            'claw': 115  # home position is fully closed
+            'claw': 110  # home position is fully closed
         }
         
         # Configuration
@@ -624,21 +624,30 @@ class HardwareController:
             self.logger.info(f"[AUTO] Simulation pick: {pick_command}")
             self._last_auto_pick_time = now
 
-    def execute_simulated_pick(self, width_mm=35):
+    def execute_simulated_pick(self, width_mm=35, object_height_mm=50):
         """Perform a robust front-to-back pick and place sequence.
         
-        This uses the new firmware-side state machine:
+        Args:
+            width_mm: Diameter/width of the object to grip (mm). Default 35mm.
+            object_height_mm: Height of the object (mm). Taller objects require the
+                              arm to pick higher and place higher. Default 50mm.
+        
+        This uses the firmware-side state machine:
         1. Approach Front -> Down -> Grip -> Lift
         2. Transit via center height
-        3. Approach Back -> Place -> Release -> Retreat
+        3. Approach Back -> Place -> Release -> Retreat -> Home
         """
-        # Clamp width to safe physical range
-        width_mm = max(10, min(int(width_mm), 80))
+        # Clamp to safe physical ranges
+        width_mm         = max(10, min(int(width_mm), 80))
+        object_height_mm = max(5,  min(int(object_height_mm), 200))
         
-        self.logger.info(f"[PICK] Starting front-to-back sequence (Width: {width_mm}mm)")
+        self.logger.info(
+            f"[PICK] Starting front-to-back sequence "
+            f"(Width: {width_mm}mm, Height: {object_height_mm}mm)"
+        )
         
-        # New robust command format specifically for this workflow
-        pick_command = f"PICK_FB {width_mm}"
+        # Send both width and height to firmware
+        pick_command = f"PICK_FB {width_mm} {object_height_mm}"
         
         if self.arduino_connected:
             self.send_command(pick_command)
@@ -1504,7 +1513,7 @@ class HardwareController:
 
     def set_gripper(self, state):
         """Control gripper (OPEN/CLOSE) using ANGLE command"""
-        # OPEN: 10, CLOSE: 115 (based on config.h and servoConfig)
+        # OPEN: 10, CLOSE: 110 (based on config.h and servoConfig)
         angle = self.claw_min if state.upper() == "OPEN" else self.claw_max
         # Format: ANGLE waist shoulder elbow wrist_roll wrist_pitch claw
         # We only want to change the claw (Index 5)

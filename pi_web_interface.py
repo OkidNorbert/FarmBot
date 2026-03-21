@@ -243,16 +243,20 @@ def api_sim_pick():
     """API endpoint for robust front-to-back hardware pick routine"""
     try:
         data = request.json or {}
-        # Ensure it is a valid integer between 10 and 80mm
+        # Object width: clamp between 10 and 80mm
         width_mm = int(data.get('width', 35))
         width_mm = max(10, min(width_mm, 80))
         
-        success = hw_controller.execute_simulated_pick(width_mm)
+        # Object height: clamp between 5 and 200mm (default 50mm = medium tomato)
+        height_mm = int(data.get('height', 50))
+        height_mm = max(5, min(height_mm, 200))
+        
+        success = hw_controller.execute_simulated_pick(width_mm, height_mm)
         
         if success:
             return jsonify({
                 'success': True, 
-                'message': f'Started robust pick-and-place for {width_mm}mm object'
+                'message': f'Started pick-and-place for {width_mm}mm wide, {height_mm}mm tall object'
             })
         else:
             return jsonify({

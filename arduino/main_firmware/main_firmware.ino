@@ -425,16 +425,41 @@ void processTextCommand(String command) {
         executePick("move_" + String(millis()), (int)x, (int)y, (int)z, "move", 1.0);
     }
     else if (command.startsWith("PICK_FB")) {
-        // PICK_FB <width_mm>
+        // PICK_FB <width_mm> [height_mm]
+        // height_mm is optional, defaults to 50mm (medium tomato)
         int firstSpace = command.indexOf(' ');
         if (firstSpace == -1) firstSpace = command.indexOf(',');
         
         if (firstSpace != -1) {
-            int width = command.substring(firstSpace + 1).toInt();
+            String rest = command.substring(firstSpace + 1);
+            rest.trim();
+            int secondSpace = rest.indexOf(' ');
+            
+            int width  = rest.toInt();
+            int height = 50; // default height
+            if (secondSpace != -1) {
+                height = rest.substring(secondSpace + 1).toInt();
+            }
+            
+            width  = constrain(width,  10, 80);
+            height = constrain(height, 5, 200);
+            
             Serial.print("Simulated Picker: Width=");
-            Serial.println(width);
-            // x=0, y=300 is the hardcoded Front workspace center
-            executePick("sim_" + String(millis()), 0, 300, width, "ripe", 1.0, true);
+            Serial.print(width);
+            Serial.print("mm, Height=");
+            Serial.print(height);
+            Serial.println("mm");
+            
+            // Pass width as Z (grip width), height as new parameter
+            if (motionPlanner.startPick(0, 300, width, 1.0, "ripe", true, height)) {
+                currentPickId = "sim_" + String(millis());
+                pickStartTime = millis();
+                currentState  = PICKING;
+                Serial.println("Pick sequence started");
+            } else {
+                Serial.print("Pick start failed: ");
+                Serial.println(motionPlanner.getLastError());
+            }
         }
     }
     else if (command.startsWith("PICK")) {
