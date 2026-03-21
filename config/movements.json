@@ -3,104 +3,42 @@
     "victory": {
       "name": "Victory Celebration",
       "steps": [
-        { "angles": [90, 150, 150, 90, 140, 110], "speed": 60, "delay_ms": 500, "comment": "Raise arm high" },
-        { "angles": [90, 150, 150, 90, 140, 30], "speed": 180, "delay_ms": 200, "comment": "Cheer 1 Open" },
-        { "angles": [90, 150, 150, 90, 140, 110], "speed": 180, "delay_ms": 200, "comment": "Cheer 1 Close" },
-        { "angles": [70, 150, 150, 90, 140, 30], "speed": 100, "delay_ms": 200, "comment": "Cheer 2 Open" },
-        { "angles": [110, 150, 150, 90, 140, 110], "speed": 100, "delay_ms": 200, "comment": "Cheer 2 Close" },
-        { "angles": [90, 90, 90, 90, 90, 110], "speed": 40, "delay_ms": 800 }
-      ]
-    },
-    "curiosity": {
-      "name": "Intelligent Scout",
-      "steps": [
-        { "angles": [90, 110, 80, 90, 120, 110], "speed": 15, "delay_ms": 1000, "comment": "Stealthy lean" },
-        { "angles": [45, 110, 80, 45, 140, 30], "speed": 10, "delay_ms": 1500, "comment": "Inspect left" },
-        { "angles": [135, 110, 80, 135, 140, 30], "speed": 8, "delay_ms": 2000, "comment": "Inspect right" },
-        { "angles": [90, 160, 140, 90, 90, 110], "speed": 35, "delay_ms": 800, "comment": "Back away cautiously" },
-        { "angles": [90, 90, 90, 90, 90, 110], "speed": 20, "delay_ms": 600 }
+        { "angles": [90, 100, 95,  90, 95,  100], "speed": 25, "delay_ms": 400, "comment": "Prepare and rise" },
+        { "angles": [80, 150, 140, 75, 130, 60],  "speed": 45, "delay_ms": 250, "comment": "Celebrate left" },
+        { "angles": [100,150, 140, 105,130, 60],  "speed": 45, "delay_ms": 250, "comment": "Celebrate right" },
+        { "angles": [90, 135, 120, 90, 115, 95],  "speed": 30, "delay_ms": 350, "comment": "Settle down" },
+        { "angles": [90, 90,  90,  90, 90,  110], "speed": 22, "delay_ms": 600, "comment": "Home" }
       ]
     },
     "wave": {
       "name": "Social Greeting",
       "steps": [
-        { "angles": [90, 160, 150, 90, 140, 30], "speed": 60, "delay_ms": 400 },
-        { "angles": [90, 160, 150, 120, 140, 30], "speed": 140, "delay_ms": 250 },
-        { "angles": [90, 160, 150, 60, 140, 30], "speed": 140, "delay_ms": 250 },
-        { "angles": [90, 160, 150, 120, 140, 30], "speed": 140, "delay_ms": 250 },
-        { "angles": [90, 160, 150, 60, 115, 110], "speed": 140, "delay_ms": 250, "comment": "Wave bye" },
-        { "angles": [90, 90, 90, 90, 90, 110], "speed": 40, "delay_ms": 600 }
-      ]
-    },
-    "ninja": {
-      "name": "Cyber Ninja",
-      "steps": [
-        { "angles": [0, 45, 45, 15, 20, 110], "speed": 180, "delay_ms": 300, "comment": "Left Draw" },
-        { "angles": [180, 45, 45, 165, 20, 110], "speed": 180, "delay_ms": 300, "comment": "Right Draw" },
-        { "angles": [90, 165, 180, 90, 160, 30], "speed": 150, "delay_ms": 200, "comment": "High Strike" },
-        { "angles": [90, 15, 10, 90, 20, 110], "speed": 180, "delay_ms": 400, "comment": "Shield Block" },
-        { "angles": [90, 90, 90, 90, 90, 110], "speed": 80, "delay_ms": 500 }
+        { "angles": [90, 140, 125, 95, 125, 75],  "speed": 35, "delay_ms": 500, "comment": "Raise hand" },
+        { "angles": [90, 155, 140, 120,135, 70],  "speed": 40, "delay_ms": 250, "comment": "Wave left" },
+        { "angles": [90, 155, 140, 70, 135, 70],  "speed": 40, "delay_ms": 250, "comment": "Wave right" },
+        { "angles": [90, 155, 140, 115,135, 70],  "speed": 40, "delay_ms": 250, "comment": "Wave left again" },
+        { "angles": [90, 130, 115, 90, 115, 85],  "speed": 26, "delay_ms": 350, "comment": "Lower hand" },
+        { "angles": [90, 90,  90,  90, 90,  110], "speed": 22, "delay_ms": 600, "comment": "Home" }
       ]
     },
     "disco": {
       "name": "Retro Disco",
       "steps": [
-        { "angles": [45, 160, 150, 90, 160, 110], "speed": 60, "delay_ms": 400, "comment": "Point Up" },
-        { "angles": [45, 30, 40, 90, 20, 110], "speed": 60, "delay_ms": 400, "comment": "Point Down" },
-        { "angles": [135, 160, 150, 90, 160, 110], "speed": 60, "delay_ms": 400 },
-        { "angles": [135, 30, 40, 90, 20, 110], "speed": 60, "delay_ms": 400 },
-        { "angles": [90, 150, 150, 165, 160, 30], "speed": 120, "delay_ms": 200 },
-        { "angles": [90, 150, 150, 15, 160, 30], "speed": 120, "delay_ms": 200 },
-        { "angles": [90, 90, 90, 90, 90, 110], "speed": 40, "delay_ms": 600 }
-      ]
-    },
-    "happy": {
-      "name": "Pure Joy Jiggle",
-      "steps": [
-        { "angles": [85, 140, 140, 85, 85, 50], "speed": 150, "delay_ms": 150 },
-        { "angles": [95, 160, 160, 95, 110, 100], "speed": 150, "delay_ms": 150 },
-        { "angles": [85, 140, 140, 85, 85, 50], "speed": 150, "delay_ms": 150 },
-        { "angles": [95, 160, 160, 95, 110, 100], "speed": 150, "delay_ms": 150 },
-        { "angles": [90, 90, 90, 90, 90, 110], "speed": 50, "delay_ms": 500 }
-      ]
-    },
-    "symphony": {
-      "name": "Techno Symphony",
-      "steps": [
-        { "angles": [90, 15, 10, 15, 20, 110], "speed": 80, "delay_ms": 500, "comment": "Intro: The Crouch" },
-        { "angles": [90, 165, 180, 165, 160, 30], "speed": 10, "delay_ms": 3000, "comment": "Rise: The Awakening" },
-        { "angles": [0, 90, 90, 90, 90, 110], "speed": 180, "delay_ms": 500, "comment": "Spin: Left" },
-        { "angles": [180, 90, 90, 90, 90, 110], "speed": 180, "delay_ms": 500, "comment": "Spin: Right" },
-        { "angles": [90, 130, 130, 90, 60, 30], "speed": 60, "delay_ms": 200 },
-        { "angles": [90, 130, 130, 90, 120, 110], "speed": 60, "delay_ms": 200 },
-        { "angles": [90, 90, 90, 90, 90, 110], "speed": 35, "delay_ms": 800, "comment": "Finale" }
-      ]
-    },
-    "hyperactive": {
-      "name": "Hyperactive Mode",
-      "steps": [
-        { "angles": [45, 135, 135, 45, 45, 110], "speed": 180, "delay_ms": 150 },
-        { "angles": [135, 90, 90, 135, 135, 30], "speed": 180, "delay_ms": 150 },
-        { "angles": [90, 45, 45, 90, 45, 110], "speed": 180, "delay_ms": 150 },
-        { "angles": [90, 90, 90, 90, 90, 110], "speed": 80, "delay_ms": 400 }
-      ]
-    },
-    "epic": {
-      "name": "The Odyssey",
-      "steps": [
-        { "angles": [0, 45, 45, 45, 45, 110], "speed": 40, "delay_ms": 1000 },
-        { "angles": [180, 165, 165, 165, 140, 30], "speed": 100, "delay_ms": 2000 },
-        { "angles": [90, 90, 90, 90, 90, 110], "speed": 30, "delay_ms": 1000 }
+        { "angles": [65, 145, 130, 95, 140, 100], "speed": 42, "delay_ms": 300, "comment": "Point up left" },
+        { "angles": [115,70,  75,  85, 45,  100], "speed": 42, "delay_ms": 280, "comment": "Point down right" },
+        { "angles": [115,145, 130, 85, 140, 100], "speed": 42, "delay_ms": 300, "comment": "Point up right" },
+        { "angles": [65, 70,  75,  95, 45,  100], "speed": 42, "delay_ms": 280, "comment": "Point down left" },
+        { "angles": [90, 90,  90,  90, 90,  110], "speed": 22, "delay_ms": 600, "comment": "Home" }
       ]
     },
     "kata": {
       "name": "Dojo Master",
       "steps": [
-        { "angles": [90, 45, 45, 90, 20, 110], "speed": 150, "delay_ms": 500, "comment": "Bowing Start" },
-        { "angles": [0, 150, 150, 45, 140, 110], "speed": 180, "delay_ms": 300, "comment": "Left Strike" },
-        { "angles": [180, 150, 150, 135, 140, 110], "speed": 180, "delay_ms": 300, "comment": "Right Strike" },
-        { "angles": [90, 165, 180, 90, 160, 30], "speed": 120, "delay_ms": 800, "comment": "Ascend" },
-        { "angles": [90, 90, 90, 90, 90, 110], "speed": 50, "delay_ms": 1000 }
+        { "angles": [90, 55,  55,  90, 35,  110], "speed": 22, "delay_ms": 500, "comment": "Bow" },
+        { "angles": [70, 125, 115, 75, 120, 100], "speed": 55, "delay_ms": 260, "comment": "Left strike" },
+        { "angles": [110,125, 115, 105,120, 100], "speed": 55, "delay_ms": 260, "comment": "Right strike" },
+        { "angles": [90, 145, 135, 90, 140,  70], "speed": 45, "delay_ms": 700, "comment": "Upward finishing pose" },
+        { "angles": [90, 90,  90,  90, 90,  110], "speed": 22, "delay_ms": 700, "comment": "Home" }
       ]
     }
   }

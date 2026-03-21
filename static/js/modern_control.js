@@ -100,6 +100,10 @@ function setupSocketHandlers() {
         }
         if (data.message) {
             showNotification(data.message, data.connected ? 'success' : 'info');
+            // If recording was saved, reload the recordings list
+            if (data.message.includes('Recording saved') && typeof loadRecordings === 'function') {
+                loadRecordings();
+            }
         }
     });
 
@@ -472,7 +476,7 @@ function sendServoCommand(servo, angle, speed) {
     };
 
     // Track movement if recording
-    trackServoChange(servo, parseInt(angle));
+    trackServoChange(servo, parseInt(angle), command.speed);
 
     console.log('📤 Sending servo command:', command);
     if (socket && socket.connected) {
@@ -488,14 +492,12 @@ function setupEventListeners() {
         const btnConnect = document.getElementById('btnConnect');
         const btnDisconnect = document.getElementById('btnDisconnect');
         const btnStart = document.getElementById('btnStart');
-        const btnSave = document.getElementById('btnSave');
         const btnCapturePose = document.getElementById('btnCapturePose');
         const btnReset = document.getElementById('btnReset');
 
         if (btnConnect) btnConnect.addEventListener('click', connectArduino);
         if (btnDisconnect) btnDisconnect.addEventListener('click', disconnectArduino);
         if (btnStart) btnStart.addEventListener('click', startRecordingMovements);
-        if (btnSave) btnSave.addEventListener('click', savePose);
         if (btnCapturePose) btnCapturePose.addEventListener('click', capturePose);
         if (btnReset) btnReset.addEventListener('click', resetArm);
 
@@ -636,13 +638,14 @@ function startRecordingMovements() {
 }
 
 // Track servo changes during recording
-function trackServoChange(servo, angle) {
+function trackServoChange(servo, angle, speed) {
     if (isRecording && recordingStartTime) {
         const timestamp = Date.now() - recordingStartTime;
         recordedMovements.push({
             timestamp: timestamp,
             servo: servo,
-            angle: angle
+            angle: angle,
+            speed: speed
         });
     }
 }
@@ -817,13 +820,12 @@ function updateConnectionStatus(connected, message = null) {
         const btnConnect = document.getElementById('btnConnect');
         const btnDisconnect = document.getElementById('btnDisconnect');
         const btnStart = document.getElementById('btnStart');
-        const btnSave = document.getElementById('btnSave');
+        const btnCapturePose = document.getElementById('btnCapturePose');
         const btnReset = document.getElementById('btnReset');
 
         if (btnConnect) btnConnect.disabled = true;
         if (btnDisconnect) btnDisconnect.disabled = false;
         if (btnStart) btnStart.disabled = false;
-        if (btnSave) btnSave.disabled = false;
         if (btnCapturePose) btnCapturePose.disabled = false;
         if (btnReset) btnReset.disabled = false;
     } else {
@@ -835,13 +837,12 @@ function updateConnectionStatus(connected, message = null) {
         const btnConnect = document.getElementById('btnConnect');
         const btnDisconnect = document.getElementById('btnDisconnect');
         const btnStart = document.getElementById('btnStart');
-        const btnSave = document.getElementById('btnSave');
+        const btnCapturePose = document.getElementById('btnCapturePose');
         const btnReset = document.getElementById('btnReset');
 
         if (btnConnect) btnConnect.disabled = false;
         if (btnDisconnect) btnDisconnect.disabled = true;
         if (btnStart) btnStart.disabled = true;
-        if (btnSave) btnSave.disabled = true;
         if (btnCapturePose) btnCapturePose.disabled = true;
         if (btnReset) btnReset.disabled = true;
     }

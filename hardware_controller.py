@@ -1532,15 +1532,15 @@ class HardwareController:
             pick_info = self.pending_picks[pick_id]
             if status == 'SUCCESS':
                 self.logger.info(f"[AUTO] ✅ Pick {pick_id} succeeded: {result} ({duration_ms}ms)")
-                del self.pending_picks[pick_id]
+                self.pending_picks.pop(pick_id, None)
             elif status == 'FAILED' or status == 'ABORTED':
-                pick_info['retries'] += 1
+                pick_info['retries'] = int(pick_info.get('retries', 0)) + 1
                 if pick_info['retries'] < self.max_pick_retries:
                     self.logger.warning(f"[AUTO] ⚠️  Pick {pick_id} failed ({status}), will retry (attempt {pick_info['retries']}/{self.max_pick_retries})")
                     # Could retry here if needed
                 else:
                     self.logger.error(f"[AUTO] ❌ Pick {pick_id} failed after {pick_info['retries']} attempts: {status}")
-                    del self.pending_picks[pick_id]
+                    self.pending_picks.pop(pick_id, None)
             else:
                 self.logger.warning(f"[AUTO] Unknown pick status: {status} for {pick_id}")
         else:
@@ -1556,13 +1556,15 @@ class HardwareController:
         stale_picks = []
         
         for pick_id, pick_info in self.pending_picks.items():
-            age = current_time - pick_info['timestamp']
+            ts = float(pick_info.get('timestamp', current_time))
+            age = current_time - ts
             if age > timeout_seconds:
                 stale_picks.append(pick_id)
         
         for pick_id in stale_picks:
-            self.logger.warning(f"[AUTO] Removing stale pick {pick_id} (age: {current_time - self.pending_picks[pick_id]['timestamp']:.1f}s)")
-            del self.pending_picks[pick_id]
+            ts = float(self.pending_picks[pick_id].get('timestamp', current_time))
+            self.logger.warning(f"[AUTO] Removing stale pick {pick_id} (age: {current_time - ts:.1f}s)")
+            self.pending_picks.pop(pick_id, None)
     
     # Conveyor belt not available in current setup
     # def set_conveyor(self, speed):
@@ -1959,164 +1961,88 @@ class HardwareController:
             self.logger.warning("⚠️  movements.json not found")
 
     def play_movement(self, movement_id):
-        """Execute a named movement sequence from the collection"""
+        """Execute a named movement sequence from the config"""
         self.logger.info(f"Executing movement: {movement_id} 🤖")
         
         # Check if movement exists in config
         if movement_id in self.movements:
             movement = self.movements[movement_id]
             steps = movement.get("steps", [])
-            
-            # Save current mode
-            previous_auto_mode = self.auto_mode
-            self.auto_mode = False
-            self.movement_active = True
-            
-            try:
-                for step in steps:
-                    angles = step.get("angles", [])
-                    speed = step.get("speed")
-                    delay_ms = step.get("delay_ms", 500)
-                    comment = step.get("comment", "")
-                    
-                    # Apply speed if specified
-                    if speed is not None:
-                        self.send_command(f"SPEED {speed}")
-                        self.logger.debug(f"  Speed set to {speed}")
-                    
-                    if len(angles) == 6:
-                        # Build ANGLE command
-                        cmd = f"ANGLE {' '.join(str(a) for a in angles)}"
-                        self.send_command(cmd)
-                        if comment:
-                            self.logger.debug(f"  Step: {comment}")
-                        time.sleep(delay_ms / 1000.0)
-                
-                self.home_arm()
-                self.logger.info(f"Movement '{movement_id}' complete!")
-                return True
-            except Exception as e:
-                self.logger.error(f"Error playing movement '{movement_id}': {e}")
-                return False
-            finally:
-                self.auto_mode = previous_auto_mode
-                self.movement_active = False
+            return self.play_sequence(steps, name=movement_id)
         
         # Fallback for legacy hardcoded movements or complex ones
+        if movement_id == "home":
+            self.home_arm()
+            return True
+            
+        self.logger.warning(f"Movement '{movement_id}' not found in configuration")
+        return False
+
+    def play_sequence(self, steps, name="Sequence"):
+        """Play an arbitrary list of steps (with angles, speed, delay_ms)"""
+        # Save current mode
         previous_auto_mode = self.auto_mode
         self.auto_mode = False
         self.movement_active = True
         
+        last_timestamp_ms = 0
         try:
-            if movement_id == 'symphony':
-                # The Grand Symphony: A long, complex, multi-stage performance
-                self.logger.info("🎭 STARTING THE GRAND SYMPHONY 🎭")
+            for step in steps:
+                angles = step.get("angles", [])
+                speed = step.get("speed")
+                delay_ms = step.get("delay_ms", 500)
+                comment = step.get("comment", "")
                 
-                # Part 1: The Awakening (Slow rise)
-                for angle in range(0, 151, 15):
-                    self.send_command(f"ANGLE 90 {angle} {angle} 90 90 0")
-                    time.sleep(0.15)
-                
-                # Part 2: The Scan (Base rotation with varied elbow)
-                for base in range(45, 136, 15):
-                    elbow = 60 if base % 30 == 0 else 120
-                    self.send_command(f"ANGLE {base} 150 150 {elbow} 90 45")
-                    time.sleep(0.3)
-                
-                # Part 3: The Waveform (Fluid joint coordination)
-                for i in range(4):
-                    offset = i * 15
-                    self.send_command(f"ANGLE {90+offset} {150-offset} {150-offset} {90+offset} {90+offset} 90")
-                    time.sleep(0.25)
-                    self.send_command(f"ANGLE {90-offset} {150+offset/2} {150+offset/2} {90-offset} {90-offset} 0")
-                    time.sleep(0.25)
-                
-                # Part 4: The Jitter & Snap
-                for _ in range(6):
-                    target = 160 if _ % 2 == 0 else 20
-                    self.send_command(f"ANGLE -1 -1 -1 -1 {target} -1")
-                    time.sleep(0.1)
-                    self.send_command("GRIPPER " + ("OPEN" if _ % 2 == 0 else "CLOSE"))
-                
-                # Part 5: The Spiral Dive
-                for angle in range(150, 44, -15):
-                    self.send_command(f"ANGLE 90 {angle} {angle} {angle} 90 0")
-                    time.sleep(0.15)
-                
-                # Part 6: Final Pose & Greeting
-                self.send_command("ANGLE 90 170 170 90 90 0")
-                time.sleep(1.0)
-                self.send_command("GRIPPER OPEN")
-                time.sleep(0.5)
-                self.send_command("GRIPPER CLOSE")
-                time.sleep(0.5)
-
-            elif movement_id == 'epic':
-                # The Epic Journey: 50+ steps, extremely complex performance
-                self.logger.info("⚔️ EMBARKING ON THE EPIC JOURNEY ⚔️")
-                
-                # Act 1: Dawn of the Robot (Gradual unfolding)
-                self.send_command("ANGLE 0 45 45 45 45 0")
-                time.sleep(0.5)
-                for angle in range(45, 151, 10):
-                    self.send_command(f"ANGLE 0 {angle} {angle} {angle} 90 0")
-                    time.sleep(0.1)
-                
-                # Act 2: The Horizon Scan (Full range sweep)
-                for base in range(0, 181, 15):
-                    pitch = 120 if base % 30 == 0 else 60
-                    self.send_command(f"ANGLE {base} 150 150 90 {pitch} 90")
-                    time.sleep(0.2)
-                
-                # Act 3: The Ocean Wave (Flowing joints)
-                for _ in range(3):
-                    for angle in range(60, 121, 15):
-                        self.send_command(f"ANGLE 90 {150-(angle-60)} {60+(angle-60)} {angle} 120 45")
-                        time.sleep(0.15)
-                    for angle in range(120, 59, -15):
-                        self.send_command(f"ANGLE 90 {150-(angle-60)} {60+(angle-60)} {angle} 60 0")
-                        time.sleep(0.15)
-                
-                # Act 4: The Mechanical Heartbeat (Rapid pulses)
-                for _ in range(12):
-                    self.send_command("GRIPPER " + ("OPEN" if _ % 2 == 0 else "CLOSE"))
-                    self.send_command(f"ANGLE -1 -1 -1 -1 {-1 if _ % 2 == 0 else 160} -1")
-                    time.sleep(0.12)
-                
-                # Act 5: The Snake (Sinusoidal base + elbow)
-                for i in range(10):
-                    base = 90 + 40 * math.sin(i * 0.6)
-                    elbow = 90 + 30 * math.cos(i * 0.6)
-                    self.send_command(f"ANGLE {int(base)} 150 150 {int(elbow)} 90 45")
-                    time.sleep(0.2)
-                
-                # Act 6: The Summit Reach (Max extension and victory)
-                self.send_command("ANGLE 90 180 180 180 90 90")
-                time.sleep(1.0)
-                for _ in range(4):
-                    self.send_command("ANGLE 70 -1 -1 -1 -1 -1")
-                    time.sleep(0.2)
-                    self.send_command("ANGLE 110 -1 -1 -1 -1 -1")
-                    time.sleep(0.2)
-                
-                # Act 7: The Journey Home (Careful retraction)
-                for angle in range(180, 89, -10):
-                    self.send_command(f"ANGLE 90 {angle} {angle} {angle} 90 0")
-                    time.sleep(0.1)
-
-            else:
-                self.logger.warning(f"Unknown movement ID: {movement_id}")
-                return False
-                
-            self.home_arm()
-            self.logger.info(f"Movement '{movement_id}' complete!")
+                # If a step has all 6 angles
+                if "angles" in step and len(step["angles"]) == 6:
+                    if speed is not None:
+                        self.send_command(f"SPEED {speed}")
+                        self.logger.debug(f"  Speed set to {speed}")
+                        
+                    cmd = f"ANGLE {' '.join(str(a) for a in step['angles'])}"
+                    self.send_command(cmd)
+                    if comment:
+                        self.logger.debug(f"  Step: {comment}")
+                    time.sleep(delay_ms / 1000.0)
+                else:
+                    # Support for individual recorded servo steps
+                    servo = step.get("servo")
+                    angle = step.get("angle")
+                    interval_ms = step.get("interval_ms")
+                    timestamp_ms = step.get("timestamp")
+                    
+                    if servo and angle is not None:
+                        # Build ANGLE command keeping others at -1 (ignore)
+                        idx_map = {"waist": 0, "shoulder": 1, "elbow": 2, "wrist_roll": 3, "wrist_pitch": 4, "claw": 5}
+                        if servo in idx_map:
+                            cmd_angles = [-1]*6
+                            cmd_angles[idx_map[servo]] = angle
+                            
+                            # Handle timing
+                            if timestamp_ms is not None:
+                                delay = (timestamp_ms - last_timestamp_ms) / 1000.0
+                                if delay > 0:
+                                    time.sleep(delay)
+                                last_timestamp_ms = timestamp_ms
+                            elif interval_ms is not None:
+                                time.sleep(interval_ms / 1000.0)
+                            else:
+                                time.sleep(0.05)
+                                
+                            # Apply dynamic speed if recorded
+                            if speed is not None:
+                                self.send_command(f"SPEED {speed}")
+                                
+                            self.send_command(f"ANGLE {' '.join(str(a) for a in cmd_angles)}")
+            
+            self.logger.info(f"Playback '{name}' complete!")
             return True
         except Exception as e:
-            self.logger.error(f"Error during movement '{movement_id}': {e}")
+            self.logger.error(f"Error playing '{name}': {e}")
             return False
         finally:
-            self.auto_mode = previous_auto_mode
             self.movement_active = False
+            self.auto_mode = previous_auto_mode
 
     def connect_bluetooth_device(self, address, name=None):
         """Connect to a specific Bluetooth device by address"""

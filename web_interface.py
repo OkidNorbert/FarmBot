@@ -932,6 +932,83 @@ def api_arm_play_movement():
     threading.Thread(target=run_movement, daemon=True).start()
     return jsonify({'success': True, 'message': f'Movement "{movement_id}" started! 🤖'})
 
+@app.route('/api/arm/recordings', methods=['GET'])
+def api_list_recordings():
+    """List all saved recordings"""
+    try:
+        recordings_dir = Path('saved_recordings')
+        recordings_dir.mkdir(exist_ok=True)
+        files = []
+        for f in recordings_dir.glob('*.json'):
+            if f.is_file():
+                try:
+                    import json
+                    with open(f, 'r') as file:
+                        data = json.load(file)
+                        files.append({
+                            'filename': f.name,
+                            'name': data.get('name', f.stem),
+                            'date': data.get('datetime', ''),
+                            'duration': data.get('duration_ms', 0),
+                            'steps': data.get('movement_count', 0)
+                        })
+                except Exception as e:
+                    print(f"Error reading recording {f}: {e}")
+        # Sort by date descending
+        files.sort(key=lambda x: x.get('date', ''), reverse=True)
+        return jsonify({'success': True, 'recordings': files})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
+@app.route('/api/arm/play_recording', methods=['POST'])
+def api_play_recording():
+    """Play a saved recording"""
+    if not hw_controller:
+        return jsonify({'success': False, 'message': 'Hardware controller not available'})
+    
+    data = request.get_json()
+    filename = data.get('filename')
+    if not filename:
+        return jsonify({'success': False, 'message': 'No filename provided'})
+        
+    try:
+        import json
+        filepath = Path('saved_recordings') / filename
+        if not filepath.exists():
+            return jsonify({'success': False, 'message': 'Recording not found'})
+            
+        with open(filepath, 'r') as f:
+            rec_data = json.load(f)
+            
+        movements = rec_data.get('movements', [])
+        if not movements:
+            return jsonify({'success': False, 'message': 'Recording is empty'})
+            
+        def run_recording():
+            hw_controller.play_sequence(movements, name=rec_data.get('name', filename))
+            
+        threading.Thread(target=run_recording, daemon=True).start()
+        return jsonify({'success': True, 'message': f'Playing {len(movements)} steps'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Failed to play: {str(e)}'})
+
+@app.route('/api/arm/delete_recording', methods=['DELETE'])
+def api_delete_recording():
+    """Delete a saved recording"""
+    data = request.get_json()
+    filename = data.get('filename')
+    if not filename:
+        return jsonify({'success': False, 'message': 'No filename provided'})
+        
+    try:
+        filepath = Path('saved_recordings') / filename
+        if filepath.exists():
+            filepath.unlink()
+            return jsonify({'success': True, 'message': 'Recording deleted'})
+        return jsonify({'success': False, 'message': 'File not found'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)})
+
 @app.route('/api/arm/home', methods=['POST'])
 def api_home_arm():
     """API endpoint to home arm"""
