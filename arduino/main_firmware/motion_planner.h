@@ -19,12 +19,14 @@ struct BinPose {
 // Pick sequence states
 enum PickState {
     PICK_IDLE,
+    PICK_CALCULATE_POSE,    // Decides simulator vs AI mode
     PICK_START_FB,          // New Front-to-Back Start
     PICK_OPEN_CLAW,
     PICK_WAIT_OPEN_CLAW,
     PICK_MOVE_APPROACH,     // Front approach
     PICK_MOVE_DOWN,         // Front pick
     PICK_CLOSE_CLAW,
+    PICK_GRASP = PICK_CLOSE_CLAW, // Alias for backward compatibility
     PICK_WAIT_CLOSE_CLAW,
     PICK_LIFT,              // Lift from front
     PICK_WAIT_LIFT,
@@ -45,10 +47,13 @@ public:
     MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr);
     
     // Pick sequence control
-    bool startPick(int x, int y, int z, float confidence, String class_type);
+    bool startPick(int x, int y, int z, float confidence, String class_type, bool isSimulation = false);
     void update(); // Call in loop() for state machine
     void abort();
     void reset();
+    
+    // Named movement helpers
+    bool moveToPose(const BinPose& pose, int clawAngle);
     
     // Status
     PickState getState();
@@ -77,6 +82,7 @@ private:
     String _targetClass;
     float _targetConfidence;
     String _pickId;
+    bool _isSimulation;
     int _calculatedWaistAngle;
     int _targetShoulderAngle;
     int _targetElbowAngle;

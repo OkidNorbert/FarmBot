@@ -1,0 +1,13 @@
+{
+  "timestamp": "20260321_104632",
+  "datetime": "2026-03-21T10:46:32.179016",
+  "servo_values": {
+    "claw": 113,
+    "wrist_pitch": 91,
+    "wrist_roll": 83,
+    "elbow": 120,
+    "shoulder": 97,
+    "waist": 90
+  },
+  "name": "Pose_1774079192165"
+}

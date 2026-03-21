@@ -8,34 +8,27 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
     _graspDistanceMm = 30;
     _liftHeightDeg = 20;
 
-    // 0. Home Pose (Stable default)
-    _homePose = {90, 90, 90, 90, 90, CLAW_CLOSED_POSITION};
+    // Defined from user feedback
+    // Adjusted to fit within 0-180 degree limits
+    _homePose          = {90, 90, 90, 90, 90, CLAW_CLOSED_POSITION};
+    
+    // Front Workspace (Center around 45 deg)
+    _frontApproachPose = {45, 35, 90, 90, 30, 0};
+    _frontPickPose     = {45, 22, 101, 90, 30, 0};
+    _frontLiftPose     = {45, 45, 85, 90, 30, 0};
 
-    // 1. Front Approach (Above object)
-    _frontApproachPose = {90, 45, 101, 98, 45, 30};
+    // Transition (Neutral)
+    _transitPose       = {90, 90, 80, 90, 110, 0};
 
-    // 2. Front Pick (Calibrated Touch Point)
-    _frontPickPose = {90, 22, 101, 98, 30, 30};
+    // Back Workspace (Center around 135 deg)
+    _backApproachPose  = {135, 145, 95, 90, 155, 0};
+    _backPlacePose     = {135, 165, 90, 90, 160, 0};
+    _backRetreatPose   = {135, 145, 85, 90, 150, 0};
 
-    // 3. Front Lift (Safe Height above front)
-    _frontLiftPose = {90, 60, 101, 98, 90, 30};
-
-    // 4. Transit Pose (Centered for rotation)
-    _transitPose = {90, 90, 90, 98, 90, 30};
-
-    // 5. Back Approach (Above Bin)
-    _backApproachPose = {90, 130, 90, 98, 120, 30};
-
-    // 6. Back Place (Calibrated Drop Point)
-    _backPlacePose = {90, 165, 90, 98, 160, 30};
-
-    // 7. Back Retreat (Safe Height above back)
-    _backRetreatPose = {90, 130, 90, 98, 120, 30};
-
-    // Mirroring for Unripe Bin
+    // Bin mirroring (legacy support)
     _binRipe = _backPlacePose;
     _binUnripe = _backPlacePose;
-    _binUnripe.waist = 140;
+    _binUnripe.waist = 170; // within 180 limit
 
     _calculatedWaistAngle = 90;
     _targetShoulderAngle = 90;
@@ -45,31 +38,39 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
 }
 
 int MotionPlanner::widthToGripAngle(int width_mm) {
-    // 0mm -> 115deg (Closed), 80mm -> 30deg (Open)
-    width_mm = constrain(width_mm, 0, 80);
-    return map(width_mm, 0, 80, LIMIT_CLAW_MAX, LIMIT_CLAW_MIN);
+    // Reverted to hardware limit 115 as requested
+    // We target a width 6mm smaller than actual to "push" for a tighter grip
+    // using the 3mm clearance on each side of the gripper to absorb excessive grip.
+    int target_width = width_mm - 6; 
+    
+    // Mapping: 10mm gap is at 115 deg (max), 70mm gap is at 35 deg (open)
+    int angle = map(target_width, 10, 70, 115, 35);
+    
+    return constrain(angle, LIMIT_CLAW_MIN, LIMIT_CLAW_MAX);
 }
 
 int MotionPlanner::widthToOpenAngle(int width_mm) {
     int grip = widthToGripAngle(width_mm);
-    return constrain(grip - 25, LIMIT_CLAW_MIN, LIMIT_CLAW_MAX); // Lower is more open
+    // Ensure we open at least 25 degrees or to the hard limit
+    int open = grip - 30;
+    if (open < LIMIT_CLAW_MIN) open = LIMIT_CLAW_MIN;
+    return open;
 }
 
-bool MotionPlanner::startPick(int x, int y, int z, float confidence, String class_type) {
+bool MotionPlanner::startPick(int x, int y, int z, float confidence, String class_type, bool isSimulation) {
     // Allow starting if idle, complete, or aborted
     if (_currentState != PICK_IDLE && _currentState != PICK_COMPLETE && _currentState != PICK_ABORTED) {
         _lastError = "Already picking";
         return false;
     }
     
-    // Removed strict ToF check here; handle gracefully in state machine
-    
     _targetX = x;
     _targetY = y;
     _targetZ = z;
     _targetClass = class_type;
     _targetConfidence = confidence;
-    _pickId = String(millis()); // Simple ID generation
+    _isSimulation = isSimulation;
+    _pickId = String(millis()); 
     
     _currentState = PICK_CALCULATE_POSE;
     _stateStartTime = millis();
@@ -96,94 +97,88 @@ void MotionPlanner::update() {
     switch (_currentState) {
         case PICK_CALCULATE_POSE:
             _targetClawAngle = widthToGripAngle(_targetZ);
-            _currentState = PICK_START_FB;
+            
+            if (_isSimulation) {
+                _currentState = PICK_START_FB;
+            } else {
+                calculateTargetPose();
+                _currentState = PICK_START_FB;
+            }
             _stateStartTime = millis();
             break;
 
         case PICK_START_FB:
-            // 1. Initial configuration: Open claw and move to front approach
+            // 1. Initial configuration: Open claw based on input width
             _servoMgr->setTarget(5, widthToOpenAngle(_targetZ));
-            if (moveToPose(_frontApproachPose.waist, _frontApproachPose.shoulder, _frontApproachPose.elbow,
-                          _frontApproachPose.wrist_roll, _frontApproachPose.wrist_pitch, -1)) {
-                _currentState = PICK_MOVE_APPROACH;
-                _stateStartTime = millis();
-            }
+            _currentState = PICK_MOVE_APPROACH;
+            _stateStartTime = millis();
             break;
 
         case PICK_MOVE_APPROACH:
-            if (millis() - _stateStartTime > 200 && !_servoMgr->isMoving()) {
+            if (moveToPose(_frontApproachPose, widthToOpenAngle(_targetZ))) {
                 _currentState = PICK_MOVE_DOWN;
                 _stateStartTime = millis();
             }
             break;
 
         case PICK_MOVE_DOWN:
-            if (moveToPose(_frontPickPose.waist, _frontPickPose.shoulder, _frontPickPose.elbow,
-                          _frontPickPose.wrist_roll, _frontPickPose.wrist_pitch, -1)) {
-                if (!_servoMgr->isMoving() && millis() - _stateStartTime > 200) {
-                    _currentState = PICK_CLOSE_CLAW;
-                    _stateStartTime = millis();
-                }
+            if (moveToPose(_frontPickPose, widthToOpenAngle(_targetZ))) {
+                _currentState = PICK_CLOSE_CLAW;
+                _stateStartTime = millis();
             }
             break;
 
         case PICK_CLOSE_CLAW:
+            // Ensure arm has reached the object before closing
+            if (_servoMgr->isMoving()) return; 
+            
             _servoMgr->setTarget(5, _targetClawAngle);
-            _currentState = PICK_WAIT_CLOSE_CLAW;
             _stateStartTime = millis();
+            _currentState = PICK_WAIT_CLOSE_CLAW;
             break;
 
         case PICK_WAIT_CLOSE_CLAW:
-            if (millis() - _stateStartTime > 600) { // Time to squeeze
+            if (millis() - _stateStartTime > 800) { // Increased wait for firm grasp
                 _currentState = PICK_LIFT;
                 _stateStartTime = millis();
             }
             break;
 
         case PICK_LIFT:
-            if (moveToPose(_frontLiftPose.waist, _frontLiftPose.shoulder, _frontLiftPose.elbow,
-                          _frontLiftPose.wrist_roll, _frontLiftPose.wrist_pitch, -1)) {
-                if (!_servoMgr->isMoving() && millis() - _stateStartTime > 200) {
-                    _currentState = PICK_MOVE_TRANSIT;
-                    _stateStartTime = millis();
-                }
+            if (moveToPose(_frontLiftPose, _targetClawAngle)) {
+                _currentState = PICK_MOVE_TRANSIT;
+                _stateStartTime = millis();
             }
             break;
 
         case PICK_MOVE_TRANSIT:
-            if (moveToPose(_transitPose.waist, _transitPose.shoulder, _transitPose.elbow,
-                          _transitPose.wrist_roll, _transitPose.wrist_pitch, -1)) {
-                if (!_servoMgr->isMoving() && millis() - _stateStartTime > 200) {
-                    _currentState = PICK_MOVE_BACK_APPROACH;
-                    _stateStartTime = millis();
-                }
+            if (moveToPose(_transitPose, _targetClawAngle)) {
+                _currentState = PICK_MOVE_BACK_APPROACH;
+                _stateStartTime = millis();
             }
             break;
 
         case PICK_MOVE_BACK_APPROACH:
-            if (moveToPose(_backApproachPose.waist, _backApproachPose.shoulder, _backApproachPose.elbow,
-                          _backApproachPose.wrist_roll, _backApproachPose.wrist_pitch, -1)) {
-                if (!_servoMgr->isMoving() && millis() - _stateStartTime > 200) {
-                    _currentState = PICK_MOVE_PLACE_DOWN;
-                    _stateStartTime = millis();
-                }
+            if (moveToPose(_backApproachPose, _targetClawAngle)) {
+                _currentState = PICK_MOVE_PLACE_DOWN;
+                _stateStartTime = millis();
             }
             break;
 
         case PICK_MOVE_PLACE_DOWN:
-            if (moveToPose(_backPlacePose.waist, _backPlacePose.shoulder, _backPlacePose.elbow,
-                          _backPlacePose.wrist_roll, _backPlacePose.wrist_pitch, -1)) {
-                if (!_servoMgr->isMoving() && millis() - _stateStartTime > 200) {
-                    _currentState = PICK_RELEASE;
-                    _stateStartTime = millis();
-                }
+            if (moveToPose(_backPlacePose, _targetClawAngle)) {
+                _currentState = PICK_RELEASE;
+                _stateStartTime = millis();
             }
             break;
 
         case PICK_RELEASE:
+            // CRITICAL: Ensure arm has reached the floor/bin before opening
+            if (_servoMgr->isMoving()) return;
+            
             _servoMgr->setTarget(5, widthToOpenAngle(_targetZ));
-            _currentState = PICK_WAIT_RELEASE;
             _stateStartTime = millis();
+            _currentState = PICK_WAIT_RELEASE;
             break;
 
         case PICK_WAIT_RELEASE:
@@ -194,23 +189,14 @@ void MotionPlanner::update() {
             break;
 
         case PICK_RETREAT:
-            if (moveToPose(_backRetreatPose.waist, _backRetreatPose.shoulder, _backRetreatPose.elbow,
-                          _backRetreatPose.wrist_roll, _backRetreatPose.wrist_pitch, -1)) {
-                if (!_servoMgr->isMoving() && millis() - _stateStartTime > 200) {
-                    _currentState = PICK_GO_HOME;
-                    _stateStartTime = millis();
-                }
+            if (moveToPose(_backRetreatPose, widthToOpenAngle(_targetZ))) {
+                _currentState = PICK_GO_HOME;
+                _stateStartTime = millis();
             }
             break;
 
         case PICK_GO_HOME:
-            _servoMgr->home();
-            _currentState = PICK_GO_HOME + 1; // Generic wait
-            _stateStartTime = millis();
-            break;
-
-        case (PICK_GO_HOME + 1):
-            if (!_servoMgr->isMoving() && millis() - _stateStartTime > 500) {
+            if (moveToPose(_homePose, CLAW_CLOSED_POSITION)) {
                 _currentState = PICK_COMPLETE;
             }
             break;
@@ -324,17 +310,12 @@ void MotionPlanner::calculateTargetPose() {
     Serial.println(_targetClawAngle);
 }
 
-bool MotionPlanner::moveToPose(int waist, int shoulder, int elbow, int wrist_roll, int wrist_pitch, int claw) {
-    // Handle -1 values (keep current angle) before calling setTargets
-    // This allows fixed waist/shoulder to remain unchanged
-    int waist_angle = (waist == -1) ? _servoMgr->getAngle(0) : waist;
-    int shoulder_angle = (shoulder == -1) ? _servoMgr->getAngle(1) : shoulder;
-    int elbow_angle = (elbow == -1) ? _servoMgr->getAngle(2) : elbow;
-    int wrist_roll_angle = (wrist_roll == -1) ? _servoMgr->getAngle(3) : wrist_roll;
-    int wrist_pitch_angle = (wrist_pitch == -1) ? _servoMgr->getAngle(4) : wrist_pitch;
-    int claw_angle = (claw == -1) ? _servoMgr->getAngle(5) : claw;
+bool MotionPlanner::moveToPose(const BinPose& pose, int clawAngle) {
+    if (_servoMgr->isMoving()) return false;
     
-    return _servoMgr->setTargets(waist_angle, shoulder_angle, elbow_angle, wrist_roll_angle, wrist_pitch_angle, claw_angle);
+    _servoMgr->setTargets(pose.waist, pose.shoulder, pose.elbow, 
+                        pose.wrist_roll, pose.wrist_pitch, clawAngle);
+    return true;
 }
 
 bool MotionPlanner::waitForMotionComplete(unsigned long timeout_ms) {

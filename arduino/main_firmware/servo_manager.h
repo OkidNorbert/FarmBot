@@ -26,6 +26,7 @@ public:
     // Motion Control
     bool setTarget(uint8_t servo_id, int angle);
     bool setTargets(int waist, int shoulder, int elbow, int wrist_roll, int wrist_pitch, int claw);
+    void moveStep(int id, int direction, int step); // Incremental movement
     void home();
     void emergencyStop();
     

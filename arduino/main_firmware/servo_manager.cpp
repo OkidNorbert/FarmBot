@@ -121,6 +121,13 @@ bool ServoManager::setTargets(int waist, int shoulder, int elbow, int wrist_roll
     return success;
 }
 
+void ServoManager::moveStep(int id, int direction, int step) {
+    if (id < 0 || id >= 6) return;
+    int current = getAngle(id);
+    int target = current + (direction > 0 ? step : -step);
+    setTarget(id, target);
+}
+
 int ServoManager::constrainAngle(int id, int angle) {
     if (angle < servos[id].min_angle) return servos[id].min_angle;
     if (angle > servos[id].max_angle) return servos[id].max_angle;

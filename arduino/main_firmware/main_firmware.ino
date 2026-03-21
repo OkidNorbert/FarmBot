@@ -32,7 +32,7 @@ String currentMode = "MANUAL";  // Track current mode: "MANUAL" or "AUTO"
 // Forward Declarations
 void handleWebSocketMessage(String payload);
 void processTextCommand(String command);  // Handle text-based commands (backward compatibility)
-void executePick(String id, int x, int y, int z, String type, float confidence);
+void executePick(String id, int x, int y, int z, String type, float confidence, bool isSimulation = false);
 void sendStatus();
 void checkEmergencyStop();
 
@@ -132,6 +132,7 @@ void loop() {
             currentState = IDLE;
             currentPickId = "";
             motionPlanner.reset(); // Reset state machine for next call
+            servoManager.home();   // RETURN TO HOME AFTER SUCCESS
         } else if (pickState == PICK_ABORTED) {
             // Pick aborted
             unsigned long duration = millis() - pickStartTime;
@@ -139,6 +140,7 @@ void loop() {
             currentState = IDLE;
             currentPickId = "";
             motionPlanner.reset(); // Reset state machine for next call
+            servoManager.home();   // RETURN TO HOME AFTER ABORT
         }
     } else if (currentState == PICKING) {
         // Fallback: Pick finished but state wasn't updated
@@ -180,7 +182,7 @@ void handleWebSocketMessage(String payload) {
                 payload.startsWith("HOME") || payload.startsWith("STOP") ||
                 payload.startsWith("ANGLE") || payload.startsWith("STATUS") ||
                 payload.startsWith("GRIP") || payload.startsWith("DISTANCE") ||
-                payload.startsWith("SPEED")) {
+                payload.startsWith("SPEED") || payload.startsWith("PICK_FB")) {
                 isTextCommand = true;
             }
         }
@@ -379,37 +381,61 @@ void handleWebSocketMessage(String payload) {
 void processTextCommand(String command) {
     // Handle text-based commands for backward compatibility with old web interface
     command.trim();
-    
-    if (command.startsWith("MOVE")) {
-        // MOVE X Y Z or MOVE X Y CLASS - Move to world coordinates
+    if (command.startsWith("MOVE_STEP")) {
+        // MOVE_STEP <servo_id> <direction> <step_size>
         int firstSpace = command.indexOf(' ');
         int secondSpace = command.indexOf(' ', firstSpace + 1);
         int thirdSpace = command.indexOf(' ', secondSpace + 1);
         
-        if (firstSpace == -1 || secondSpace == -1) {
-            Serial.println("Invalid MOVE command format - need at least X Y");
+        if (firstSpace == -1 || secondSpace == -1 || thirdSpace == -1) {
+            Serial.println("Invalid MOVE_STEP command format");
+            return;
+        }
+        
+        int servo_id = command.substring(firstSpace + 1, secondSpace).toInt();
+        int direction = command.substring(secondSpace + 1, thirdSpace).toInt();
+        int step_size = command.substring(thirdSpace + 1).toInt();
+        
+        servoManager.moveStep(servo_id, direction, step_size);
+    }
+    else if (command.startsWith("MOVE")) {
+        // MOVE X Y Z - Move to coordinates
+        int firstSpace = command.indexOf(' ');
+        int secondSpace = command.indexOf(' ', firstSpace + 1);
+        int thirdSpace = command.indexOf(' ', secondSpace + 1);
+        
+        if (firstSpace == -1 || secondSpace == -1 || thirdSpace == -1) {
+            Serial.println("Invalid MOVE command format");
             return;
         }
         
         float x = command.substring(firstSpace + 1, secondSpace).toFloat();
-        float y = command.substring(secondSpace + 1, (thirdSpace == -1 ? command.length() : thirdSpace)).toFloat();
-        
-        // Optional third parameter (Z or CLASS)
-        int class_id = 0;  // Default to unripe
-        if (thirdSpace != -1) {
-            class_id = command.substring(thirdSpace + 1).toInt();
-        }
+        float y = command.substring(secondSpace + 1, thirdSpace).toFloat();
+        float z = command.substring(thirdSpace + 1).toFloat();
         
         Serial.print("MOVE command: X=");
         Serial.print(x);
         Serial.print(", Y=");
         Serial.print(y);
-        Serial.print(", Class=");
-        Serial.println(class_id);
+        Serial.print(", Z=");
+        Serial.println(z);
         
-        // Convert to pick command (using motion planner)
-        String type = (class_id == 1) ? "ripe" : "unripe";
-        executePick("move_" + String(millis()), (int)x, (int)y, 50, type, 1.0);
+        // Convert to pick command (using move type)
+        // This initiates a simplified pick sequence that just moves and stops
+        executePick("move_" + String(millis()), (int)x, (int)y, (int)z, "move", 1.0);
+    }
+    else if (command.startsWith("PICK_FB")) {
+        // PICK_FB <width_mm>
+        int firstSpace = command.indexOf(' ');
+        if (firstSpace == -1) firstSpace = command.indexOf(',');
+        
+        if (firstSpace != -1) {
+            int width = command.substring(firstSpace + 1).toInt();
+            Serial.print("Simulated Picker: Width=");
+            Serial.println(width);
+            // x=0, y=300 is the hardcoded Front workspace center
+            executePick("sim_" + String(millis()), 0, 300, width, "ripe", 1.0, true);
+        }
     }
     else if (command.startsWith("PICK")) {
         // PICK X Y Z CLASS - Pick from coordinates
@@ -440,19 +466,6 @@ void processTextCommand(String command) {
         // Convert to pick command
         String type = (class_id == 1) ? "ripe" : "unripe";
         executePick("pick_" + String(millis()), (int)x, (int)y, (int)z, type, 1.0);
-    }
-    else if (command.startsWith("PICK_FB")) {
-        // PICK_FB <width_mm>
-        int firstSpace = command.indexOf(' ');
-        if (firstSpace == -1) firstSpace = command.indexOf(',');
-        
-        if (firstSpace != -1) {
-            int width = command.substring(firstSpace + 1).toInt();
-            Serial.print("Simulated Picker: Width=");
-            Serial.println(width);
-            // x=0, y=300 is the hardcoded Front workspace center
-            executePick("sim_" + String(millis()), 0, 300, width, "ripe", 1.0);
-        }
     }
     else if (command.startsWith("HOME")) {
         Serial.println("HOME command received");
@@ -573,8 +586,10 @@ void processTextCommand(String command) {
     }
 }
 
-void executePick(String id, int x, int y, int z, String type, float confidence) {
-    if (currentState != IDLE && currentState != MOVING) {
+void executePick(String id, int x, int y, int z, String type, float confidence, bool isSimulation) {
+    if (id.startsWith("sim_")) isSimulation = true;
+    
+    if (currentState != IDLE && currentState != MOVING && !isSimulation) {
         Serial.println("Cannot start pick - system busy");
         commClient.sendPickResult(id.c_str(), "FAILED", "busy", 0);
         return;
@@ -612,7 +627,7 @@ void executePick(String id, int x, int y, int z, String type, float confidence) 
     }
     
     // Start motion planner
-    if (motionPlanner.startPick(x, y, z, confidence, normalizedType)) {
+    if (motionPlanner.startPick(x, y, z, confidence, normalizedType, isSimulation)) {
         currentState = PICKING;
         Serial.println("Pick sequence started");
     } else {

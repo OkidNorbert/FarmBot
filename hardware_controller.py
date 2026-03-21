@@ -462,8 +462,8 @@ class HardwareController:
         status = {
             'tof_orientation': 'downward' if angles['wrist_pitch'] < 90 else 'upside_down_flipped',
             'wrist_roll_pos': 'left' if angles['wrist_roll'] < 90 else ('right' if angles['wrist_roll'] > 90 else 'center'),
-            'elbow_pos': 'front' if angles['elbow'] > 90 else 'back_reversed',
-            'shoulder_pos': 'front' if angles['shoulder'] < 90 else 'back_reversed',
+            'elbow_pos': 'front' if angles['elbow'] >= 90 else 'back_reversed',
+            'shoulder_pos': 'front' if angles['shoulder'] <= 90 else 'back_reversed',
             'claw_state': 'closed' if abs(angles['claw'] - self.servo_limits['claw']['min']) < 5 else 'open_or_active'
         }
         
@@ -757,6 +757,14 @@ class HardwareController:
                 self.tof_initialized = data['tof_status']
                 if not self.tof_initialized:
                     self.last_distance_reading = None
+            
+            # Pick result
+            if 'status' in data and 'id' in data:
+                pick_id = data['id']
+                status = data['status']
+                result = data.get('result', 'none')
+                duration = data.get('duration_ms', 0)
+                self.handle_pick_result(pick_id, status, result, duration)
                 
         except Exception as e:
             if hasattr(self, 'logger'):

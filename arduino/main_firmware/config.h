@@ -36,8 +36,8 @@
 // clamps any commands below 10° as well.  You can still adjust these values
 // during calibration if your hardware behaves differently.
 #define LIMIT_CLAW_MIN      30   // do not drive claw below this angle (fully open)
-#define LIMIT_CLAW_MAX      115  // do not drive claw above this angle (fully closed)
-#define CLAW_CLOSED_POSITION 115  // Actual position for fully closed claw
+#define LIMIT_CLAW_MAX      115  // Absolute physical limit
+#define CLAW_CLOSED_POSITION 115  // Limit per user advice
 
 // Wrist Pitch (SG90) - Previously Pitch
 #define LIMIT_WRIST_PITCH_MIN  20
@@ -114,4 +114,3 @@
 #define BLE_CHAR_UUID       "19B10001-E8F2-537E-4F6C-D104768A1214"
 
 #endif // CONFIG_H
-
