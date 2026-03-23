@@ -561,6 +561,7 @@ def pi_status():
         system_state['camera_connected'] = hw_status['camera_connected']
         system_state['arduino_connected'] = hw_status['arduino_connected']
         system_state['auto_mode'] = hw_status.get('auto_mode', False)
+        system_state['auto_state'] = hw_status.get('auto_state', 'IDLE')
         system_state['connection_type'] = hw_status.get('connection_type', 'none')
         system_state['classifier_loaded'] = hw_status.get('classifier_loaded', False)
         system_state['tof_distance'] = hw_status.get('tof_distance')
@@ -3544,32 +3545,56 @@ def api_camera_feed():
                         cv2.putText(frame, timestamp, (10, 30), 
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
                     
+                    # --- AI HARVESTING OVERLAYS ---
+                    auto_state = getattr(hw_controller, 'auto_state', 'IDLE')
+                    auto_mode = getattr(hw_controller, 'auto_mode', False)
+                    h, w = frame.shape[:2]
+                    
+                    # 1. State Display
+                    if auto_state == 'DETECTING': status_color = (0, 255, 0)
+                    elif auto_state == 'HARVESTING': status_color = (0, 165, 255)
+                    elif 'TARGET' in auto_state: status_color = (255, 255, 0)
+                    else: status_color = (200, 200, 200)
+                    
+                    cv2.putText(frame, f"MODE: {'AUTO' if auto_mode else 'MANUAL'} | STATE: {auto_state}", (10, 60), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+                    
+                    # 2. Pickup Zone & Calibration Crosshair
+                    zone = getattr(hw_controller, 'pickup_zone', None)
+                    if zone:
+                        zx1, zy1 = int(zone['x_min'] * w), int(zone['y_min'] * h)
+                        zx2, zy2 = int(zone['x_max'] * w), int(zone['y_max'] * h)
+                        cv2.rectangle(frame, (zx1, zy1), (zx2, zy2), (255, 0, 0), 2)
+                        
+                        # Crosshair
+                        cx_ref, cy_ref = int(0.5 * w), int(0.625 * h)
+                        length = 15
+                        cv2.line(frame, (cx_ref - length, cy_ref), (cx_ref + length, cy_ref), (255, 255, 255), 1)
+                        cv2.line(frame, (cx_ref, cy_ref - length), (cx_ref, cy_ref + length), (255, 255, 255), 1)
+                        cv2.putText(frame, "ALIGN ARM", (cx_ref + 5, cy_ref - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
+                    # 3. Target Lock info
+                    candidate = getattr(hw_controller, 'target_candidate', None)
+                    if candidate and auto_mode and auto_state in ['TARGET_CANDIDATE', 'TARGET_LOCKED']:
+                        cx, cy = candidate.get('center', (0,0))
+                        cv2.circle(frame, (int(cx), int(cy)), 12, (0, 0, 255), 2)
+                        cv2.putText(frame, "LOCKED" if auto_state == 'TARGET_LOCKED' else "VALIDATING", 
+                                   (int(cx)+15, int(cy)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
                     # Only detect tomatoes every 5th frame to reduce CPU usage
                     if frame_count % 5 == 0:
                         last_detection_result = detect_tomatoes_with_boxes(frame)
                     
                     tomato_detected, tomato_count, tomato_boxes = last_detection_result
                     
-                    # Draw bounding boxes
-                    for i, (x, y, w, h) in enumerate(tomato_boxes):
-                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                        cv2.putText(frame, f"Tomato {i+1}", (x, y-10), 
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                    
-                    # Add detection status (only update text every 5 frames)
-                    if frame_count % 5 == 0:
-                        if tomato_detected:
-                            cv2.putText(frame, f"TOMATOES DETECTED: {tomato_count}", (10, 60), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                        else:
-                            cv2.putText(frame, "NO TOMATOES DETECTED", (10, 60), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                    # Draw bounding boxes (Legacy)
+                    for i, (x, y, boxes_w, boxes_h) in enumerate(tomato_boxes):
+                        cv2.rectangle(frame, (x, y), (x + boxes_w, y + boxes_h), (0, 255, 0), 1)
                            
                     # Encode with lower quality for calibration page (faster)
-                    # Use higher quality JPEG compression for smaller file size
                     ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
                     if not ret:
-                        continue  # Skip this frame if encoding failed
+                        continue
                     
                     frame_bytes = buffer.tobytes()
                     
@@ -3609,27 +3634,51 @@ def gen_frames():
                 cv2.putText(frame, timestamp, (10, 30), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             
+            # --- AI HARVESTING OVERLAYS ---
+            auto_state = getattr(hw_controller, 'auto_state', 'IDLE')
+            auto_mode = getattr(hw_controller, 'auto_mode', False)
+            h, w = frame.shape[:2]
+            
+            # 1. State Display
+            if auto_state == 'DETECTING': status_color = (0, 255, 0)
+            elif auto_state == 'HARVESTING': status_color = (0, 165, 255)
+            elif 'TARGET' in auto_state: status_color = (255, 255, 0)
+            else: status_color = (200, 200, 200)
+            
+            cv2.putText(frame, f"MODE: {'AUTO' if auto_mode else 'MANUAL'} | STATE: {auto_state}", (10, 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+            
+            # 2. Pickup Zone & Calibration Crosshair
+            zone = getattr(hw_controller, 'pickup_zone', None)
+            if zone:
+                zx1, zy1 = int(zone['x_min'] * w), int(zone['y_min'] * h)
+                zx2, zy2 = int(zone['x_max'] * w), int(zone['y_max'] * h)
+                cv2.rectangle(frame, (zx1, zy1), (zx2, zy2), (255, 0, 0), 2)
+                
+                # Crosshair
+                cx_ref, cy_ref = int(0.5 * w), int(0.625 * h)
+                length = 15
+                cv2.line(frame, (cx_ref - length, cy_ref), (cx_ref + length, cy_ref), (255, 255, 255), 1)
+                cv2.line(frame, (cx_ref, cy_ref - length), (cx_ref, cy_ref + length), (255, 255, 255), 1)
+                cv2.putText(frame, "ALIGN ARM", (cx_ref + 5, cy_ref - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
+            # 3. Target Lock info
+            candidate = getattr(hw_controller, 'target_candidate', None)
+            if candidate and auto_mode and auto_state in ['TARGET_CANDIDATE', 'TARGET_LOCKED']:
+                cx, cy = candidate.get('center', (0,0))
+                cv2.circle(frame, (int(cx), int(cy)), 12, (0, 0, 255), 2)
+                cv2.putText(frame, "LOCKED" if auto_state == 'TARGET_LOCKED' else "VALIDATING", 
+                           (int(cx)+15, int(cy)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
             # Only detect tomatoes every 5th frame to reduce CPU usage
-            # This significantly improves performance while maintaining reasonable detection
             if frame_count % 5 == 0:
                 last_detection_result = detect_tomatoes_with_boxes(frame)
             
             tomato_detected, tomato_count, tomato_boxes = last_detection_result
             
-            # Draw bounding boxes
-            for i, (x, y, w, h) in enumerate(tomato_boxes):
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                cv2.putText(frame, f"Tomato {i+1}", (x, y-10), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            
-            # Add detection status (only update text every 5 frames)
-            if frame_count % 5 == 0:
-                if tomato_detected:
-                    cv2.putText(frame, f"TOMATOES DETECTED: {tomato_count}", (10, 60), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                else:
-                    cv2.putText(frame, "NO TOMATOES DETECTED", (10, 60), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            # Draw bounding boxes (Legacy)
+            for i, (x, y, boxes_w, boxes_h) in enumerate(tomato_boxes):
+                cv2.rectangle(frame, (x, y), (x + boxes_w, y + boxes_h), (0, 255, 0), 1)
             
             # Encode frame with optimized quality
             ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
@@ -3704,25 +3753,51 @@ def gen_frames():
             cv2.putText(frame, timestamp, (10, 30), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
+        # --- AI HARVESTING OVERLAYS (Fallback Mode) ---
+        auto_state = getattr(hw_controller, 'auto_state', 'IDLE') if hw_controller else 'IDLE'
+        auto_mode = getattr(hw_controller, 'auto_mode', False) if hw_controller else False
+        h, w = frame.shape[:2]
+        
+        # 1. State Display
+        if auto_state == 'DETECTING': status_color = (0, 255, 0)
+        elif auto_state == 'HARVESTING': status_color = (0, 165, 255)
+        elif 'TARGET' in auto_state: status_color = (255, 255, 0)
+        else: status_color = (200, 200, 200)
+        
+        cv2.putText(frame, f"MODE: {'AUTO' if auto_mode else 'MANUAL'} | STATE: {auto_state}", (10, 60), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+        
+        # 2. Pickup Zone & Calibration Crosshair
+        zone = getattr(hw_controller, 'pickup_zone', None) if hw_controller else None
+        if zone:
+            zx1, zy1 = int(zone['x_min'] * w), int(zone['y_min'] * h)
+            zx2, zy2 = int(zone['x_max'] * w), int(zone['y_max'] * h)
+            cv2.rectangle(frame, (zx1, zy1), (zx2, zy2), (255, 0, 0), 2)
+            
+            # Crosshair
+            cx_ref, cy_ref = int(0.5 * w), int(0.625 * h)
+            length = 15
+            cv2.line(frame, (cx_ref - length, cy_ref), (cx_ref + length, cy_ref), (255, 255, 255), 1)
+            cv2.line(frame, (cx_ref, cy_ref - length), (cx_ref, cy_ref + length), (255, 255, 255), 1)
+            cv2.putText(frame, "ALIGN ARM", (cx_ref + 5, cy_ref - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
+        # 3. Target Lock info
+        candidate = getattr(hw_controller, 'target_candidate', None) if hw_controller else None
+        if candidate and auto_mode and auto_state in ['TARGET_CANDIDATE', 'TARGET_LOCKED']:
+            cx, cy = candidate.get('center', (0,0))
+            cv2.circle(frame, (int(cx), int(cy)), 12, (0, 0, 255), 2)
+            cv2.putText(frame, "LOCKED" if auto_state == 'TARGET_LOCKED' else "VALIDATING", 
+                       (int(cx)+15, int(cy)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
         # Only detect tomatoes every 5th frame to reduce CPU usage
         if frame_count % 5 == 0:
             last_detection_result = detect_tomatoes_with_boxes(frame)
         
         tomato_detected, tomato_count, tomato_boxes = last_detection_result
         
-        for i, (x, y, w, h) in enumerate(tomato_boxes):
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(frame, f"Tomato {i+1}", (x, y-10), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        
-        # Update text only every 5 frames
-        if frame_count % 5 == 0:
-            if tomato_detected:
-                cv2.putText(frame, f"TOMATOES DETECTED: {tomato_count}", (10, 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-            else:
-                cv2.putText(frame, "NO TOMATOES DETECTED", (10, 60), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        # Draw bounding boxes (Legacy)
+        for i, (x, y, boxes_w, boxes_h) in enumerate(tomato_boxes):
+            cv2.rectangle(frame, (x, y), (x + boxes_w, y + boxes_h), (0, 255, 0), 1)
         
         # Encode frame with optimized quality
         ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 75])

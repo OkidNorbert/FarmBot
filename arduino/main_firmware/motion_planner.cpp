@@ -170,24 +170,50 @@ void MotionPlanner::update() {
             break;
 
         case PICK_MOVE_TRANSIT:
-            if (moveToPose(_transitPose, _targetClawAngle)) {
-                _currentState = PICK_MOVE_BACK_APPROACH;
-                _stateStartTime = millis();
-            }
+            // Move through transit position but KEEP the picking pitch (usually 30°)
+            // to ensure the gripper orientation doesn't tilt the object yet.
+            if (_servoMgr->isMoving()) return;
+            _servoMgr->setTargets(_transitPose.waist, _transitPose.shoulder, _transitPose.elbow, 
+                                 _transitPose.wrist_roll, _frontPickPose.wrist_pitch, _targetClawAngle);
+                                 
+            _currentState = PICK_MOVE_BACK_APPROACH;
+            _stateStartTime = millis();
             break;
 
         case PICK_MOVE_BACK_APPROACH:
-            if (moveToPose(_backApproachPose, _targetClawAngle)) {
-                _currentState = PICK_MOVE_PLACE_DOWN;
-                _stateStartTime = millis();
-            }
+            // Ensure TRANSIT motion is finished
+            if (_servoMgr->isMoving()) return;
+            
+            // Move to back approach position still KEEPING the picking pitch (30°).
+            _servoMgr->setTargets(_backApproachPose.waist, _backApproachPose.shoulder, _backApproachPose.elbow, 
+                                 _backApproachPose.wrist_roll, _frontPickPose.wrist_pitch, _targetClawAngle);
+            _currentState = PICK_MOVE_PLACE_DOWN;
+            _stateStartTime = millis();
             break;
 
         case PICK_MOVE_PLACE_DOWN:
-            if (moveToPose(_backPlacePose, _targetClawAngle)) {
-                _currentState = PICK_RELEASE;
-                _stateStartTime = millis();
-            }
+            // Ensure BACK_APPROACH motion is finished
+            if (_servoMgr->isMoving()) return;
+            
+            // Reach the final floor position, still MAINTAINING the picking pitch (30°).
+            _servoMgr->setTargets(_backPlacePose.waist, _backPlacePose.shoulder, _backPlacePose.elbow, 
+                                 _backPlacePose.wrist_roll, _frontPickPose.wrist_pitch, _targetClawAngle);
+                                 
+            _currentState = PICK_ADJUST_PITCH;
+            _stateStartTime = millis();
+            break;
+
+        case PICK_ADJUST_PITCH:
+            // Ensure arm has settled at the final floor position
+            if (_servoMgr->isMoving()) return;
+            
+            // Settlement delay for careful handling
+            if (millis() - _stateStartTime < 400) return; 
+            
+            // Now finally perform the pitch adjustment to the release angle (e.g., 160°)
+            _servoMgr->setTarget(4, _backPlacePose.wrist_pitch);
+            _currentState = PICK_RELEASE;
+            _stateStartTime = millis();
             break;
 
         case PICK_RELEASE:

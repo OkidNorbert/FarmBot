@@ -165,6 +165,20 @@ ai-tomato-sorter/
 - **Hardware coordination** system
 - **Production automation** ready
 
+### **5. AI-Triggered Harvesting Architecture**
+The system uses a robust state machine to manage the tomato-picking workflow:
+
+```mermaid
+graph TD
+    IDLE -- Auto Start --> DETECTING
+    DETECTING -- Target in ROI --> TARGET_CANDIDATE
+    TARGET_CANDIDATE -- Stable 3 Frames --> TARGET_LOCKED
+    TARGET_LOCKED -- Trigger Routine --> HARVESTING
+    HARVESTING -- Pick Complete --> COOLDOWN
+    COOLDOWN -- Timer Finished --> DETECTING
+    TARGET_CANDIDATE -- Target Lost --> DETECTING
+```
+
 ## 🔧 **Configuration**
 
 ### **Environment Variables (`.env`):**

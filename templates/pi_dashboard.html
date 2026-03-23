@@ -131,6 +131,11 @@
                                     <span>Detections:</span>
                                     <span id="detection-count" class="badge bg-info ms-2">0</span>
                                 </div>
+                                <div class="d-flex align-items-center mb-2">
+                                    <i class="fas fa-project-diagram me-2"></i>
+                                    <span>AI State:</span>
+                                    <span id="auto-state" class="badge bg-secondary ms-2">IDLE</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -452,6 +457,22 @@
                 if (status.auto_mode !== undefined && autoToggle.checked !== status.auto_mode) {
                     autoToggle.checked = status.auto_mode;
                     updateUIForAutoMode(status.auto_mode);
+                }
+
+                // Update Auto State display
+                const autoStateBadge = document.getElementById('auto-state');
+                if (autoStateBadge && status.auto_state) {
+                    autoStateBadge.textContent = status.auto_state;
+                    
+                    // Color code based on state
+                    autoStateBadge.className = 'badge ms-2 ' + (
+                        status.auto_state === 'IDLE' ? 'bg-secondary' :
+                        status.auto_state === 'DETECTING' ? 'bg-success' :
+                        status.auto_state === 'HARVESTING' ? 'bg-warning text-dark' :
+                        status.auto_state === 'TARGET_LOCKED' ? 'bg-primary' :
+                        status.auto_state === 'COOLDOWN' ? 'bg-info' :
+                        status.auto_state === 'ERROR' ? 'bg-danger' : 'bg-info'
+                    );
                 }
 
             } catch (error) {

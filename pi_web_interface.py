@@ -90,6 +90,7 @@ def pi_status():
     system_state['camera_connected'] = hw_status['camera_connected']
     system_state['arduino_connected'] = hw_status['arduino_connected']
     system_state['auto_mode'] = hw_status['auto_mode']
+    system_state['auto_state'] = hw_status.get('auto_state', 'IDLE')
     
     return jsonify(system_state)
 
@@ -141,7 +142,54 @@ def camera_feed():
             # Add timestamp
             cv2.putText(frame, f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", (10, 30), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                       
+            
+            # Draw AI / Auto variables
+            auto_mode = getattr(hw_controller, 'auto_mode', False)
+            auto_state = getattr(hw_controller, 'auto_state', 'IDLE')
+            
+            # Status display
+            if auto_state == 'DETECTING':
+                status_color = (0, 255, 0)
+            elif auto_state == 'HARVESTING':
+                status_color = (0, 165, 255)
+            elif 'TARGET' in auto_state:
+                status_color = (255, 255, 0)
+            else:
+                status_color = (200, 200, 200)
+                
+            cv2.putText(frame, f"MODE: {'AUTO' if auto_mode else 'MANUAL'} | STATE: {auto_state}", (10, 60), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+            
+            # Draw Pickup Zone
+            h, w = frame.shape[:2]
+            zone = getattr(hw_controller, 'pickup_zone', None)
+            if zone:
+                zx1, zy1 = int(zone['x_min'] * w), int(zone['y_min'] * h)
+                zx2, zy2 = int(zone['x_max'] * w), int(zone['y_max'] * h)
+                cv2.rectangle(frame, (zx1, zy1), (zx2, zy2), (255, 0, 0), 2)
+                cv2.putText(frame, "Pickup Zone", (zx1, zy1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+                
+                # --- CALIBRATION CROSSHAIR ---
+                # This shows the physical point the arm targets when it picks from front.
+                # Center of the ROI horizontally, and a calibrated Y offset.
+                cx_ref = int(0.5 * w)
+                cy_ref = int(0.625 * h)
+                
+                # Draw Crosshair
+                length = 20
+                cv2.line(frame, (cx_ref - length, cy_ref), (cx_ref + length, cy_ref), (255, 255, 255), 2)
+                cv2.line(frame, (cx_ref, cy_ref - length), (cx_ref, cy_ref + length), (255, 255, 255), 2)
+                cv2.circle(frame, (cx_ref, cy_ref), 5, (255, 255, 255), -1)
+                cv2.putText(frame, "ALIGN ARM HERE", (cx_ref + 10, cy_ref - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                
+            # Draw logic info
+            candidate = getattr(hw_controller, 'target_candidate', None)
+            if candidate and auto_mode and auto_state in ['TARGET_CANDIDATE', 'TARGET_LOCKED']:
+                cx, cy = candidate.get('center', (0,0))
+                cv2.circle(frame, (int(cx), int(cy)), 10, (0, 0, 255), -1)
+                cv2.putText(frame, "Target Locked" if auto_state == 'TARGET_LOCKED' else f"Validating ({getattr(hw_controller, 'candidate_frames', 0)} frames)", 
+                           (int(cx)+15, int(cy)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            
             # Encode
             ret, buffer = cv2.imencode('.jpg', frame)
             frame = buffer.tobytes()

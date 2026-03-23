@@ -336,19 +336,30 @@ class HardwareController:
         self.pick_timeout = 10.0  # seconds to wait for pick completion
         self.max_pick_retries = 2
 
-        # Alignment-based auto-pick settings
-        # How close to image center (fraction of image width/height) triggers a pick
-        self.alignment_threshold_x = 0.20   # ±20% of image width
-        self.alignment_threshold_y = 0.25   # ±25% of image height
-        self.alignment_min_tof_mm  = 30     # Ignore ToF readings below this (noise)
-        self.alignment_max_tof_mm  = 400    # Ignore readings above this (too far away)
-        self.alignment_cooldown    = 5.0    # Seconds between successive auto-picks
-        self._last_auto_pick_time  = 0.0    # Timestamp of last pick
+        # Fixed Pickup Zone State Machine parameters
+        self.auto_state = 'IDLE' # IDLE, DETECTING, TARGET_CANDIDATE, TARGET_LOCKED, HARVESTING, COOLDOWN, ERROR
+        self.target_candidate = None
+        self.candidate_frames = 0
+        self.candidate_required_frames = 3
+        self.cooldown_end_time = 0
+        self.cooldown_duration_s = 5.0
         
-        # Dwell-time state for auto-pick
-        self.alignment_start_time  = 0.0    # When the current target first aligned
-        self.dwell_time_threshold  = 1.0    # Seconds target must be aligned to trigger
+        # Pickup Zone Config (relative bounds mapping to the hardware reachable area)
+        self.pickup_zone = {
+            'x_min': 0.35, 'x_max': 0.65, # Must be centered horizontally
+            'y_min': 0.40, 'y_max': 0.85  # Must be in reachable lower central region
+        }
         
+        # Size mapping
+        self.pixel_to_mm_ratio = 0.5
+        
+        # Obsolete visual servoing params (kept for backward compatibility logic if used)
+        self.alignment_threshold_x = 0.20
+        self.alignment_threshold_y = 0.25
+        self.alignment_min_tof_mm  = 30
+        self.alignment_max_tof_mm  = 400
+        self.alignment_cooldown    = 5.0
+        self._last_auto_pick_time  = 0.0
         # Auto-searching & Nudging logic
         self.consecutive_no_detections = 0
         self.search_direction = 1 # 1 = up/forward, -1 = down/back
@@ -481,148 +492,152 @@ class HardwareController:
         return body['is_facing_front']
 
     def process_auto_cycle(self):
-        """Auto-pick cycle: fires PICK when a ready tomato is aligned with the arm center.
-        
-        Strategy:
-          1. Capture a frame and run YOLO detection.
-          2. Find the best (highest confidence) *ready* tomato.
-          3. Check alignment: the tomato's centre must be within
-             alignment_threshold_x/y of the camera image centre.
-          4. Confirm the ToF sensor reads a plausible distance.
-          5. Send a PICK command with the live ToF depth.
-        
-        No coordinate-transform / homography is required because the base is
-        fixed and the arm points straight forward.
-        """
-        # Enforce cooldown between picks
+        """Auto-pick cycle: Use Fixed Pickup Zone with State Machine."""
         now = time.time()
-        if now - self._last_auto_pick_time < self.alignment_cooldown:
+        
+        # --- IDLE & EXT STATE HANDLING ---
+        if not self.auto_mode:
+            self.auto_state = 'IDLE'
+            return
+            
+        if self.auto_state == 'IDLE':
+            self.auto_state = 'DETECTING'
+            self.logger.info("[AUTO_PICK] Auto-harvest enabled, entering DETECTING state")
+            
+        if self.auto_state == 'COOLDOWN':
+            if now >= self.cooldown_end_time:
+                self.logger.info("[AUTO_PICK] Cooldown finished. Returning to DETECTING state.")
+                self.auto_state = 'DETECTING'
+            else:
+                return
+                
+        if self.auto_state == 'HARVESTING':
+            # Ignore detections while busy
+            return
+            
+        # Error state recovery
+        if self.auto_state == 'ERROR':
+            if now >= getattr(self, 'error_recovery_time', 0):
+                self.logger.info("[AUTO_PICK] Error timeout finished, returning to DETECTING.")
+                self.auto_state = 'DETECTING'
             return
 
         frame = self.get_frame()
         if frame is None:
             return
 
-        # 1. Detect tomatoes
+        # --- DETECTION ---
         detections = self.detect_tomatoes(frame)
-
-        # 2. Filter to ready/ripe only
-        ready = [d for d in detections if d['class'].lower() in ['ready', 'ripe']]
-        if not ready:
-            if now - self.last_adjustment_time > 1.5:  # Don't move too frantically
-                self.consecutive_no_detections += 1
-                if self.consecutive_no_detections > 3:  
-                    self.logger.info("[AUTO] 🔍 Workspace obstructed? Moving to CLEAR-SCAN pose.")
-                    # Move arm out of camera view to scan properly
-                    self.move_to_pose('waist', 90, 'shoulder', 130, 'elbow', 30) # Tucked pose
-                    self.consecutive_no_detections = 0 # Reset to watch for results
-                    self.last_adjustment_time = now
-            return
-
-        # Found a target! Reset search counter
-        self.consecutive_no_detections = 0
-
-        # 3. Pick best candidate (highest confidence)
-        ready.sort(key=lambda d: d['confidence'], reverse=True)
-        target = ready[0]
-        center_x, center_y = target['center']
-
-        # Image dimensions for normalisation
         h, w = frame.shape[:2]
-        img_cx, img_cy = w / 2.0, h / 2.0
 
-        # Normalised offset from image centre  (-1 = far left/top, +1 = far right/bottom)
-        offset_x = (center_x - img_cx) / img_cx
-        offset_y = (center_y - img_cy) / img_cy
-
-        # 4. Alignment / Targeting Strategy
-        if self.camera_on_arm:
-            # Traditional Visual Servoing: Nudge arm until tomato is centered
-            aligned_x = abs(offset_x) <= self.alignment_threshold_x
-            aligned_y = abs(offset_y) <= self.alignment_threshold_y
+        # Valid targets in zone
+        valid_targets = []
+        for d in detections:
+            cx, cy = d['center']
             
-            if not (aligned_x and aligned_y):
-                if now - self.last_adjustment_time > 1.0:
-                    self.logger.info(f"[AUTO] 🎯 Target seen but NOT ALIGNED. Nudging arm...")
-                    current_shoulder = self.current_servo_angles['shoulder']
-                    nudge = -5 if offset_y < 0 else 5
-                    self.move_to_angle('shoulder', current_shoulder + nudge)
-                    self.last_adjustment_time = now
-                self.alignment_start_time = 0 
-                return
-        else:
-            # Fixed Camera Strategy: Translate Pixel (X,Y) to physical (X,Y)
-            # We map pixel offsets directly to target coordinates for the PICK command
-            # Using our STL dimensions (l1=113, l2=162)
-            target_x_mm = offset_x * 100 # Approx +/- 100mm horizontal span
-            target_y_mm = (1.0 - (center_y / h)) * 150 + 100 # Map bottom-to-top of image to 100-250mm reach
-            
-            # In fixed mode, we are "aligned" if the target is within the workspace
-            aligned_x = aligned_y = True 
-            self.logger.debug(f"[AUTO] Fixed Mapping: Target at mm X:{target_x_mm:.1f} Y:{target_y_mm:.1f}")
+            # Rejection 1: Conf and Ripeness
+            class_label = str(d.get('class', 'unknown')).lower()
+            if class_label not in ['ready', 'ripe']:
+                self.logger.info(f"[AUTO_PICK] Rejected: unripe ({class_label})")
+                continue
+            if d['confidence'] < 0.6:
+                self.logger.info(f"[AUTO_PICK] Rejected: low confidence ({d['confidence']:.2f})")
+                continue
+                
+            # Rejection 2: Outside Pickup Zone
+            rel_x = cx / float(w)
+            rel_y = cy / float(h)
+            if not (self.pickup_zone['x_min'] <= rel_x <= self.pickup_zone['x_max'] and \
+                    self.pickup_zone['y_min'] <= rel_y <= self.pickup_zone['y_max']):
+                self.logger.info(f"[AUTO_PICK] Rejected: outside pickup zone (x:{rel_x:.2f}, y:{rel_y:.2f})")
+                continue
+                
+            valid_targets.append(d)
 
-        # 4b. Body validation check (Arm Knowledge)
-        body = self.get_arm_body_status()
-        if not body['can_detect_ground']:
-            self.logger.warning("[AUTO] ⚠️ ToF Sensor is UPSIDE DOWN (Wrist Pitch > 90). Cannot detect ground for pick.")
-            return
-            
-        if not body['is_facing_front']:
-            self.logger.warning("[AUTO] ⚠️ Arm is in BACK/REVERSED position. Alignment unreliable.")
+        # Decide candidate
+        if not valid_targets:
+            if self.auto_state in ['TARGET_CANDIDATE', 'TARGET_LOCKED']:
+                self.logger.info("[AUTO_PICK] Target lost. Returning to DETECTING.")
+            self.auto_state = 'DETECTING'
+            self.target_candidate = None
+            self.candidate_frames = 0
             return
 
-        # Initialize alignment timer if just started
-        if self.alignment_start_time == 0:
-            self.alignment_start_time = time.time()
-            self.logger.info(f"[AUTO] Target ALIGNED. Waiting {self.dwell_time_threshold}s dwell time...")
-            return
-            
-        # Check dwell time
-        elapsed = time.time() - self.alignment_start_time
-        if elapsed < self.dwell_time_threshold:
-            self.logger.debug(f"[AUTO] Aligning... {elapsed:.1f}s / {self.dwell_time_threshold}s")
-            return
-
-        self.logger.info(
-            f"[AUTO] ✅ Target DWELL COMPLETE ({elapsed:.1f}s) — preparing to pick."
-        )
-
-        # 5. Read ToF depth
-        tof_distance = self.get_distance_sensor()
-        if tof_distance is None or not (
-            self.alignment_min_tof_mm <= tof_distance <= self.alignment_max_tof_mm
-        ):
-            self.logger.warning(
-                f"[AUTO] ToF reading invalid or out of range ({tof_distance}mm) — skipping pick."
-            )
-            return
-
-        self.logger.info(f"[AUTO] ToF depth = {tof_distance}mm — sending PICK command.")
-
-        # 6. Fire pick command
-        # Format: PICK <x_mm> <y_mm> <z_mm> <class_id>
-        # x_mm and y_mm are now calculated from the image mapping
-        target_x = 0 if self.camera_on_arm else target_x_mm
-        target_y = 0 if self.camera_on_arm else target_y_mm
+        # Sort valid targets by closeness to center x implicitly
+        valid_targets.sort(key=lambda d: abs(d['center'][0] - float(w)/2))
+        best_target = valid_targets[0]
         
-        pick_command = f"PICK {int(target_x)} {int(target_y)} {int(tof_distance)} 1"
-        pick_id = f"auto_{int(time.time() * 1000)}"
+        # --- STABILITY LOGIC ---
+        if self.auto_state == 'DETECTING':
+            self.auto_state = 'TARGET_CANDIDATE'
+            self.target_candidate = best_target
+            self.candidate_frames = 1
+            self.logger.info(f"[AUTO_PICK] Candidate detected: ripe=true conf={best_target['confidence']:.2f} center={best_target['center']}")
+            return
+            
+        if self.auto_state in ['TARGET_CANDIDATE', 'TARGET_LOCKED']:
+            # Check if this best target matches the existing candidate (roughly)
+            prev_cx, prev_cy = self.target_candidate['center']
+            cx, cy = best_target['center']
+            
+            if abs(cx - prev_cx) < 50 and abs(cy - prev_cy) < 50:
+                self.candidate_frames += 1
+                self.target_candidate = best_target # update with latest
+                
+                if self.candidate_frames == self.candidate_required_frames and self.auto_state != 'TARGET_LOCKED':
+                    self.logger.info(f"[AUTO_PICK] Candidate stable for {self.candidate_required_frames} frames")
+                    self.logger.info(f"[AUTO_PICK] Target locked")
+                    self.auto_state = 'TARGET_LOCKED'
+            else:
+                self.logger.info("[AUTO_PICK] Candidate moved too much, resetting lock")
+                self.target_candidate = best_target
+                self.candidate_frames = 1
+                self.auto_state = 'TARGET_CANDIDATE'
+                return
 
-        if self.arduino_connected:
-            self.send_command(pick_command)
-            self.pending_picks[pick_id] = {
-                'target': target,
-                'tof_mm': tof_distance,
-                'timestamp': now,
-            }
-            self._last_auto_pick_time = now
-            # Wait for sequence
-            time.sleep(self.pick_timeout)
-            self.pending_picks.pop(pick_id, None)
-            self.logger.info(f"[AUTO] Pick sequence complete.")
-        else:
-            self.logger.info(f"[AUTO] Simulation pick: {pick_command}")
-            self._last_auto_pick_time = now
+        if self.auto_state == 'TARGET_LOCKED':
+            # Compute width and height parameters
+            # Use bbox width, convert by pixel_to_mm
+            try:
+                x_min, y_min, x_max, y_max = self.target_candidate['bbox']
+                bbox_width_px = x_max - x_min
+            except ValueError: 
+                # fallback for different bbox format
+                bbox_width_px = self.target_candidate.get('w', 60) # fallback
+                
+            est_width_mm = max(10, min(80, int(bbox_width_px * self.pixel_to_mm_ratio)))
+            self.logger.info(f"[AUTO_PICK] Estimated width={est_width_mm} mm")
+            
+            # Height estimate:
+            # We use ToF simply to verify if something is there later or we just pass default height.
+            # "Option C: small number of height bands / preset offsets based on apparent size"
+            base_height = 50
+            if bbox_width_px > 150: 
+                base_height = 80 # Big tomato, approach higher
+            elif bbox_width_px < 80:
+                base_height = 40 # Small tomato
+                
+            self.logger.info(f"[AUTO_PICK] Estimated height offset={base_height} mm")
+            
+            # ToF reading (Optional: to verify object presence locally)
+            tof_dist = self.get_distance_sensor()
+            if tof_dist is not None:
+                self.logger.info(f"[AUTO_PICK] ToF sensor reading: {tof_dist} mm")
+            
+            self.logger.info(f"[AUTO_PICK] Triggering harvesting routine")
+            success = self.execute_simulated_pick(est_width_mm, base_height)
+            
+            if success:
+                self.logger.info(f"[AUTO_PICK] Harvesting busy, ignoring detections")
+                self.auto_state = 'HARVESTING'
+            else:
+                self.logger.error(f"[AUTO_PICK] ERROR: Failed to trigger harvest")
+                self.auto_state = 'ERROR'
+                self.error_recovery_time = time.time() + 5.0
+            
+            # Reset properties for next cycle
+            self.target_candidate = None
+            self.candidate_frames = 0
 
     def execute_simulated_pick(self, width_mm=35, object_height_mm=50):
         """Perform a robust front-to-back pick and place sequence.
@@ -648,13 +663,25 @@ class HardwareController:
         
         # Send both width and height to firmware
         pick_command = f"PICK_FB {width_mm} {object_height_mm}"
+        pick_id = f"auto_{int(time.time() * 1000)}"
         
         if self.arduino_connected:
             self.send_command(pick_command)
+            self.pending_picks[str(pick_id)] = float(time.time())
             return True
         else:
-            self.logger.warning("[PICK] Cannot start: Arduino not connected")
-            return False
+            self.logger.warning("[PICK] Cannot start: Arduino not connected (Simulation Mode)")
+            # In simulation we mock success and delay fake processing
+            self.pending_picks[str(pick_id)] = float(time.time())
+            
+            # For pure testing simulation, we spawn a thread to resolve it after 3s
+            def simulated_resolve():
+                time.sleep(3.0)
+                if hasattr(self, 'handle_pick_result'):
+                    self.handle_pick_result(pick_id, 'SUCCESS', 'ripe', 3000)
+                    
+            threading.Thread(target=simulated_resolve, daemon=True).start()
+            return True
 
 
     def detect_tomatoes(self, frame):
@@ -1531,18 +1558,28 @@ class HardwareController:
         if pick_id in self.pending_picks:
             pick_info = self.pending_picks[pick_id]
             if status == 'SUCCESS':
-                self.logger.info(f"[AUTO] ✅ Pick {pick_id} succeeded: {result} ({duration_ms}ms)")
+                self.logger.info(f"[AUTO_PICK] Harvest complete (Pick {pick_id} succeeded in {duration_ms}ms)")
+                self.logger.info(f"[AUTO_PICK] Cooldown started")
                 self.pending_picks.pop(pick_id, None)
+                if getattr(self, 'auto_state', None) == 'HARVESTING':
+                    self.auto_state = 'COOLDOWN'
+                    self.cooldown_end_time = time.time() + self.cooldown_duration_s
             elif status == 'FAILED' or status == 'ABORTED':
                 pick_info['retries'] = int(pick_info.get('retries', 0)) + 1
                 if pick_info['retries'] < self.max_pick_retries:
-                    self.logger.warning(f"[AUTO] ⚠️  Pick {pick_id} failed ({status}), will retry (attempt {pick_info['retries']}/{self.max_pick_retries})")
-                    # Could retry here if needed
+                    self.logger.warning(f"[AUTO_PICK] ⚠️ Pick {pick_id} failed ({status}), will retry (attempt {pick_info['retries']}/{self.max_pick_retries})")
                 else:
-                    self.logger.error(f"[AUTO] ❌ Pick {pick_id} failed after {pick_info['retries']} attempts: {status}")
+                    self.logger.error(f"[AUTO_PICK] ❌ Pick {pick_id} failed after {pick_info['retries']} attempts: {status}")
                     self.pending_picks.pop(pick_id, None)
+                    if getattr(self, 'auto_state', None) == 'HARVESTING':
+                        self.auto_state = 'ERROR'
+                        self.error_recovery_time = time.time() + 5.0
             else:
-                self.logger.warning(f"[AUTO] Unknown pick status: {status} for {pick_id}")
+                self.logger.warning(f"[AUTO_PICK] Unknown pick status: {status} for {pick_id}")
+                self.pending_picks.pop(pick_id, None)
+                if getattr(self, 'auto_state', None) == 'HARVESTING':
+                    self.auto_state = 'ERROR'
+                    self.error_recovery_time = time.time() + 5.0
         else:
             self.logger.debug(f"[AUTO] Received pick result for unknown pick_id: {pick_id}")
     
@@ -1898,6 +1935,7 @@ class HardwareController:
             'camera_index': self.camera_index if self.camera_connected else None,
             'available_cameras': len(self.available_cameras) if hasattr(self, 'available_cameras') else 0,
             'auto_mode': self.auto_mode,
+            'auto_state': getattr(self, 'auto_state', 'IDLE'),
             'movement_active': self.movement_active,
             'connection_type': connection_type,
             'is_facing_front': is_facing_front,

@@ -33,6 +33,7 @@ enum PickState {
     PICK_MOVE_TRANSIT,      // Move to safe rotation height
     PICK_MOVE_BACK_APPROACH, // Above back bin
     PICK_MOVE_PLACE_DOWN,   // At back floor
+    PICK_ADJUST_PITCH,      // Final pitch adjustment [NEW]
     PICK_RELEASE,           // Open to release
     PICK_WAIT_RELEASE,
     PICK_RETREAT,           // Up away from back
