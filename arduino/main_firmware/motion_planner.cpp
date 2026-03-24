@@ -34,28 +34,25 @@ MotionPlanner::MotionPlanner(ServoManager* servoMgr, ToFManager* tofMgr) {
     _targetShoulderAngle = 90;
     _targetElbowAngle = 90;
     _targetClawAngle = CLAW_CLOSED_POSITION;
+    _openClawAngle = LIMIT_CLAW_MIN;
     _pickId = "";
 }
 
-int MotionPlanner::widthToGripAngle(int width_mm) {
-    // Reverted to hardware limit 110 as per user configuration
-    // We target a width 6mm smaller than actual to "push" for a tighter grip
-    // using the 3mm clearance on each side of the gripper to absorb excessive grip.
-    int target_width = width_mm - 6; 
-    
-    // Mapping: 10mm gap is at 110 deg (max), 70mm gap is at 35 deg (open)
-    int angle = map(target_width, 10, 70, 110, 35);
-    
-    return constrain(angle, LIMIT_CLAW_MIN, LIMIT_CLAW_MAX);
+void MotionPlanner::updateClawTargets(int width_mm) {
+    // FINAL USER PREFERENCE (2026-03-24):
+    // Use exactamente 88 degrees for the firm grip and 30 for open.
+    _targetClawAngle = 88; // User-selected "firm grip" angle
+    _openClawAngle = 30;   // Measured "full open" angle
+
+    Serial.print("[MP] Final Grip: In=");
+    Serial.print(width_mm);
+    Serial.print("mm -> Grip:");
+    Serial.print(_targetClawAngle);
+    Serial.print(" Open:");
+    Serial.println(_openClawAngle);
 }
 
-int MotionPlanner::widthToOpenAngle(int width_mm) {
-    int grip = widthToGripAngle(width_mm);
-    // Ensure we open at least 25 degrees or to the hard limit
-    int open = grip - 30;
-    if (open < LIMIT_CLAW_MIN) open = LIMIT_CLAW_MIN;
-    return open;
-}
+// Legacy functions removed - use updateClawTargets() instead
 
 bool MotionPlanner::startPick(int x, int y, int z, float confidence, String class_type, bool isSimulation, int object_height_mm) {
     // Allow starting if idle, complete, or aborted
@@ -97,21 +94,18 @@ void MotionPlanner::update() {
     
     switch (_currentState) {
         case PICK_CALCULATE_POSE:
-            _targetClawAngle = widthToGripAngle(_targetZ);
+            // Calculate both grip and open angles once
+            updateClawTargets(_targetZ);
             
             // Adjust pick and place depths based on object height.
-            // Reference height is 50mm. Each 10mm taller = 2° higher shoulder.
-            // Taller object: shoulder goes UP (higher angle = arm draws back = gripper higher).
             {
-                int heightDelta = (_objectHeightMm - 50) / 5; // degrees per 5mm height
-                heightDelta = constrain(heightDelta, -10, 15);  // cap at safe range
+                int heightDelta = (_objectHeightMm - 50) / 5;
+                heightDelta = constrain(heightDelta, -10, 15);
                 
-                // Apply to pick pose: taller -> higher pick shoulder
                 _frontPickPose.shoulder      = constrain(22 + heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
                 _frontApproachPose.shoulder  = constrain(35 + heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
                 _frontLiftPose.shoulder      = constrain(45 + heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
                 
-                // Apply to place pose: taller -> higher place shoulder (less lean forward)
                 _backPlacePose.shoulder      = constrain(158 - heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
                 _backApproachPose.shoulder   = constrain(145 - heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
             }
@@ -119,6 +113,7 @@ void MotionPlanner::update() {
             if (_isSimulation) {
                 _currentState = PICK_START_FB;
             } else {
+                // manual mode or auto mode with custom coords
                 calculateTargetPose();
                 _currentState = PICK_START_FB;
             }
@@ -127,20 +122,21 @@ void MotionPlanner::update() {
 
         case PICK_START_FB:
             // 1. Initial configuration: Open claw based on input width
-            _servoMgr->setTarget(5, widthToOpenAngle(_targetZ));
+            _servoMgr->setTarget(5, _openClawAngle);
             _currentState = PICK_MOVE_APPROACH;
             _stateStartTime = millis();
             break;
 
         case PICK_MOVE_APPROACH:
-            if (moveToPose(_frontApproachPose, widthToOpenAngle(_targetZ))) {
+            // Ensure claw has started opening before moving shoulder/elbow
+            if (moveToPose(_frontApproachPose, _openClawAngle)) {
                 _currentState = PICK_MOVE_DOWN;
                 _stateStartTime = millis();
             }
             break;
 
         case PICK_MOVE_DOWN:
-            if (moveToPose(_frontPickPose, widthToOpenAngle(_targetZ))) {
+            if (moveToPose(_frontPickPose, _openClawAngle)) {
                 _currentState = PICK_CLOSE_CLAW;
                 _stateStartTime = millis();
             }
@@ -150,13 +146,15 @@ void MotionPlanner::update() {
             // Ensure arm has reached the object before closing
             if (_servoMgr->isMoving()) return; 
             
+            Serial.print("[MP] Trigerring GRIP -> ");
+            Serial.println(_targetClawAngle);
             _servoMgr->setTarget(5, _targetClawAngle);
             _stateStartTime = millis();
             _currentState = PICK_WAIT_CLOSE_CLAW;
             break;
 
         case PICK_WAIT_CLOSE_CLAW:
-            if (millis() - _stateStartTime > 800) { // Increased wait for firm grasp
+            if (millis() - _stateStartTime > 1000) { // Slightly longer wait for firm grip
                 _currentState = PICK_LIFT;
                 _stateStartTime = millis();
             }
@@ -170,9 +168,8 @@ void MotionPlanner::update() {
             break;
 
         case PICK_MOVE_TRANSIT:
-            // Move through transit position but KEEP the picking pitch (usually 30°)
-            // to ensure the gripper orientation doesn't tilt the object yet.
             if (_servoMgr->isMoving()) return;
+            // Maintain pick pitch/claw while moving to back
             _servoMgr->setTargets(_transitPose.waist, _transitPose.shoulder, _transitPose.elbow, 
                                  _transitPose.wrist_roll, _frontPickPose.wrist_pitch, _targetClawAngle);
                                  
@@ -181,10 +178,7 @@ void MotionPlanner::update() {
             break;
 
         case PICK_MOVE_BACK_APPROACH:
-            // Ensure TRANSIT motion is finished
             if (_servoMgr->isMoving()) return;
-            
-            // Move to back approach position still KEEPING the picking pitch (30°).
             _servoMgr->setTargets(_backApproachPose.waist, _backApproachPose.shoulder, _backApproachPose.elbow, 
                                  _backApproachPose.wrist_roll, _frontPickPose.wrist_pitch, _targetClawAngle);
             _currentState = PICK_MOVE_PLACE_DOWN;
@@ -192,10 +186,7 @@ void MotionPlanner::update() {
             break;
 
         case PICK_MOVE_PLACE_DOWN:
-            // Ensure BACK_APPROACH motion is finished
             if (_servoMgr->isMoving()) return;
-            
-            // Reach the final floor position, still MAINTAINING the picking pitch (30°).
             _servoMgr->setTargets(_backPlacePose.waist, _backPlacePose.shoulder, _backPlacePose.elbow, 
                                  _backPlacePose.wrist_roll, _frontPickPose.wrist_pitch, _targetClawAngle);
                                  
@@ -204,36 +195,33 @@ void MotionPlanner::update() {
             break;
 
         case PICK_ADJUST_PITCH:
-            // Ensure arm has settled at the final floor position
             if (_servoMgr->isMoving()) return;
+            if (millis() - _stateStartTime < 600) return; // Wait for arm to settle
             
-            // Settlement delay for careful handling
-            if (millis() - _stateStartTime < 400) return; 
-            
-            // Now finally perform the pitch adjustment to the release angle (e.g., 160°)
             _servoMgr->setTarget(4, _backPlacePose.wrist_pitch);
             _currentState = PICK_RELEASE;
             _stateStartTime = millis();
             break;
 
         case PICK_RELEASE:
-            // CRITICAL: Ensure arm has reached the floor/bin before opening
             if (_servoMgr->isMoving()) return;
             
-            _servoMgr->setTarget(5, widthToOpenAngle(_targetZ));
+            Serial.print("[MP] Trigerring RELEASE -> ");
+            Serial.println(_openClawAngle);
+            _servoMgr->setTarget(5, _openClawAngle);
             _stateStartTime = millis();
             _currentState = PICK_WAIT_RELEASE;
             break;
 
         case PICK_WAIT_RELEASE:
-            if (millis() - _stateStartTime > 500) {
+            if (millis() - _stateStartTime > 800) { // Wait for claw to fully open
                 _currentState = PICK_RETREAT;
                 _stateStartTime = millis();
             }
             break;
 
         case PICK_RETREAT:
-            if (moveToPose(_backRetreatPose, widthToOpenAngle(_targetZ))) {
+            if (moveToPose(_backRetreatPose, _openClawAngle)) {
                 _currentState = PICK_GO_HOME;
                 _stateStartTime = millis();
             }
@@ -247,6 +235,14 @@ void MotionPlanner::update() {
 
         default:
             break;
+    }
+
+    // Logging for state changes (helper for the switch above)
+    static PickState lastLoggedState = PICK_IDLE;
+    if (_currentState != lastLoggedState) {
+        Serial.print("[MP] State: ");
+        Serial.println(_stateToName(_currentState));
+        lastLoggedState = _currentState;
     }
 }
 
@@ -330,18 +326,6 @@ void MotionPlanner::calculateTargetPose() {
         _targetElbowAngle = constrain(180 - elbow_deg, LIMIT_ELBOW_MIN, LIMIT_ELBOW_MAX);
     }
 
-    // Calculate dynamic claw angle based on target width (_targetZ)
-    // Map target size (typically 0-100mm) to claw range (LIMIT_CLAW_MIN to LIMIT_CLAW_MAX)
-    // Larger objects = Smaller Angle (More Open), Smaller objects = Larger Angle (More Closed)
-    // We assume 3.5cm (35mm) is the standard target.
-    // Full Open (30 deg) -> ~80mm width, Full Closed (115 deg) -> 0mm width
-    int objectWidth = _targetZ; 
-    if (objectWidth < 5) objectWidth = 35; // Fallback to 3.5cm if invalid
-    
-    // Simple linear mapping: 0mm -> 110deg, 80mm -> 30deg
-    float claw_mapped = map(objectWidth, 0, 80, LIMIT_CLAW_MAX, LIMIT_CLAW_MIN);
-    _targetClawAngle = constrain((int)claw_mapped, LIMIT_CLAW_MIN, LIMIT_CLAW_MAX);
-
     Serial.print("Target Calculated: Reach=");
     Serial.print(reach);
     Serial.print("mm -> Waist:");
@@ -350,7 +334,7 @@ void MotionPlanner::calculateTargetPose() {
     Serial.print(_targetShoulderAngle);
     Serial.print(" El:");
     Serial.print(_targetElbowAngle);
-    Serial.print(" Claw:");
+    Serial.print(" Claw(unchanged):");
     Serial.println(_targetClawAngle);
 }
 
@@ -385,5 +369,30 @@ int MotionPlanner::calculateApproachPose(int target_waist, int target_shoulder) 
     // Calculate a safe approach pose offset from target
     // For now, just return a slightly different shoulder angle
     return constrain(target_shoulder - 20, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
+}
+
+String MotionPlanner::_stateToName(PickState state) {
+    switch (state) {
+        case PICK_IDLE: return "IDLE";
+        case PICK_CALCULATE_POSE: return "CALC_POSE";
+        case PICK_START_FB: return "START_FB";
+        case PICK_MOVE_APPROACH: return "MOVE_APPROACH";
+        case PICK_MOVE_DOWN: return "MOVE_DOWN";
+        case PICK_CLOSE_CLAW: return "CLOSE_CLAW";
+        case PICK_WAIT_CLOSE_CLAW: return "WAIT_CLOSE";
+        case PICK_LIFT: return "LIFT";
+        case PICK_MOVE_TRANSIT: return "MOVE_TRANSIT";
+        case PICK_MOVE_BACK_APPROACH: return "MOVE_BACK_APP";
+        case PICK_MOVE_PLACE_DOWN: return "MOVE_PLACE_DOWN";
+        case PICK_ADJUST_PITCH: return "ADJUST_PITCH";
+        case PICK_RELEASE: return "RELEASE";
+        case PICK_WAIT_RELEASE: return "WAIT_RELEASE";
+        case PICK_RETREAT: return "RETREAT";
+        case PICK_GO_HOME: return "GO_HOME";
+        case PICK_COMPLETE: return "COMPLETE";
+        case PICK_ABORTED: return "ABORTED";
+        case PICK_ERROR: return "ERROR";
+        default: return "UNKNOWN";
+    }
 }
 

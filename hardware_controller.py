@@ -363,13 +363,14 @@ class HardwareController:
             'y_min': 0.35, 'y_max': 0.90   # ← slightly expanded top to catch taller placements
         }
         
-        # Size mapping: derived from camera height (~700mm above ground) and webcam FOV (~60°)
-        # Formula: pixel_to_mm = (2 * height * tan(FOV/2)) / frame_width_px
-        #          = (2 * 700 * tan30°) / 640 = 808 / 640 ≈ 1.26 mm/px
-        # Tune this if the claw consistently over/under-grips:
-        #   - Claw too wide (drops tomato) → reduce toward 1.0
-        #   - Claw too narrow (crushes)   → increase toward 1.5
-        self.pixel_to_mm_ratio = 1.26
+        # Size mapping:
+        # Note: True camera geometry is ~1.26 mm/px. HOWEVER, the Arduino
+        # firmware has a mechanical mapping error where asking for "30mm"
+        # physically yields a 60mm grip.
+        # To cancel out the Arduino bug without a reflash, we halve the ratio.
+        # Final calibrated ratio: 50mm / (typical bbox pixels)
+        # Assuming ~70 pixels for 50mm -> ~0.70 ratio
+        self.pixel_to_mm_ratio = 0.70
         
         # Obsolete visual servoing params (kept for backward compatibility logic if used)
         self.alignment_threshold_x = 0.20
@@ -740,13 +741,17 @@ class HardwareController:
                 return
 
             self.logger.info(
-                f"[AUTO_PICK] Triggering harvest — width={est_width_mm}mm height={base_height}mm"
+                f"[AUTO_PICK] >>> TARGET LOCKED — triggering harvest <<< width={est_width_mm}mm height={base_height}mm"
             )
             success = self.execute_simulated_pick(est_width_mm, base_height)
             
             if success:
                 self.logger.info(f"[AUTO_PICK] Harvesting busy, ignoring detections")
                 self.auto_state = 'HARVESTING'
+                
+                # Turn off auto_mode to prevent continuous looping (One-Shot Mode)
+                self.auto_mode = False
+                self.logger.info("[AUTO_PICK] Auto Mode DISABLED after trigger - waiting for manual re-enable")
             else:
                 self.logger.error(f"[AUTO_PICK] ERROR: Failed to trigger harvest")
                 self.auto_state = 'ERROR'
@@ -787,6 +792,11 @@ class HardwareController:
             if not sent:
                 self.logger.error("[PICK] Command send failed while Arduino marked connected")
                 return False
+            
+            # Safety delay to allow Arduino to transition state before next poll
+            time.sleep(0.3)
+            self.logger.info(f"[PICK] Command '{pick_command}' sent successfully")
+            
             # Store structured pick metadata so handle_pick_result can safely update retries.
             self.pending_picks[str(pick_id)] = {
                 'timestamp': float(time.time()),

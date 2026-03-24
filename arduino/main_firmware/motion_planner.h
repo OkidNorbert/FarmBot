@@ -89,6 +89,7 @@ private:
     int _targetElbowAngle;
     int _targetClawAngle;
     int _objectHeightMm; // Height of the object being picked (mm), default 50mm
+    int _openClawAngle;  // Dynamically calculated open angle for this pick
     
     // Approach parameters
     int _approachOffsetMm;
@@ -111,10 +112,12 @@ private:
     void calculateTargetPose();
     int widthToGripAngle(int width_mm);
     int widthToOpenAngle(int width_mm);
+    void updateClawTargets(int width_mm);
     bool moveToPose(int waist, int shoulder, int elbow, int wrist_roll, int wrist_pitch, int claw);
     bool waitForMotionComplete(unsigned long timeout_ms = 5000);
     int cartesianToBaseAngle(int x, int y);
     int calculateApproachPose(int target_waist, int target_shoulder);
+    String _stateToName(PickState state);
     
     // Timing
     unsigned long _stateStartTime;

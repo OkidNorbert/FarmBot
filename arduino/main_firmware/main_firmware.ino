@@ -189,6 +189,12 @@ void handleWebSocketMessage(String payload) {
     }
     
     if (isTextCommand) {
+        // Guard: Do not process new movement commands if already picking
+        if (motionPlanner.isPicking() && 
+            !payload.startsWith("STOP") && !payload.startsWith("ABORT")) {
+            Serial.println("[COMM] Ignored (Sequence Busy)");
+            return;
+        }
         // Directly process as text command (skip JSON parsing)
         processTextCommand(payload);
         return;
@@ -234,6 +240,12 @@ void handleWebSocketMessage(String payload) {
     }
     
     String cmd = data["cmd"].as<String>();
+    
+    // Guard: Do not process new JSON commands if already picking
+    if (motionPlanner.isPicking() && cmd != "stop" && cmd != "abort") {
+        Serial.println("[COMM] JSON Ignored (Sequence Busy)");
+        return;
+    }
     
     if (cmd == "pick") {
             // Automatic mode - ensure speed is set to auto mode speed
