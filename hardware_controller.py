@@ -413,7 +413,7 @@ class HardwareController:
                 
                 for model_path in possible_paths:
                     if model_path.exists():
-                        self.yolo_detector = load_yolo_model(str(model_path), confidence_threshold=0.5)
+                        self.yolo_detector = load_yolo_model(str(model_path), confidence_threshold=0.7)
                         if self.yolo_detector and self.yolo_detector.is_available():
                             self.logger.info(f"✅ YOLO Model Loaded: {model_path}")
                             self.logger.info("   Using YOLO for detection. ResNet will not be loaded.")
@@ -545,6 +545,9 @@ class HardwareController:
             self.auto_state = 'IDLE'
             return
 
+        # Periodic cleanup of stale pending picks
+        self.cleanup_old_picks(timeout_seconds=float(getattr(self, 'pick_timeout', 15.0)))
+
         # FIX (Cause 1): Camera must be connected internally before running detection.
         # get_frame() returns a black 640x480 placeholder (NOT None) when camera_connected=False,
         # so the existing 'if frame is None' check below never fires. We catch it here explicitly.
@@ -614,9 +617,18 @@ class HardwareController:
                 continue
             # Any non-negative label (ready/ripe/tomato/etc.) is accepted — log it for traceability
             self.logger.info(f"[AUTO_PICK]    CLASS PASS: '{class_label}' accepted as harvestable")
-            if conf < 0.5:
-                self.logger.info(f"[AUTO_PICK]    REJECT: confidence {conf:.2f} < 0.50 threshold")
+            if conf < 0.7:
+                self.logger.info(f"[AUTO_PICK]    REJECT: confidence {conf:.2f} < 0.70 threshold")
                 continue
+
+            # Reject detections that are too large (likely false positives or entire frame)
+            # A single tomato should not fill more than 50% of the frame width or height.
+            if w > 0 and h > 0:
+                bw = d.get('bbox', [0,0,0,0])[2] # width component
+                bh = d.get('bbox', [0,0,0,0])[3] # height component
+                if bw > w * 0.5 or bh > h * 0.5:
+                    self.logger.info(f"[AUTO_PICK]    REJECT: detection too large ({bw}x{bh} in {w}x{h} frame)")
+                    continue
 
             # Rejection 2: Outside Pickup Zone
             rel_x = cx / float(w)
@@ -750,8 +762,8 @@ class HardwareController:
                 self.auto_state = 'HARVESTING'
                 
                 # Turn off auto_mode to prevent continuous looping (One-Shot Mode)
-                self.auto_mode = False
-                self.logger.info("[AUTO_PICK] Auto Mode DISABLED after trigger - waiting for manual re-enable")
+                # self.auto_mode = False
+                # self.logger.info("[AUTO_PICK] Auto Mode DISABLED after trigger - waiting for manual re-enable")
             else:
                 self.logger.error(f"[AUTO_PICK] ERROR: Failed to trigger harvest")
                 self.auto_state = 'ERROR'
@@ -834,9 +846,10 @@ class HardwareController:
         # Try YOLO first if available
         if self.yolo_detector and self.yolo_detector.is_available():
             try:
-                detections = self.yolo_detector.detect(frame, conf=0.5)
-                if detections:
-                    self.logger.debug(f"[DETECT] YOLO detected {len(detections)} tomatoes")
+                detections = self.yolo_detector.detect(frame, conf=0.7)
+                if detections is not None:
+                    if detections:
+                        self.logger.debug(f"[DETECT] YOLO detected {len(detections)} tomatoes")
                     return detections
             except Exception as e:
                 self.logger.warning(f"YOLO detection error: {e}, falling back to ResNet")
@@ -1758,8 +1771,13 @@ class HardwareController:
                     self.logger.error(f"[AUTO_PICK] ❌ Pick {pick_id} failed after {pick_info['retries']} attempts: {status}")
                     self.pending_picks.pop(matched_pick_id, None)
                     if getattr(self, 'auto_state', None) == 'HARVESTING':
+                        # Reset for next detection cycle
                         self.auto_state = 'ERROR'
                         self.error_recovery_time = time.time() + 5.0
+                
+                # If we are stuck in HARVESTING but the pick is gone or handled, reset
+                if getattr(self, 'auto_state', None) == 'HARVESTING' and not self.pending_picks:
+                     self.auto_state = 'DETECTING'
             else:
                 self.logger.warning(f"[AUTO_PICK] Unknown pick status: {status} for {pick_id}")
                 self.pending_picks.pop(matched_pick_id, None)
@@ -1788,6 +1806,11 @@ class HardwareController:
             ts = float(self.pending_picks[pick_id].get('timestamp', current_time))
             self.logger.warning(f"[AUTO] Removing stale pick {pick_id} (age: {current_time - ts:.1f}s)")
             self.pending_picks.pop(pick_id, None)
+            
+            # If we were waiting (HARVESTING) and this was the last pick, reset state
+            if getattr(self, 'auto_state', None) == 'HARVESTING' and not self.pending_picks:
+                self.logger.info("[AUTO] HARVESTING state reset to DETECTING due to pick timeout")
+                self.auto_state = 'DETECTING'
     
     # Conveyor belt not available in current setup
     # def set_conveyor(self, speed):
