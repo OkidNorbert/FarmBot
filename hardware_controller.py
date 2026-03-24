@@ -72,6 +72,7 @@ class BLEClient:
         self.loop = None
         self.thread = None
         self.connected = False
+        self._ble_running = False  # Controls the _main_loop; set True in start(), False in disconnect()
         self.command_queue = asyncio.Queue()
         self.device_address = None
         self.on_connect_callback = on_connect_callback  # Callback when connection state changes
@@ -84,11 +85,20 @@ class BLEClient:
         self.loop.run_until_complete(self._main_loop())
     
     async def _main_loop(self):
-        """Main BLE connection loop"""
-        while True:
+        """Main BLE connection loop with exponential backoff to avoid log spam"""
+        retry_count = 0
+        while self._ble_running:
             if not self.connected:
                 await self._connect()
+                if not self.connected:
+                    # Exponential backoff: 5s, 10s, 20s, cap at 60s
+                    wait = min(5 * (2 ** min(retry_count, 3)), 60)
+                    retry_count += 1
+                    await asyncio.sleep(wait)
+                else:
+                    retry_count = 0  # reset on successful connect
             else:
+                retry_count = 0
                 await asyncio.sleep(1)
     
     async def _connect(self):
@@ -206,6 +216,7 @@ class BLEClient:
     def start(self, logger=None):
         """Start BLE client in background thread"""
         self.logger = logger or logging.getLogger("BLEClient")
+        self._ble_running = True
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
@@ -344,14 +355,21 @@ class HardwareController:
         self.cooldown_end_time = 0
         self.cooldown_duration_s = 5.0
         
-        # Pickup Zone Config (relative bounds mapping to the hardware reachable area)
+        # Pickup Zone Config (relative bounds — center of frame aligned to physical pickup point)
+        # x: covers centre 50% of frame width (0.25-0.75) so slight off-centre tomatoes aren't rejected
+        # y: lower 55% of frame height where reachable workspace sits
         self.pickup_zone = {
-            'x_min': 0.35, 'x_max': 0.65, # Must be centered horizontally
-            'y_min': 0.40, 'y_max': 0.85  # Must be in reachable lower central region
+            'x_min': 0.25, 'x_max': 0.75,  # ← widened from 0.35-0.65 (was only 30% wide)
+            'y_min': 0.35, 'y_max': 0.90   # ← slightly expanded top to catch taller placements
         }
         
-        # Size mapping
-        self.pixel_to_mm_ratio = 0.5
+        # Size mapping: derived from camera height (~700mm above ground) and webcam FOV (~60°)
+        # Formula: pixel_to_mm = (2 * height * tan(FOV/2)) / frame_width_px
+        #          = (2 * 700 * tan30°) / 640 = 808 / 640 ≈ 1.26 mm/px
+        # Tune this if the claw consistently over/under-grips:
+        #   - Claw too wide (drops tomato) → reduce toward 1.0
+        #   - Claw too narrow (crushes)   → increase toward 1.5
+        self.pixel_to_mm_ratio = 1.26
         
         # Obsolete visual servoing params (kept for backward compatibility logic if used)
         self.alignment_threshold_x = 0.20
@@ -444,7 +462,27 @@ class HardwareController:
     def _auto_loop(self):
         """Main Autonomous Loop"""
         self.logger.info("Auto Loop Started")
+        _last_health_log = 0
         while True:
+            now_loop = time.time()
+
+            # FIX (Cause 3): Periodic 30s health log — makes silent failures visible in server output
+            if now_loop - _last_health_log >= 30.0:
+                classifier_name = (
+                    'YOLO' if (self.yolo_detector and self.yolo_detector.is_available())
+                    else ('ResNet' if self.classifier else 'NONE')
+                )
+                cam_idx = getattr(self, 'camera_index', 'N/A')
+                cam_type = 'USB' if (isinstance(cam_idx, int) and cam_idx > 0) else ('built-in' if cam_idx == 0 else 'N/A')
+                self.logger.info(
+                    f"[AUTO_LOOP] Status: auto_mode={self.auto_mode} | "
+                    f"camera_connected={self.camera_connected} | camera_index={cam_idx}({cam_type}) | "
+                    f"arduino_connected={self.arduino_connected} | "
+                    f"auto_state={getattr(self, 'auto_state', 'N/A')} | "
+                    f"classifier={classifier_name}"
+                )
+                _last_health_log = now_loop
+
             if self.auto_mode:
                 try:
                     current_time = time.time()
@@ -452,8 +490,14 @@ class HardwareController:
                         self.process_auto_cycle()
                         self.last_detection_time = current_time
                 except Exception as e:
-                    self.logger.error(f"Auto Loop Error: {e}")
-            
+                    self.logger.error(f"Auto Loop Error: {e}", exc_info=True)
+            else:
+                # Camera resource management: when auto mode is OFF the camera is only needed
+                # by active browser feed clients. The _update_frame thread keeps running so the
+                # feed stays available, but we slow our own polling to avoid wasting CPU.
+                # The camera LED will remain on as long as a browser tab has /video_feed open.
+                time.sleep(0.9)  # long idle sleep when not in auto mode
+
             # Poll distance logic
             poll_interval = 0.5 if self.tof_initialized else 10.0 # Poll much slower if offline
             if self.arduino_connected and (time.time() - getattr(self, 'last_dist_poll', 0) > poll_interval):
@@ -499,22 +543,33 @@ class HardwareController:
         if not self.auto_mode:
             self.auto_state = 'IDLE'
             return
-            
+
+        # FIX (Cause 1): Camera must be connected internally before running detection.
+        # get_frame() returns a black 640x480 placeholder (NOT None) when camera_connected=False,
+        # so the existing 'if frame is None' check below never fires. We catch it here explicitly.
+        if not self.camera_connected:
+            self.logger.warning(
+                "[AUTO_PICK] BLOCKED: hw_controller.camera_connected=False — "
+                "detection cannot run. Browser feed may use a separate video route. "
+                "Check /pi/status to confirm camera state."
+            )
+            return
+
         if self.auto_state == 'IDLE':
             self.auto_state = 'DETECTING'
             self.logger.info("[AUTO_PICK] Auto-harvest enabled, entering DETECTING state")
-            
+
         if self.auto_state == 'COOLDOWN':
             if now >= self.cooldown_end_time:
                 self.logger.info("[AUTO_PICK] Cooldown finished. Returning to DETECTING state.")
                 self.auto_state = 'DETECTING'
             else:
                 return
-                
+
         if self.auto_state == 'HARVESTING':
             # Ignore detections while busy
             return
-            
+
         # Error state recovery
         if self.auto_state == 'ERROR':
             if now >= getattr(self, 'error_recovery_time', 0):
@@ -524,34 +579,61 @@ class HardwareController:
 
         frame = self.get_frame()
         if frame is None:
+            self.logger.warning("[AUTO_PICK] BLOCKED: get_frame() returned None unexpectedly")
             return
 
         # --- DETECTION ---
         detections = self.detect_tomatoes(frame)
         h, w = frame.shape[:2]
 
+        # FIX (Cause 4): Log raw count so we can tell 'nothing detected' from 'all filtered out'
+        self.logger.info(f"[AUTO_PICK] Frame {w}x{h} | Raw detections: {len(detections)}")
+
         # Valid targets in zone
         valid_targets = []
         for d in detections:
             cx, cy = d['center']
-            
-            # Rejection 1: Conf and Ripeness
             class_label = str(d.get('class', 'unknown')).lower()
-            if class_label not in ['ready', 'ripe']:
-                self.logger.info(f"[AUTO_PICK] Rejected: unripe ({class_label})")
+            conf = d.get('confidence', 0.0)
+
+            # FIX (Cause 4): Log each detection before any filter so we see exactly what was found
+            self.logger.info(
+                f"[AUTO_PICK] >> Evaluating: class={class_label} conf={conf:.2f} center=({cx},{cy})"
+            )
+
+            # Rejection 1: Class and Confidence
+            # Accept every label that means the tomato IS ready/ripe:
+            #   - ResNet model  → 'ready'
+            #   - YOLO 3-class  → 'ripe', 'ready'
+            #   - YOLO 1-class  → 'tomato' (any detected tomato counts)
+            # Reject only explicit negatives.
+            NEGATIVE_CLASSES = {'not_ready', 'unripe', 'spoilt', 'spoiled', 'bad', 'unknown'}
+            if class_label in NEGATIVE_CLASSES:
+                self.logger.info(f"[AUTO_PICK]    REJECT: class '{class_label}' is a negative class")
                 continue
-            if d['confidence'] < 0.6:
-                self.logger.info(f"[AUTO_PICK] Rejected: low confidence ({d['confidence']:.2f})")
+            # Any non-negative label (ready/ripe/tomato/etc.) is accepted — log it for traceability
+            self.logger.info(f"[AUTO_PICK]    CLASS PASS: '{class_label}' accepted as harvestable")
+            if conf < 0.5:
+                self.logger.info(f"[AUTO_PICK]    REJECT: confidence {conf:.2f} < 0.50 threshold")
                 continue
-                
+
             # Rejection 2: Outside Pickup Zone
             rel_x = cx / float(w)
             rel_y = cy / float(h)
-            if not (self.pickup_zone['x_min'] <= rel_x <= self.pickup_zone['x_max'] and \
-                    self.pickup_zone['y_min'] <= rel_y <= self.pickup_zone['y_max']):
-                self.logger.info(f"[AUTO_PICK] Rejected: outside pickup zone (x:{rel_x:.2f}, y:{rel_y:.2f})")
+            zone = self.pickup_zone
+            in_zone = (
+                zone['x_min'] <= rel_x <= zone['x_max'] and
+                zone['y_min'] <= rel_y <= zone['y_max']
+            )
+            self.logger.info(
+                f"[AUTO_PICK]    Zone check: rel=({rel_x:.2f},{rel_y:.2f}) "
+                f"bounds=x[{zone['x_min']:.2f}-{zone['x_max']:.2f}] "
+                f"y[{zone['y_min']:.2f}-{zone['y_max']:.2f}] PASS={in_zone}"
+            )
+            if not in_zone:
+                self.logger.info(f"[AUTO_PICK]    REJECT: outside pickup zone")
                 continue
-                
+
             valid_targets.append(d)
 
         # Decide candidate
@@ -582,11 +664,16 @@ class HardwareController:
             
             if abs(cx - prev_cx) < 50 and abs(cy - prev_cy) < 50:
                 self.candidate_frames += 1
-                self.target_candidate = best_target # update with latest
-                
+                self.target_candidate = best_target  # update with latest
+
+                # FIX (Cause 5): Log frame-count progress so we can see if lock is building or stuck
+                self.logger.info(
+                    f"[AUTO_PICK] Stability: {self.candidate_frames}/{self.candidate_required_frames} frames confirmed"
+                )
+
                 if self.candidate_frames == self.candidate_required_frames and self.auto_state != 'TARGET_LOCKED':
                     self.logger.info(f"[AUTO_PICK] Candidate stable for {self.candidate_required_frames} frames")
-                    self.logger.info(f"[AUTO_PICK] Target locked")
+                    self.logger.info(f"[AUTO_PICK] >>> TARGET LOCKED — ready to harvest <<<")
                     self.auto_state = 'TARGET_LOCKED'
             else:
                 self.logger.info("[AUTO_PICK] Candidate moved too much, resetting lock")
@@ -598,12 +685,25 @@ class HardwareController:
         if self.auto_state == 'TARGET_LOCKED':
             # Compute width and height parameters
             # Use bbox width, convert by pixel_to_mm
-            try:
-                x_min, y_min, x_max, y_max = self.target_candidate['bbox']
-                bbox_width_px = x_max - x_min
-            except ValueError: 
+            bbox = self.target_candidate.get('bbox')
+            bbox_width_px = 60  # fallback
+            if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+                # Common format across this repo is [x, y, w, h].
+                # Some detectors may instead emit [x_min, y_min, x_max, y_max].
+                x = float(bbox[0])
+                y = float(bbox[1])
+                c = float(bbox[2])
+                d = float(bbox[3])
+                # Heuristic: if [x + w, y + h] stays inside the frame, treat c/d as width/height.
+                if (x + c) <= float(w) and (y + d) <= float(h):
+                    bbox_width_px = c
+                else:
+                    # Interpret as x_max (c) instead of width (w).
+                    bbox_width_px = c - x
+            else:
                 # fallback for different bbox format
-                bbox_width_px = self.target_candidate.get('w', 60) # fallback
+                bbox_width_px = self.target_candidate.get('w', 60)
+            bbox_width_px = max(0.0, bbox_width_px)
                 
             est_width_mm = max(10, min(80, int(bbox_width_px * self.pixel_to_mm_ratio)))
             self.logger.info(f"[AUTO_PICK] Estimated width={est_width_mm} mm")
@@ -623,8 +723,25 @@ class HardwareController:
             tof_dist = self.get_distance_sensor()
             if tof_dist is not None:
                 self.logger.info(f"[AUTO_PICK] ToF sensor reading: {tof_dist} mm")
-            
-            self.logger.info(f"[AUTO_PICK] Triggering harvesting routine")
+
+            # FIX (Cause 2): Block harvest if Arduino is not physically connected.
+            # execute_simulated_pick() returns True even with no Arduino (simulation path),
+            # which sets state=HARVESTING while the arm never actually moves.
+            if not self.arduino_connected:
+                self.logger.error(
+                    "[AUTO_PICK] BLOCKED: arduino_connected=False — "
+                    "PICK_FB command cannot be sent. The arm WILL NOT physically move. "
+                    "Connect Arduino via USB serial or BLE before using Auto Mode."
+                )
+                self.auto_state = 'ERROR'
+                self.error_recovery_time = now + 5.0
+                self.target_candidate = None
+                self.candidate_frames = 0
+                return
+
+            self.logger.info(
+                f"[AUTO_PICK] Triggering harvest — width={est_width_mm}mm height={base_height}mm"
+            )
             success = self.execute_simulated_pick(est_width_mm, base_height)
             
             if success:
@@ -666,13 +783,31 @@ class HardwareController:
         pick_id = f"auto_{int(time.time() * 1000)}"
         
         if self.arduino_connected:
-            self.send_command(pick_command)
-            self.pending_picks[str(pick_id)] = float(time.time())
+            sent = self.send_command(pick_command)
+            if not sent:
+                self.logger.error("[PICK] Command send failed while Arduino marked connected")
+                return False
+            # Store structured pick metadata so handle_pick_result can safely update retries.
+            self.pending_picks[str(pick_id)] = {
+                'timestamp': float(time.time()),
+                'retries': 0,
+                'width_mm': width_mm,
+                'object_height_mm': object_height_mm,
+            }
             return True
         else:
-            self.logger.warning("[PICK] Cannot start: Arduino not connected (Simulation Mode)")
+            # FIX (Cause 2 secondary): Upgrade to ERROR so it's unmissable in logs
+            self.logger.error(
+                "[PICK] *** NO ARDUINO *** PICK_FB command NOT sent — arm WILL NOT move. "
+                "Running in simulation mode only."
+            )
             # In simulation we mock success and delay fake processing
-            self.pending_picks[str(pick_id)] = float(time.time())
+            self.pending_picks[str(pick_id)] = {
+                'timestamp': float(time.time()),
+                'retries': 0,
+                'width_mm': width_mm,
+                'object_height_mm': object_height_mm,
+            }
             
             # For pure testing simulation, we spawn a thread to resolve it after 3s
             def simulated_resolve():
@@ -764,13 +899,23 @@ class HardwareController:
                 return []
         else:
             # Dummy detection for simulation
-            # Randomly find a tomato every few seconds
-            if time.time() % 5 < 1: 
+            # Produce a "ripe" tomato inside the pickup zone.
+            h_frame, w_frame = frame.shape[:2]
+            if time.time() % 5 < 1 and h_frame > 0 and w_frame > 0:
+                cx = int(0.5 * w_frame)
+                cy = int(0.625 * h_frame)  # matches the dashboard crosshair guidance
+                bw = int(0.18 * w_frame)
+                bh = int(0.25 * h_frame)
+                x = max(0, cx - bw // 2)
+                y = max(0, cy - bh // 2)
+                bw = max(1, min(bw, w_frame - x))
+                bh = max(1, min(bh, h_frame - y))
                 return [{
                     'class': 'ripe',
                     'confidence': 0.95,
-                    'bbox': [100, 100, 200, 200],
-                    'center': [150, 150]
+                    # Use [x, y, w, h] bbox format (repo convention).
+                    'bbox': [x, y, bw, bh],
+                    'center': [cx, cy]
                 }]
             return []
 
@@ -866,12 +1011,20 @@ class HardwareController:
 
     def start_auto_mode(self):
         self.auto_mode = True
-        self.logger.info("Auto Mode ENABLED")
+        # Reset state machine so it always starts clean from DETECTING
+        self.auto_state = 'DETECTING'
+        self.target_candidate = None
+        self.candidate_frames = 0
+        self.logger.info("Auto Mode ENABLED — state reset to DETECTING")
         return True
 
     def stop_auto_mode(self):
         self.auto_mode = False
-        self.logger.info("Auto Mode DISABLED")
+        # Fully reset state machine so next enable starts clean
+        self.auto_state = 'IDLE'
+        self.target_candidate = None
+        self.candidate_frames = 0
+        self.logger.info("Auto Mode DISABLED — state reset to IDLE")
         return True
         
     def setup_logging(self):
@@ -999,25 +1152,30 @@ class HardwareController:
         
         # Try to connect to the first available camera (or use configured/saved index)
         if self.available_cameras:
-            # Priority: saved preference > configured index > first USB camera > first available
+            # Priority: 1. saved preference  2. USB camera (index>0)  3. built-in (index 0) last resort
             target_index = None
-            
-            # 1. Try saved preference
+
+            # 1. Saved preference always wins
             if saved_camera_index is not None and saved_camera_index in self.available_cameras:
                 target_index = saved_camera_index
                 self.logger.info(f"Using saved camera preference: index {target_index}")
-            # 2. Try configured index
-            elif self.camera_index in self.available_cameras:
-                target_index = self.camera_index
-            # 3. Prefer USB cameras (index > 0) over built-in (index 0)
             else:
-                usb_cameras = [idx for idx in self.available_cameras if idx > 0]
+                # 2. Prefer USB cameras (index > 0) — skip built-in even if camera_index=0 configured
+                usb_cameras = [idx for idx in sorted(self.available_cameras) if idx > 0]
                 if usb_cameras:
                     target_index = usb_cameras[0]
-                    self.logger.info(f"Auto-selecting USB camera: index {target_index}")
+                    self.logger.info(
+                        f"Auto-selecting USB camera (index {target_index}). "
+                        f"Built-in camera ignored — USB is preferred for this project."
+                    )
                 else:
+                    # 3. No USB found — only built-in available
                     target_index = self.available_cameras[0]
-            
+                    self.logger.warning(
+                        f"⚠ Only built-in camera (index {target_index}) found. "
+                        "Connect the USB external camera for best results with auto mode."
+                    )
+
             if self._connect_camera(target_index):
                 self.logger.info(f"Camera connected at index {target_index} ({len(self.available_cameras)} cameras available)")
             else:
@@ -1555,12 +1713,30 @@ class HardwareController:
             result: Result details (e.g., 'ripe', 'unripe', 'none')
             duration_ms: Pick operation duration in milliseconds
         """
-        if pick_id in self.pending_picks:
-            pick_info = self.pending_picks[pick_id]
+        matched_pick_id = pick_id
+        if matched_pick_id not in self.pending_picks and self.pending_picks:
+            # Firmware-side PICK_FB generates ids like "sim_<millis>" while controller may
+            # have generated a local key (e.g. "auto_<timestamp>"). If there is exactly one
+            # active pending pick and we are harvesting, treat this result as that pick.
+            if getattr(self, 'auto_state', None) == 'HARVESTING' and len(self.pending_picks) == 1:
+                matched_pick_id = next(iter(self.pending_picks.keys()))
+                self.logger.info(
+                    f"[AUTO_PICK] Remapped result id {pick_id} -> pending id {matched_pick_id}"
+                )
+        
+        if matched_pick_id in self.pending_picks:
+            pick_info = self.pending_picks[matched_pick_id]
+            # Backward compatibility for older in-memory values stored as float timestamps.
+            if not isinstance(pick_info, dict):
+                pick_info = {
+                    'timestamp': float(pick_info),
+                    'retries': 0,
+                }
+                self.pending_picks[matched_pick_id] = pick_info
             if status == 'SUCCESS':
                 self.logger.info(f"[AUTO_PICK] Harvest complete (Pick {pick_id} succeeded in {duration_ms}ms)")
                 self.logger.info(f"[AUTO_PICK] Cooldown started")
-                self.pending_picks.pop(pick_id, None)
+                self.pending_picks.pop(matched_pick_id, None)
                 if getattr(self, 'auto_state', None) == 'HARVESTING':
                     self.auto_state = 'COOLDOWN'
                     self.cooldown_end_time = time.time() + self.cooldown_duration_s
@@ -1570,13 +1746,13 @@ class HardwareController:
                     self.logger.warning(f"[AUTO_PICK] ⚠️ Pick {pick_id} failed ({status}), will retry (attempt {pick_info['retries']}/{self.max_pick_retries})")
                 else:
                     self.logger.error(f"[AUTO_PICK] ❌ Pick {pick_id} failed after {pick_info['retries']} attempts: {status}")
-                    self.pending_picks.pop(pick_id, None)
+                    self.pending_picks.pop(matched_pick_id, None)
                     if getattr(self, 'auto_state', None) == 'HARVESTING':
                         self.auto_state = 'ERROR'
                         self.error_recovery_time = time.time() + 5.0
             else:
                 self.logger.warning(f"[AUTO_PICK] Unknown pick status: {status} for {pick_id}")
-                self.pending_picks.pop(pick_id, None)
+                self.pending_picks.pop(matched_pick_id, None)
                 if getattr(self, 'auto_state', None) == 'HARVESTING':
                     self.auto_state = 'ERROR'
                     self.error_recovery_time = time.time() + 5.0

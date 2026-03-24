@@ -364,20 +364,37 @@ function captureAndClassify() {
     const ctx = canvas.getContext('2d');
     const img = document.getElementById('camera-feed');
     
-    // Check if image is loaded
-    if (!img.naturalWidth || !img.naturalHeight) {
-        updateStatus('Classification failed: Camera feed not ready', 'warning');
+    // Check if camera feed is active
+    if (!img || !img.src || img.src === window.location.href) {
+        updateStatus('Classification failed: Start the camera feed first', 'warning');
+        return;
+    }
+
+    // MJPEG streams may report naturalWidth=0 — fall back to a fixed capture size
+    const w = img.naturalWidth || img.width || 640;
+    const h = img.naturalHeight || img.height || 480;
+
+    canvas.width = w;
+    canvas.height = h;
+    
+    // Drawing an MJPEG stream to canvas may be blocked by the browser's
+    // tainted-canvas security policy. Wrap in try/catch.
+    try {
+        ctx.drawImage(img, 0, 0, w, h);
+    } catch (e) {
+        // Cross-origin / MJPEG tainted canvas — use server-side capture instead
+        console.warn('Canvas draw blocked (tainted canvas from MJPEG stream), using server-side capture:', e);
+        updateStatus('Classifying via server-side capture...', 'info');
+        classifyViaServer();
         return;
     }
     
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    
-    ctx.drawImage(img, 0, 0);
-    
     canvas.toBlob(function(blob) {
-        if (!blob) {
-            updateStatus('Classification failed: Could not create image data', 'danger');
+        if (!blob || blob.size < 100) {
+            // Blob is null or empty — likely a tainted canvas or blank frame
+            console.warn('Blob is empty/null, falling back to server-side capture. Blob:', blob);
+            updateStatus('Classifying via server-side capture...', 'info');
+            classifyViaServer();
             return;
         }
 
@@ -390,7 +407,11 @@ function captureAndClassify() {
         })
         .then(response => {
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                return response.json().then(errData => {
+                    throw new Error(errData.error || `Server error (${response.status})`);
+                }).catch(() => {
+                    throw new Error(`HTTP error ${response.status}`);
+                });
             }
             return response.json();
         })
@@ -404,45 +425,27 @@ function captureAndClassify() {
             if (data.success) {
                 // Handle the response format - it can have 'results' array or direct 'prediction'
                 if (data.results && Array.isArray(data.results) && data.results.length > 0) {
-                    // Multiple tomatoes detected - show the first one or aggregate
                     const firstResult = data.results[0];
                     if (!firstResult || typeof firstResult !== 'object') {
-                        console.error('Invalid firstResult:', firstResult);
                         throw new Error('Invalid result data');
                     }
-                    
-                    // Ensure prediction exists and is a string
                     let prediction = 'Unknown';
                     if (firstResult.prediction !== undefined && firstResult.prediction !== null) {
                         prediction = String(firstResult.prediction);
                     }
-                    
                     const confidence = (firstResult.confidence !== undefined && firstResult.confidence !== null) 
-                        ? parseFloat(firstResult.confidence) 
-                        : 0.0;
-                    
+                        ? parseFloat(firstResult.confidence) : 0.0;
                     displayClassification({
                         prediction: prediction,
                         confidence: confidence,
                         tomato_count: data.tomato_count || data.results.length,
                         multi_tomato: data.multi_tomato || false
                     });
-                    if (data.tomato_count > 1) {
-                        updateStatus(`Classification complete - ${data.tomato_count} tomatoes detected`, 'success');
-                    } else {
-                        updateStatus('Classification complete', 'success');
-                    }
+                    updateStatus(data.tomato_count > 1 ? `${data.tomato_count} tomatoes detected` : 'Classification complete', 'success');
                 } else if (data.prediction !== undefined && data.prediction !== null) {
-                    // Direct prediction format (backward compatibility)
-                    // Ensure prediction is a valid string
-                    const prediction = String(data.prediction);
-                    const confidence = (data.confidence !== undefined && data.confidence !== null) 
-                        ? parseFloat(data.confidence) 
-                        : 0.0;
-                    
                     displayClassification({
-                        prediction: prediction,
-                        confidence: confidence,
+                        prediction: String(data.prediction),
+                        confidence: data.confidence ? parseFloat(data.confidence) : 0.0,
                         tomato_count: data.tomato_count || 1
                     });
                     updateStatus('Classification complete', 'success');
@@ -452,40 +455,49 @@ function captureAndClassify() {
             } else {
                 const errorMsg = (data.error && typeof data.error === 'string') ? data.error : 'Unknown error';
                 updateStatus('Classification failed: ' + errorMsg, 'danger');
-                // Show error in classification results too
                 const resultsDiv = document.getElementById('classification-results');
                 const detailsDiv = document.getElementById('prediction-details');
                 if (resultsDiv && detailsDiv) {
-                    detailsDiv.innerHTML = `
-                        <div class="alert alert-danger mb-0">
-                            <strong>Error:</strong> ${errorMsg}<br>
-                            <small>Make sure tomatoes are clearly visible in the frame and the model is loaded.</small>
-                        </div>
-                    `;
+                    detailsDiv.innerHTML = `<div class="alert alert-danger mb-0"><strong>Error:</strong> ${errorMsg}<br><small>Make sure tomatoes are visible and the model is loaded.</small></div>`;
                     resultsDiv.style.display = 'block';
                 }
             }
         })
         .catch(error => {
             console.error('Classification error:', error);
-            console.error('Error stack:', error.stack);
             const errorMsg = (error && error.message) ? error.message : String(error);
             updateStatus('Classification error: ' + errorMsg, 'danger');
-            // Show error in classification results
             const resultsDiv = document.getElementById('classification-results');
             const detailsDiv = document.getElementById('prediction-details');
             if (resultsDiv && detailsDiv) {
-                detailsDiv.innerHTML = `
-                    <div class="alert alert-danger mb-0">
-                        <strong>Error:</strong> ${errorMsg}<br>
-                        <small>Check browser console (F12) and server console for details.</small>
-                    </div>
-                `;
+                detailsDiv.innerHTML = `<div class="alert alert-danger mb-0"><strong>Error:</strong> ${errorMsg}<br><small>Check server logs for details.</small></div>`;
                 resultsDiv.style.display = 'block';
             }
         });
     }, 'image/jpeg');
 }
+
+// Fallback: ask the server to capture and classify its own frame
+function classifyViaServer() {
+    fetch('/api/classify_frame', { method: 'POST' })
+    .then(response => {
+        if (!response.ok) return response.json().then(e => { throw new Error(e.error || `Server error ${response.status}`); });
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            displayClassification(data);
+            updateStatus('Classification complete (server-side)', 'success');
+        } else {
+            updateStatus('Classification failed: ' + (data.error || 'Unknown'), 'danger');
+        }
+    })
+    .catch(error => {
+        updateStatus('Classification error: ' + error.message, 'danger');
+        console.error('Server-side classify error:', error);
+    });
+}
+
 
 function displayClassification(data) {
     const resultsDiv = document.getElementById('classification-results');

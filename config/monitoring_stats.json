@@ -6,26 +6,6 @@
   "detection_history": [],
   "session_history": [
     {
-      "start_time": "2026-03-09T15:33:14.594931",
-      "session_id": "session_1773059594"
-    },
-    {
-      "start_time": "2026-03-09T15:35:34.928697",
-      "session_id": "session_1773059734"
-    },
-    {
-      "start_time": "2026-03-09T15:47:15.085617",
-      "session_id": "session_1773060435"
-    },
-    {
-      "start_time": "2026-03-09T16:20:16.411839",
-      "session_id": "session_1773062416"
-    },
-    {
-      "start_time": "2026-03-13T18:06:58.474030",
-      "session_id": "session_1773414418"
-    },
-    {
       "start_time": "2026-03-13T18:38:47.537739",
       "session_id": "session_1773416327"
     },
@@ -204,6 +184,26 @@
     {
       "start_time": "2026-03-23T17:58:28.628428",
       "session_id": "session_1774277908"
+    },
+    {
+      "start_time": "2026-03-24T06:02:05.145163",
+      "session_id": "session_1774321325"
+    },
+    {
+      "start_time": "2026-03-24T06:13:10.080336",
+      "session_id": "session_1774321990"
+    },
+    {
+      "start_time": "2026-03-24T06:17:54.065995",
+      "session_id": "session_1774322274"
+    },
+    {
+      "start_time": "2026-03-24T06:48:04.090470",
+      "session_id": "session_1774324084"
+    },
+    {
+      "start_time": "2026-03-24T10:20:17.918472",
+      "session_id": "session_1774336817"
     }
   ]
 }

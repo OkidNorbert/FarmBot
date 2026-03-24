@@ -4342,13 +4342,75 @@ def count_tomatoes_in_frame(frame):
     
     return tomato_count
 
+@app.route('/api/classify_frame', methods=['POST'])
+def api_classify_frame():
+    """Server-side classification fallback: grab the current hw_controller frame and classify it.
+    Used when the browser cannot draw the MJPEG stream to a canvas (tainted canvas restriction).
+    """
+    if not HARDWARE_AVAILABLE or not hw_controller:
+        return jsonify({'success': False, 'error': 'Hardware not available'}), 503
+
+    frame = hw_controller.get_frame()
+    if frame is None:
+        return jsonify({'success': False, 'error': 'No camera frame available'}), 503
+
+    try:
+        # Try YOLO first
+        yolo = get_yolo_detector()
+        if yolo and yolo.is_available():
+            detections = yolo.detect(frame, conf=0.5)
+            if detections:
+                first = detections[0]
+                return jsonify({
+                    'success': True,
+                    'prediction': first.get('class', 'unknown'),
+                    'confidence': round(float(first.get('confidence', 0.0)), 3),
+                    'tomato_count': len(detections),
+                    'results': [{'prediction': d.get('class', 'unknown'),
+                                 'confidence': round(float(d.get('confidence', 0.0)), 3)}
+                                for d in detections],
+                    'source': 'server_yolo'
+                })
+            else:
+                return jsonify({'success': True, 'prediction': None,
+                                'tomato_count': 0, 'results': [], 'source': 'server_yolo'})
+
+        # Fall back to ResNet/colour classifier
+        if hw_controller.classifier:
+            detections = hw_controller.detect_tomatoes(frame)
+            if detections:
+                first = detections[0]
+                return jsonify({
+                    'success': True,
+                    'prediction': first.get('class', 'unknown'),
+                    'confidence': round(float(first.get('confidence', 0.0)), 3),
+                    'tomato_count': len(detections),
+                    'results': [{'prediction': d.get('class', 'unknown'),
+                                 'confidence': round(float(d.get('confidence', 0.0)), 3)}
+                                for d in detections],
+                    'source': 'server_classifier'
+                })
+            return jsonify({'success': True, 'prediction': None,
+                            'tomato_count': 0, 'results': [], 'source': 'server_classifier'})
+
+        return jsonify({'success': False, 'error': 'No AI model loaded on server'}), 503
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/test_model/<model_name>', methods=['POST'])
+
 def test_model(model_name):
     """Test a trained model with an uploaded image - handles both single and multi-tomato images"""
     temp_path = None
     try:
-        if 'image' not in request.files:
-            return jsonify({'error': 'No image provided'}), 400
+        if 'image' not in request.files or not request.files['image'].filename:
+            return jsonify({
+                'success': False,
+                'error': 'No image received. The camera feed could not be captured — try restarting the camera.',
+                'hint': 'tainted_canvas'
+            }), 200
         
         file = request.files['image']
         if file and file.filename and allowed_file(file.filename):
@@ -4364,8 +4426,12 @@ def test_model(model_name):
             # Load image for processing
             frame = cv2.imread(temp_path)
             if frame is None:
-                os.remove(temp_path)
-                return jsonify({'error': 'Could not read image file'}), 400
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                return jsonify({
+                    'success': False,
+                    'error': 'Could not decode the captured image. The canvas frame may be blank.'
+                }), 200
             
             results = []
             saved_crops = []
@@ -4571,21 +4637,25 @@ def test_model(model_name):
                 
                 return jsonify(response_data)
             else:
-                # No results at all - classifier might not be working or image has no tomatoes
-                error_msg = 'Could not process image or no tomatoes detected.'
-                if not classifier:
-                    error_msg += ' Classifier not available - model may not be loaded.'
+                # No results — model missing or no tomato visible
+                if not classifier and not (yolo_detector and yolo_detector.is_available()):
+                    error_msg = 'No AI model is loaded yet. Train or load a YOLO/ResNet model first.'
+                    hint = 'model_missing'
                 else:
-                    error_msg += ' Make sure tomatoes are clearly visible in the frame.'
-                
+                    error_msg = 'No tomato detected in the frame. Make sure a ripe tomato is clearly visible and well-lit.'
+                    hint = 'no_detection'
+
                 return jsonify({
                     'success': False,
                     'error': error_msg,
-                    'prediction': 'Unknown',
-                    'confidence': 0.0
-                }), 400
+                    'hint': hint,
+                    'tomato_count': 0
+                }), 200
         else:
-            return jsonify({'error': 'Invalid image file'}), 400
+            return jsonify({
+                'success': False,
+                'error': 'Invalid image format. Only JPG, PNG, GIF and BMP are supported.'
+            }), 200
     except Exception as e:
         # Clean up temp file if it exists
         if temp_path and os.path.exists(temp_path):
