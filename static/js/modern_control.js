@@ -742,16 +742,14 @@ function resetArm() {
 
 // Toggle automatic mode (for tomato detection and picking)
 function toggleAutomaticMode(event) {
+    // Guard: skip if update originated from a telemetry push, not a user click
+    if (window._updatingFromTelemetry) return;
     const isAuto = event.target.checked;
 
-    if (!socket || !socket.connected) {
-        showNotification('Socket.IO not connected. Please wait...', 'warning');
-        event.target.checked = !isAuto; // Revert toggle
-        return;
-    }
+    // Choose the correct endpoint based on toggle state
+    const endpoint = isAuto ? '/api/auto/start' : '/api/auto/stop';
 
-    // Send automatic mode command to backend
-    fetch('/api/auto/start', {
+    fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     }).then(response => response.json())
@@ -760,16 +758,7 @@ function toggleAutomaticMode(event) {
                 if (isAuto) {
                     showNotification('Automatic mode started: Detecting and picking ready tomatoes', 'success');
                 } else {
-                    // Stop automatic mode
-                    fetch('/api/auto/stop', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    }).then(response => response.json())
-                        .then(data => {
-                            if (data.success) {
-                                showNotification('Automatic mode stopped', 'info');
-                            }
-                        });
+                    showNotification('Automatic mode stopped', 'info');
                 }
             } else {
                 showNotification('Failed to toggle automatic mode: ' + (data.error || 'Unknown error'), 'danger');
@@ -962,11 +951,13 @@ function updateTelemetry(data) {
         updateConnectionStatus(data.arduino_connected);
     }
 
-    // Update mode toggle
+    // Update mode toggle (guard against triggering the change listener)
     if (data.mode) {
         const modeToggle = document.getElementById('modeToggle');
-        if (modeToggle) {
+        if (modeToggle && modeToggle.checked !== (data.mode === 'auto')) {
+            window._updatingFromTelemetry = true;
             modeToggle.checked = (data.mode === 'auto');
+            window._updatingFromTelemetry = false;
         }
     }
 

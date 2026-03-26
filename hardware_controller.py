@@ -328,6 +328,11 @@ class HardwareController:
         self.camera_index = 0
         self.detection_interval = 1.0 # Seconds between detections
         self.last_detection_time = 0
+
+        # Sensor state — must be declared here so _auto_loop / get_distance_sensor
+        # can reference them before any BLE/serial telemetry arrives.
+        self.last_distance_reading = None  # Cached ToF reading (mm) or None
+        self.last_dist_poll = 0            # Timestamp of last distance poll
         
         # Calibration and coordinate mapping
         self.homography_matrix = None
