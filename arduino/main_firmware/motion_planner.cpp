@@ -22,8 +22,8 @@ MotionPlanner::MotionPlanner(ServoManager *servoMgr, ToFManager *tofMgr) {
 
   // Back Workspace (Center around 135 deg)
   _backApproachPose = {135, 145, 95, 90, 155, 0};
-  _backPlacePose = {135, 130, 30, 90, 128, 0};
-  _backRetreatPose = {135, 130, 50, 90, 128, 0};
+  _backPlacePose    = {135, 115, 30, 90, 128, 0};
+  _backRetreatPose  = {135, 115, 50, 90, 128, 0};
 
   // Bin mirroring (legacy support)
   _binRipe = _backPlacePose;
@@ -115,7 +115,7 @@ void MotionPlanner::update() {
           constrain(45 + heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
 
       _backPlacePose.shoulder =
-          constrain(130 - heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
+          constrain(115 - heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
       _backApproachPose.shoulder =
           constrain(117 - heightDelta, LIMIT_SHOULDER_MIN, LIMIT_SHOULDER_MAX);
     }
