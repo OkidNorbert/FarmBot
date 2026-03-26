@@ -53,7 +53,7 @@ private:
     int constrainAngle(int id, int angle);
     void updateContinuousRotation(int id);
     
-    static const int UPDATE_INTERVAL_MS = 20; // 50Hz update frequency for smooth motion
+    static const int UPDATE_INTERVAL_MS = 10; // 100Hz update frequency for ultra-smooth motion (was 20)
 };
 
 #endif // SERVO_MANAGER_H

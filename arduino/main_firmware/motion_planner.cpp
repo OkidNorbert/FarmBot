@@ -39,9 +39,8 @@ MotionPlanner::MotionPlanner(ServoManager *servoMgr, ToFManager *tofMgr) {
 }
 
 void MotionPlanner::updateClawTargets(int width_mm) {
-  // FINAL USER PREFERENCE (2026-03-24):
-  // Use exactamente 88 degrees for the firm grip and 30 for open.
-  _targetClawAngle = 90; // User-selected "firm grip" angle
+  // Increased from 90 to 98 for a firmer grip during automatic picking
+  _targetClawAngle = 98; 
   _openClawAngle = 30;   // Measured "full open" angle
 
   Serial.print("[MP] Final Grip: In=");

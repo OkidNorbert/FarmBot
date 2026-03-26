@@ -361,11 +361,11 @@ class HardwareController:
         self.cooldown_duration_s = 5.0
         
         # Pickup Zone Config (relative bounds — center of frame aligned to physical pickup point)
-        # x: covers centre 50% of frame width (0.25-0.75) so slight off-centre tomatoes aren't rejected
-        # y: lower 55% of frame height where reachable workspace sits
+        # x: covers center 20% of frame width (0.40-0.60) to avoid catching peripheral objects
+        # y: centered bottom portion where the gripper reach is most accurate
         self.pickup_zone = {
-            'x_min': 0.25, 'x_max': 0.75,  # ← widened from 0.35-0.65 (was only 30% wide)
-            'y_min': 0.35, 'y_max': 0.90   # ← slightly expanded top to catch taller placements
+            'x_min': 0.40, 'x_max': 0.60,
+            'y_min': 0.50, 'y_max': 0.85
         }
         
         # Size mapping:

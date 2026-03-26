@@ -78,7 +78,7 @@
 
 // Motion - Speed Configuration
 #define DEFAULT_SPEED       20  // Default speed (degrees per second)
-#define AUTO_MODE_SPEED     45  // Automatic mode speed (deg/s) - optimized for AI/camera/sensor coordination
+#define AUTO_MODE_SPEED     30  // Reduced for smoother, more controlled picking (was 45)
 #define MANUAL_MODE_MAX     120 // Maximum speed for manual mode (deg/s)
 #define MIN_SPEED           1   // Minimum speed (deg/s)
 #define MAX_SPEED           180 // Absolute maximum speed (deg/s) - hardware limit
