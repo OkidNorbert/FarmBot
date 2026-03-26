@@ -1,0 +1,585 @@
+{
+  "timestamp": "20260326_122546",
+  "datetime": "2026-03-26T12:25:46.173811",
+  "name": "Recording_2026-03-26T09-25-46-169Z",
+  "duration_ms": 55586,
+  "movement_count": 96,
+  "movements": [
+    {
+      "timestamp": 1772,
+      "servo": "shoulder",
+      "angle": 95,
+      "speed": 180
+    },
+    {
+      "timestamp": 1986,
+      "servo": "shoulder",
+      "angle": 100,
+      "speed": 10
+    },
+    {
+      "timestamp": 2105,
+      "servo": "shoulder",
+      "angle": 101,
+      "speed": 10
+    },
+    {
+      "timestamp": 2171,
+      "servo": "shoulder",
+      "angle": 102,
+      "speed": 10
+    },
+    {
+      "timestamp": 2270,
+      "servo": "shoulder",
+      "angle": 103,
+      "speed": 10
+    },
+    {
+      "timestamp": 3368,
+      "servo": "shoulder",
+      "angle": 70,
+      "speed": 11
+    },
+    {
+      "timestamp": 3585,
+      "servo": "shoulder",
+      "angle": 68,
+      "speed": 10
+    },
+    {
+      "timestamp": 3768,
+      "servo": "shoulder",
+      "angle": 67,
+      "speed": 10
+    },
+    {
+      "timestamp": 3851,
+      "servo": "shoulder",
+      "angle": 66,
+      "speed": 10
+    },
+    {
+      "timestamp": 3934,
+      "servo": "shoulder",
+      "angle": 65,
+      "speed": 10
+    },
+    {
+      "timestamp": 4001,
+      "servo": "shoulder",
+      "angle": 64,
+      "speed": 10
+    },
+    {
+      "timestamp": 4219,
+      "servo": "shoulder",
+      "angle": 60,
+      "speed": 10
+    },
+    {
+      "timestamp": 4286,
+      "servo": "shoulder",
+      "angle": 59,
+      "speed": 10
+    },
+    {
+      "timestamp": 4453,
+      "servo": "shoulder",
+      "angle": 58,
+      "speed": 10
+    },
+    {
+      "timestamp": 4552,
+      "servo": "shoulder",
+      "angle": 57,
+      "speed": 10
+    },
+    {
+      "timestamp": 4769,
+      "servo": "shoulder",
+      "angle": 56,
+      "speed": 180
+    },
+    {
+      "timestamp": 6785,
+      "servo": "elbow",
+      "angle": 105,
+      "speed": 180
+    },
+    {
+      "timestamp": 7244,
+      "servo": "elbow",
+      "angle": 116,
+      "speed": 180
+    },
+    {
+      "timestamp": 7689,
+      "servo": "elbow",
+      "angle": 131,
+      "speed": 180
+    },
+    {
+      "timestamp": 8033,
+      "servo": "elbow",
+      "angle": 139,
+      "speed": 180
+    },
+    {
+      "timestamp": 8488,
+      "servo": "elbow",
+      "angle": 146,
+      "speed": 180
+    },
+    {
+      "timestamp": 10276,
+      "servo": "wrist_pitch",
+      "angle": 103,
+      "speed": 180
+    },
+    {
+      "timestamp": 12318,
+      "servo": "wrist_pitch",
+      "angle": 117,
+      "speed": 180
+    },
+    {
+      "timestamp": 12902,
+      "servo": "wrist_pitch",
+      "angle": 124,
+      "speed": 180
+    },
+    {
+      "timestamp": 13325,
+      "servo": "wrist_pitch",
+      "angle": 130,
+      "speed": 180
+    },
+    {
+      "timestamp": 13766,
+      "servo": "wrist_pitch",
+      "angle": 135,
+      "speed": 180
+    },
+    {
+      "timestamp": 14396,
+      "servo": "wrist_pitch",
+      "angle": 117,
+      "speed": 180
+    },
+    {
+      "timestamp": 14740,
+      "servo": "wrist_pitch",
+      "angle": 110,
+      "speed": 180
+    },
+    {
+      "timestamp": 15100,
+      "servo": "wrist_pitch",
+      "angle": 103,
+      "speed": 10
+    },
+    {
+      "timestamp": 15357,
+      "servo": "wrist_pitch",
+      "angle": 99,
+      "speed": 180
+    },
+    {
+      "timestamp": 15567,
+      "servo": "wrist_pitch",
+      "angle": 96,
+      "speed": 180
+    },
+    {
+      "timestamp": 16563,
+      "servo": "wrist_pitch",
+      "angle": 68,
+      "speed": 180
+    },
+    {
+      "timestamp": 17254,
+      "servo": "wrist_pitch",
+      "angle": 62,
+      "speed": 10
+    },
+    {
+      "timestamp": 17458,
+      "servo": "wrist_pitch",
+      "angle": 58,
+      "speed": 10
+    },
+    {
+      "timestamp": 17882,
+      "servo": "wrist_pitch",
+      "angle": 48,
+      "speed": 10
+    },
+    {
+      "timestamp": 17938,
+      "servo": "wrist_pitch",
+      "angle": 47,
+      "speed": 10
+    },
+    {
+      "timestamp": 19529,
+      "servo": "wrist_pitch",
+      "angle": 121,
+      "speed": 10
+    },
+    {
+      "timestamp": 19892,
+      "servo": "wrist_pitch",
+      "angle": 131,
+      "speed": 10
+    },
+    {
+      "timestamp": 20009,
+      "servo": "wrist_pitch",
+      "angle": 133,
+      "speed": 10
+    },
+    {
+      "timestamp": 20076,
+      "servo": "wrist_pitch",
+      "angle": 134,
+      "speed": 10
+    },
+    {
+      "timestamp": 20193,
+      "servo": "wrist_pitch",
+      "angle": 136,
+      "speed": 10
+    },
+    {
+      "timestamp": 20363,
+      "servo": "wrist_pitch",
+      "angle": 139,
+      "speed": 10
+    },
+    {
+      "timestamp": 20512,
+      "servo": "wrist_pitch",
+      "angle": 140,
+      "speed": 10
+    },
+    {
+      "timestamp": 20677,
+      "servo": "wrist_pitch",
+      "angle": 141,
+      "speed": 10
+    },
+    {
+      "timestamp": 21315,
+      "servo": "wrist_pitch",
+      "angle": 142,
+      "speed": 180
+    },
+    {
+      "timestamp": 23080,
+      "servo": "wrist_pitch",
+      "angle": 97,
+      "speed": 10
+    },
+    {
+      "timestamp": 23163,
+      "servo": "wrist_pitch",
+      "angle": 96,
+      "speed": 10
+    },
+    {
+      "timestamp": 23400,
+      "servo": "wrist_pitch",
+      "angle": 91,
+      "speed": 10
+    },
+    {
+      "timestamp": 23484,
+      "servo": "wrist_pitch",
+      "angle": 90,
+      "speed": 10
+    },
+    {
+      "timestamp": 23615,
+      "servo": "wrist_pitch",
+      "angle": 86,
+      "speed": 10
+    },
+    {
+      "timestamp": 23681,
+      "servo": "wrist_pitch",
+      "angle": 85,
+      "speed": 10
+    },
+    {
+      "timestamp": 23748,
+      "servo": "wrist_pitch",
+      "angle": 84,
+      "speed": 10
+    },
+    {
+      "timestamp": 23815,
+      "servo": "wrist_pitch",
+      "angle": 83,
+      "speed": 10
+    },
+    {
+      "timestamp": 24048,
+      "servo": "wrist_pitch",
+      "angle": 79,
+      "speed": 10
+    },
+    {
+      "timestamp": 24131,
+      "servo": "wrist_pitch",
+      "angle": 78,
+      "speed": 10
+    },
+    {
+      "timestamp": 25183,
+      "servo": "claw",
+      "angle": 108,
+      "speed": 180
+    },
+    {
+      "timestamp": 25824,
+      "servo": "claw",
+      "angle": 89,
+      "speed": 10
+    },
+    {
+      "timestamp": 26509,
+      "servo": "claw",
+      "angle": 70,
+      "speed": 10
+    },
+    {
+      "timestamp": 26610,
+      "servo": "claw",
+      "angle": 68,
+      "speed": 10
+    },
+    {
+      "timestamp": 26809,
+      "servo": "claw",
+      "angle": 63,
+      "speed": 10
+    },
+    {
+      "timestamp": 26977,
+      "servo": "claw",
+      "angle": 58,
+      "speed": 10
+    },
+    {
+      "timestamp": 27231,
+      "servo": "claw",
+      "angle": 54,
+      "speed": 10
+    },
+    {
+      "timestamp": 27398,
+      "servo": "claw",
+      "angle": 51,
+      "speed": 10
+    },
+    {
+      "timestamp": 28575,
+      "servo": "claw",
+      "angle": 102,
+      "speed": 10
+    },
+    {
+      "timestamp": 28677,
+      "servo": "claw",
+      "angle": 104,
+      "speed": 10
+    },
+    {
+      "timestamp": 31580,
+      "servo": "shoulder",
+      "angle": 60,
+      "speed": 10
+    },
+    {
+      "timestamp": 31969,
+      "servo": "shoulder",
+      "angle": 61,
+      "speed": 180
+    },
+    {
+      "timestamp": 32036,
+      "servo": "shoulder",
+      "angle": 62,
+      "speed": 10
+    },
+    {
+      "timestamp": 32103,
+      "servo": "shoulder",
+      "angle": 63,
+      "speed": 10
+    },
+    {
+      "timestamp": 32420,
+      "servo": "shoulder",
+      "angle": 71,
+      "speed": 10
+    },
+    {
+      "timestamp": 32936,
+      "servo": "shoulder",
+      "angle": 87,
+      "speed": 10
+    },
+    {
+      "timestamp": 35615,
+      "servo": "elbow",
+      "angle": 70,
+      "speed": 10
+    },
+    {
+      "timestamp": 37232,
+      "servo": "elbow",
+      "angle": 133,
+      "speed": 12
+    },
+    {
+      "timestamp": 37416,
+      "servo": "elbow",
+      "angle": 134,
+      "speed": 10
+    },
+    {
+      "timestamp": 39398,
+      "servo": "wrist_pitch",
+      "angle": 95,
+      "speed": 10
+    },
+    {
+      "timestamp": 40012,
+      "servo": "wrist_pitch",
+      "angle": 111,
+      "speed": 10
+    },
+    {
+      "timestamp": 41262,
+      "servo": "wrist_pitch",
+      "angle": 61,
+      "speed": 10
+    },
+    {
+      "timestamp": 41494,
+      "servo": "wrist_pitch",
+      "angle": 55,
+      "speed": 12
+    },
+    {
+      "timestamp": 41611,
+      "servo": "wrist_pitch",
+      "angle": 52,
+      "speed": 11
+    },
+    {
+      "timestamp": 41878,
+      "servo": "wrist_pitch",
+      "angle": 45,
+      "speed": 10
+    },
+    {
+      "timestamp": 42046,
+      "servo": "wrist_pitch",
+      "angle": 42,
+      "speed": 10
+    },
+    {
+      "timestamp": 43030,
+      "servo": "wrist_roll",
+      "angle": 92,
+      "speed": 180
+    },
+    {
+      "timestamp": 44124,
+      "servo": "wrist_roll",
+      "angle": 154,
+      "speed": 11
+    },
+    {
+      "timestamp": 44208,
+      "servo": "wrist_roll",
+      "angle": 155,
+      "speed": 10
+    },
+    {
+      "timestamp": 44261,
+      "servo": "wrist_roll",
+      "angle": 156,
+      "speed": 10
+    },
+    {
+      "timestamp": 44366,
+      "servo": "wrist_roll",
+      "angle": 157,
+      "speed": 10
+    },
+    {
+      "timestamp": 44428,
+      "servo": "wrist_roll",
+      "angle": 158,
+      "speed": 10
+    },
+    {
+      "timestamp": 44746,
+      "servo": "wrist_roll",
+      "angle": 160,
+      "speed": 10
+    },
+    {
+      "timestamp": 44828,
+      "servo": "wrist_roll",
+      "angle": 161,
+      "speed": 10
+    },
+    {
+      "timestamp": 44945,
+      "servo": "wrist_roll",
+      "angle": 163,
+      "speed": 10
+    },
+    {
+      "timestamp": 45012,
+      "servo": "wrist_roll",
+      "angle": 164,
+      "speed": 10
+    },
+    {
+      "timestamp": 45461,
+      "servo": "wrist_roll",
+      "angle": 165,
+      "speed": 180
+    },
+    {
+      "timestamp": 47362,
+      "servo": "wrist_roll",
+      "angle": 61,
+      "speed": 11
+    },
+    {
+      "timestamp": 47480,
+      "servo": "wrist_roll",
+      "angle": 59,
+      "speed": 10
+    },
+    {
+      "timestamp": 47545,
+      "servo": "wrist_roll",
+      "angle": 58,
+      "speed": 10
+    },
+    {
+      "timestamp": 49607,
+      "servo": "wrist_roll",
+      "angle": 82,
+      "speed": 180
+    }
+  ]
+}
