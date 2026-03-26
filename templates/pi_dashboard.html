@@ -191,6 +191,10 @@
                             <button id="btnStopCamera" class="btn btn-sm btn-danger" onclick="stopCameraFeed()" title="Stop Camera" style="display: none;">
                                 <i class="fas fa-stop"></i> Stop
                             </button>
+                            <div class="ms-2 d-inline-flex align-items-center" style="width: 150px;" title="Camera Brightness">
+                                <i class="fas fa-lightbulb text-warning me-2"></i>
+                                <input type="range" class="form-range" id="dashBrightness" min="0" max="100" value="50" onchange="setDashboardBrightness(this.value)">
+                            </div>
                         </div>
                     </div>
                     <div class="card-body">
@@ -552,6 +556,30 @@
             }
         }
 
+        let currentDashBrightness = 50;
+        function setDashboardBrightness(val) {
+            currentDashBrightness = val;
+            fetch('/api/camera/brightness', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({value: val})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showAlert(`Camera brightness set to ${val}%`, 'success');
+                } else {
+                     showAlert('Failed to set brightness', 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Error setting brightness:', error);
+                showAlert('Error setting brightness', 'danger');
+            });
+        }
+        
         async function stopSystem() {
             try {
                 const response = await fetch('/api/system/stop', { method: 'POST' });

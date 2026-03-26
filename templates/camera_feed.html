@@ -49,6 +49,12 @@
                                             <button class="btn btn-secondary" onclick="stopCamera()">
                                                 <i class="fas fa-stop"></i> Stop Camera
                                             </button>
+                                            <div class="mt-3">
+                                                <label for="cameraBrightness" class="form-label small fw-bold">
+                                                    <i class="fas fa-lightbulb text-warning"></i> Brightness: <span id="brightnessVal">50%</span>
+                                                </label>
+                                                <input type="range" class="form-range" id="cameraBrightness" min="0" max="100" value="50" onchange="setCameraBrightness(this.value)" oninput="document.getElementById('brightnessVal').innerText = this.value + '%'">
+                                            </div>
                                         </div>
                                     </div>
                                     
@@ -302,6 +308,30 @@ function stopCamera() {
 window.addEventListener('beforeunload', function() {
     stopCamera();
 });
+
+let currentBrightness = 50;
+function setCameraBrightness(val) {
+    currentBrightness = val;
+    fetch('/api/camera/brightness', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({value: val})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            updateStatus(`Camera brightness set to ${val}%`, 'success');
+        } else {
+             updateStatus('Failed to set brightness', 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error setting brightness:', error);
+        updateStatus('Error setting brightness', 'danger');
+    });
+}
 
 window.addEventListener('pagehide', function() {
     stopCamera();

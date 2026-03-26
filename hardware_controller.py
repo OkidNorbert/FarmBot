@@ -1564,6 +1564,34 @@ class HardwareController:
         # Note: We don't release the camera here because it might be needed by other components
         # The camera will be released when switching cameras or on shutdown
 
+    def set_camera_light(self, state):
+        """Toggle camera light/LED if supported"""
+        cam_idx = self.camera_index if self.camera_connected else None
+        if cam_idx is None:
+            return False
+            
+        success = False
+        device = f"/dev/video{cam_idx}"
+        
+        try:
+            import subprocess
+            if state:
+                # Try setting generic illuminator, backlight compensation, and led modes
+                subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'backlight_compensation=160'], stderr=subprocess.DEVNULL)
+                subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'led1_mode=1'], stderr=subprocess.DEVNULL)
+                subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'illuminator_1=1'], stderr=subprocess.DEVNULL)
+                subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'illuminator_2=1'], stderr=subprocess.DEVNULL)
+            else:
+                subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'backlight_compensation=0'], stderr=subprocess.DEVNULL)
+                subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'led1_mode=0'], stderr=subprocess.DEVNULL)
+                subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'illuminator_1=0'], stderr=subprocess.DEVNULL)
+                subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'illuminator_2=0'], stderr=subprocess.DEVNULL)
+            success = True
+        except Exception as e:
+            self.logger.error(f"Error setting camera light: {e}")
+            
+        return success
+
     def get_frame(self):
         """Get the latest camera frame"""
         if self.camera_connected:
@@ -2295,6 +2323,46 @@ class HardwareController:
         finally:
             self.movement_active = False
             self.auto_mode = previous_auto_mode
+
+    def set_camera_brightness(self, percentage: int) -> bool:
+        """Sets the camera brightness based on a 0-100 percentage.
+        Queries the camera's min/max brightness via v4l2-ctl and calculates the correct value.
+        """
+        try:
+            import subprocess
+            import re
+            import os
+            
+            idx = self.camera_index if self.camera_index is not None else 0
+            
+            # Get camera brightness limits
+            result = subprocess.run(['v4l2-ctl', '-d', f'/dev/video{idx}', '-l'], capture_output=True, text=True)
+            min_val = 0
+            max_val = 255
+            
+            for line in result.stdout.split('\n'):
+                if 'brightness' in line and 'int' in line:
+                    match_min = re.search(r'min=(-?\d+)', line)
+                    match_max = re.search(r'max=(-?\d+)', line)
+                    if match_min and match_max:
+                        min_val = int(match_min.group(1))
+                        max_val = int(match_max.group(1))
+                    break
+                    
+            # Ensure percentage bounds
+            percentage = max(0, min(100, percentage))
+            
+            # Calculate target value
+            target_val = int(min_val + (percentage / 100.0) * (max_val - min_val))
+            
+            # Set the brightness
+            os.system(f"v4l2-ctl -d /dev/video{idx} -c brightness={target_val} > /dev/null 2>&1")
+            
+            self.logger.info(f"Set camera {idx} brightness to {percentage}% (raw value: {target_val}, min: {min_val}, max: {max_val})")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to set camera brightness: {e}")
+            return False
 
     def connect_bluetooth_device(self, address, name=None):
         """Connect to a specific Bluetooth device by address"""

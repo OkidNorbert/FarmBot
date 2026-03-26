@@ -1020,6 +1020,15 @@ function togglePickMode() {
     pickMode = toggle.checked;
 
     const cameraContainer = document.getElementById('cameraContainer');
+    
+    // Also toggle actual automatic mode when Pick Mode is toggled
+    const modeToggle = document.getElementById('modeToggle');
+    if (modeToggle && modeToggle.checked !== pickMode) {
+        modeToggle.checked = pickMode;
+        // Trigger the change event manually to invoke toggleAutomaticMode
+        modeToggle.dispatchEvent(new Event('change'));
+    }
+
     if (pickMode) {
         // Disable calibration mode if active
         if (calibrationMode) {
@@ -1028,11 +1037,11 @@ function togglePickMode() {
         }
         cameraContainer.style.cursor = 'crosshair';
         cameraContainer.title = 'Click to Pick';
-        showNotification('Pick Mode Enabled: Click on the camera feed.', 'info');
+        showNotification('Pick Mode & Automatic Mode Enabled.', 'info');
     } else {
         cameraContainer.style.cursor = 'default';
         cameraContainer.title = '';
-        showNotification('Pick Mode Disabled.', 'secondary');
+        showNotification('Pick Mode & Automatic Mode Disabled.', 'secondary');
     }
 }
 

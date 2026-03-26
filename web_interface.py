@@ -1368,6 +1368,33 @@ def api_stop_camera():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@app.route('/api/camera/light', methods=['POST'])
+def api_toggle_camera_light():
+    """API endpoint to toggle camera light"""
+    try:
+        data = request.get_json() or {}
+        state = data.get('state', False)
+        
+        if HARDWARE_AVAILABLE and hw_controller:
+            success = hw_controller.set_camera_light(state)
+            if success:
+                return jsonify({'success': True, 'state': state, 'message': f'Light turned {"on" if state else "off"}'})
+        
+        # Fallback for no hardware controller
+        global CURRENT_CAMERA_INDEX
+        device = f"/dev/video{CURRENT_CAMERA_INDEX}"
+        import subprocess
+        if state:
+            subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'backlight_compensation=160'], stderr=subprocess.DEVNULL)
+            subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'led1_mode=1'], stderr=subprocess.DEVNULL)
+        else:
+            subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'backlight_compensation=0'], stderr=subprocess.DEVNULL)
+            subprocess.run(['v4l2-ctl', '-d', device, '--set-ctrl', 'led1_mode=0'], stderr=subprocess.DEVNULL)
+            
+        return jsonify({'success': True, 'state': state, 'message': f'Light turned {"on" if state else "off"} (fallback)'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/api/camera/switch', methods=['POST'])
 def api_switch_camera():
     """API endpoint to switch to a different camera"""
@@ -2232,6 +2259,38 @@ def api_pick_at_pixel():
         return jsonify({'success': False, 'message': 'Hardware not available'}), 400
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/camera/brightness', methods=['POST'])
+def api_set_camera_brightness():
+    """Sets the built-in USB camera brightness level."""
+    if hw_controller is None:
+        return jsonify({'success': False, 'message': 'Hardware controller not initialized'})
+        
+    data = request.json or {}
+    value = data.get('value')
+    
+    if value is None:
+        return jsonify({'success': False, 'message': 'Brightness value (0-100) is required'}), 400
+        
+    try:
+        value = int(value)
+    except ValueError:
+        return jsonify({'success': False, 'message': 'Invalid value. Must be an integer 0-100'}), 400
+        
+    # Set bounds
+    value = max(0, min(100, value))
+    
+    # Update through hardware controller
+    success = hw_controller.set_camera_brightness(value)
+        
+    if success:
+        return jsonify({
+            'success': True, 
+            'message': f'Camera brightness set to {value}%',
+            'value': value
+        })
+    else:
+        return jsonify({'success': False, 'message': 'Failed to set camera brightness'})
 
 # ==========================================
 # Calibration API Routes
