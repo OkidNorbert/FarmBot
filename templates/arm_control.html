@@ -171,6 +171,9 @@
                                 title="Stop Camera" style="display: none;">
                                 <i class="fas fa-stop"></i> Stop
                             </button>
+                            <button class="btn btn-sm btn-outline-light ms-2" onclick="toggleFullscreen('cameraContainer')" title="Fullscreen">
+                                <i class="fas fa-expand"></i>
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">
@@ -1105,6 +1108,31 @@
                 stopCameraFeed();
             }
         });
+        
+        function toggleFullscreen(elementId) {
+            const elem = document.getElementById(elementId);
+            if (!elem) return;
+            
+            if (!document.fullscreenElement) {
+                if (elem.requestFullscreen) {
+                    elem.requestFullscreen().catch(err => {
+                        showNotification(`Error attempting to enable fullscreen: ${err.message}`, 'danger');
+                    });
+                } else if (elem.webkitRequestFullscreen) { /* Safari */
+                    elem.webkitRequestFullscreen();
+                } else if (elem.msRequestFullscreen) { /* IE11 */
+                    elem.msRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) { /* Safari */
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) { /* IE11 */
+                    document.msExitFullscreen();
+                }
+            }
+        }
 
         async function switchCameraInternal(cameraIndex) {
             try {

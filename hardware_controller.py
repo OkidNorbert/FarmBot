@@ -1792,6 +1792,7 @@ class HardwareController:
             if status == 'SUCCESS':
                 self.logger.info(f"[AUTO_PICK] Harvest complete (Pick {pick_id} succeeded in {duration_ms}ms)")
                 self.logger.info(f"[AUTO_PICK] Cooldown started")
+                self._log_harvest_to_stats(result)
                 self.pending_picks.pop(matched_pick_id, None)
                 if getattr(self, 'auto_state', None) == 'HARVESTING':
                     self.auto_state = 'COOLDOWN'
@@ -1819,6 +1820,50 @@ class HardwareController:
                     self.error_recovery_time = time.time() + 5.0
         else:
             self.logger.debug(f"[AUTO] Received pick result for unknown pick_id: {pick_id}")
+    
+    def _log_harvest_to_stats(self, class_name):
+        """Append a harvest event to the shared monitoring_stats.json file for the live monitor."""
+        import json
+        import os
+        from datetime import datetime
+        stats_file = 'config/monitoring_stats.json'
+        try:
+            os.makedirs('config', exist_ok=True)
+            stats = {
+                'total_sorted': 0, 'ripe_count': 0, 'unripe_count': 0, 'spoilt_count': 0,
+                'detection_history': [], 'session_history': []
+            }
+            if os.path.exists(stats_file):
+                try:
+                    with open(stats_file, 'r') as f:
+                        file_stats = json.load(f)
+                        stats.update(file_stats)
+                except Exception:
+                    pass
+            
+            stats['total_sorted'] = stats.get('total_sorted', 0) + 1
+            lbl = str(class_name).lower()
+            if lbl in ['ready', 'ripe']:
+                stats['ripe_count'] = stats.get('ripe_count', 0) + 1
+            elif lbl in ['not_ready', 'unripe']:
+                stats['unripe_count'] = stats.get('unripe_count', 0) + 1
+            elif lbl in ['spoilt', 'spoiled']:
+                stats['spoilt_count'] = stats.get('spoilt_count', 0) + 1
+                
+            entry = {'timestamp': datetime.now().isoformat(), 'class': lbl}
+            hist = stats.get('detection_history', [])
+            hist.append(entry)
+            
+            if len(hist) > 1000:
+                hist = hist[-1000:]
+            stats['detection_history'] = hist
+                
+            with open(stats_file, 'w') as f:
+                json.dump(stats, f, indent=2)
+                
+            self.logger.info(f"📊 Live Monitor Updated: {lbl} - Total: {stats['total_sorted']}")
+        except Exception as e:
+            self.logger.error(f"Failed to update monitoring stats: {e}")
     
     def cleanup_old_picks(self, timeout_seconds=30):
         """Remove old pending picks that haven't completed

@@ -1,42 +1,111 @@
 {
-  "total_sorted": 0,
-  "ripe_count": 0,
+  "total_sorted": 25,
+  "ripe_count": 25,
   "unripe_count": 0,
   "spoilt_count": 0,
-  "detection_history": [],
+  "detection_history": [
+    {
+      "timestamp": "2026-03-27T10:24:22.035227",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T10:29:42.688856",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T10:30:10.291479",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T10:52:08.679204",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T10:52:36.132328",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T10:53:03.472978",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T11:22:36.347533",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T11:23:05.538866",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T11:31:36.514309",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T11:33:42.115985",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T11:50:42.080344",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T12:28:02.608453",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T12:31:47.644322",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T13:33:49.244564",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T13:36:19.922641",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T13:58:48.783830",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T14:01:05.829083",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T14:11:23.919301",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T14:53:26.879089",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T15:48:03.623865",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T15:52:50.680854",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T16:23:27.014030",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T16:24:48.006945",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T16:25:35.608430",
+      "class": "ripe"
+    },
+    {
+      "timestamp": "2026-03-27T16:33:00.060282",
+      "class": "ripe"
+    }
+  ],
   "session_history": [
-    {
-      "start_time": "2026-03-23T16:27:33.874729",
-      "session_id": "session_1774272453"
-    },
-    {
-      "start_time": "2026-03-23T17:35:15.364933",
-      "session_id": "session_1774276515"
-    },
-    {
-      "start_time": "2026-03-23T17:39:48.813264",
-      "session_id": "session_1774276788"
-    },
-    {
-      "start_time": "2026-03-23T17:42:00.026297",
-      "session_id": "session_1774276920"
-    },
-    {
-      "start_time": "2026-03-23T17:46:56.009887",
-      "session_id": "session_1774277216"
-    },
-    {
-      "start_time": "2026-03-23T17:57:08.894727",
-      "session_id": "session_1774277828"
-    },
-    {
-      "start_time": "2026-03-23T17:58:28.628428",
-      "session_id": "session_1774277908"
-    },
-    {
-      "start_time": "2026-03-24T06:02:05.145163",
-      "session_id": "session_1774321325"
-    },
     {
       "start_time": "2026-03-24T06:13:10.080336",
       "session_id": "session_1774321990"
@@ -204,6 +273,38 @@
     {
       "start_time": "2026-03-26T14:03:18.413058",
       "session_id": "session_1774522998"
+    },
+    {
+      "start_time": "2026-03-26T15:18:30.412713",
+      "session_id": "session_1774527510"
+    },
+    {
+      "start_time": "2026-03-26T16:35:24.858024",
+      "session_id": "session_1774532124"
+    },
+    {
+      "start_time": "2026-03-26T17:43:01.448643",
+      "session_id": "session_1774536181"
+    },
+    {
+      "start_time": "2026-03-27T08:33:20.030102",
+      "session_id": "session_1774589600"
+    },
+    {
+      "start_time": "2026-03-27T08:45:28.348041",
+      "session_id": "session_1774590328"
+    },
+    {
+      "start_time": "2026-03-27T08:47:48.128942",
+      "session_id": "session_1774590468"
+    },
+    {
+      "start_time": "2026-03-27T09:27:12.236706",
+      "session_id": "session_1774592832"
+    },
+    {
+      "start_time": "2026-03-28T08:28:01.838930",
+      "session_id": "session_1774675681"
     }
   ]
 }

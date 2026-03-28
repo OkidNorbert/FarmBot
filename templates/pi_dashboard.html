@@ -195,10 +195,13 @@
                                 <i class="fas fa-lightbulb text-warning me-2"></i>
                                 <input type="range" class="form-range" id="dashBrightness" min="0" max="100" value="50" onchange="setDashboardBrightness(this.value)">
                             </div>
+                            <button class="btn btn-sm btn-outline-light ms-2" onclick="toggleFullscreen('camera-feed-container')" title="Fullscreen">
+                                <i class="fas fa-expand"></i>
+                            </button>
                         </div>
                     </div>
                     <div class="card-body">
-                        <div class="camera-feed" style="min-height: 300px; display: flex; align-items: center; justify-content: center; background: #000;">
+                        <div class="camera-feed" id="camera-feed-container" style="min-height: 300px; display: flex; align-items: center; justify-content: center; background: #000;">
                             <img id="camera-feed" alt="Camera Feed"
                                 style="display: none; width: 100%; height: 300px; object-fit: cover;">
                             <div id="camera-placeholder" style="color: #fff; text-align: center;">
@@ -718,6 +721,31 @@
             
             if (btnStart) btnStart.style.display = 'inline-block';
             if (btnStop) btnStop.style.display = 'none';
+        }
+        
+        function toggleFullscreen(elementId) {
+            const elem = document.getElementById(elementId);
+            if (!elem) return;
+            
+            if (!document.fullscreenElement) {
+                if (elem.requestFullscreen) {
+                    elem.requestFullscreen().catch(err => {
+                        showAlert(`Error attempting to enable fullscreen: ${err.message}`, 'danger');
+                    });
+                } else if (elem.webkitRequestFullscreen) { /* Safari */
+                    elem.webkitRequestFullscreen();
+                } else if (elem.msRequestFullscreen) { /* IE11 */
+                    elem.msRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) { /* Safari */
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) { /* IE11 */
+                    document.msExitFullscreen();
+                }
+            }
         }
         
         // Stop camera feed when page is unloaded
